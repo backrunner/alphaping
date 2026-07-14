@@ -1,0 +1,4 @@
+interface:
+  display_name: "AlphaPing Worker Builder"
+  short_description: "Build cost-aware Workers and telemetry storage flows"
+  default_prompt: "Use $alphaping-build-workers to implement or review an AlphaPing Cloudflare Worker change."

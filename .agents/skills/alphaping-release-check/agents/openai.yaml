@@ -1,0 +1,4 @@
+interface:
+  display_name: "AlphaPing Release Check"
+  short_description: "Verify tests, costs, secrets, licenses, commits, and releases"
+  default_prompt: "Use $alphaping-release-check to validate an AlphaPing change or release before shipping."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "AlphaPing Change Planner"
+  short_description: "Plan AlphaPing changes against product and architecture rules"
+  default_prompt: "Use $alphaping-plan-change to plan and validate an AlphaPing change against the project baseline."

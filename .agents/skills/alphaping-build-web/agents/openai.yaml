@@ -1,0 +1,4 @@
+interface:
+  display_name: "AlphaPing Web Builder"
+  short_description: "Build the SvelteKit dashboard, auth, RBAC, and status UI"
+  default_prompt: "Use $alphaping-build-web to implement an AlphaPing web dashboard or administration change."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "AlphaPing Agent Builder"
+  short_description: "Build the secure Rust agent, protocol, probes, and updater"
+  default_prompt: "Use $alphaping-build-agent to implement or review an AlphaPing Rust agent or protocol change."
