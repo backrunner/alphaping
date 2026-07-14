@@ -16,6 +16,7 @@ Implement a conservative system service that reports metrics securely, survives 
 - [Cloudflare cost](../../06-cloudflare-storage-cost.md)
 - [Engineering standards](../../08-engineering-standards.md)
 - [Research](../../10-research.md)
+- [Telemetry storage and retry](../../11-telemetry-storage-and-retry.md)
 
 Re-check locked rustls/workers-rs/prost/crypto APIs and platform support before relying on version-specific behavior.
 
@@ -27,7 +28,7 @@ Re-check locked rustls/workers-rs/prost/crypto APIs and platform support before 
 4. Use the documented HKDF directional keys, AES-256-GCM nonce prefix plus persistent 64-bit sequence, replay semantics, and key epochs. Do not design new crypto.
 5. Separate sampler, probe scheduler, uploader, spool, config, runtime adapters, and updater with bounded channels and cancellation.
 6. Use last-known-good configuration and atomically apply validated revisions.
-7. Persist outbound batches until authenticated acknowledgement. Bound spool bytes and prioritize state transitions/failures when dropping old data.
+7. Persist samples and deliveries in SQLite WAL until authenticated D1 transaction acknowledgement. Retry transient delivery failures without an attempt limit and cap equal-jitter backoff at 300 seconds.
 8. Implement only allowlisted commands and idempotently remember command results.
 9. Verify update metadata, length, hash, signature, version, platform, health, and rollback independently of GitHub transport.
 10. Measure CPU, RSS, binary size, report bytes, reconnect behavior, and power-impacting wakeups.
@@ -37,16 +38,20 @@ Re-check locked rustls/workers-rs/prost/crypto APIs and platform support before 
 - Idle RSS target below 30 MiB.
 - Stable average CPU target below 0.5% of one core.
 - Default local sample every 10 seconds and report every 60 seconds with jitter.
+- Maintain the Live Hub WebSocket, but send 10-second live snapshots only while an authenticated viewer demand TTL is active.
 - Tokio current-thread runtime by default; add threads only with a measured need.
 - Every queue, buffer, retry, concurrency pool, and on-disk spool must be bounded.
 - Every network operation must have timeout, backoff, jitter, and cancellation.
+- Use a 512 MiB default SQLite cap plus a 256 MiB/5% free-disk reserve. Compact unattempted low-priority samples before eviction.
 
 ## Protocol Rules
 
 - Keep envelope headers as authenticated AAD.
 - Compress before encrypting and validate decompression limits.
-- Keep HTTP/Queue envelope within 64 KiB where practical; split offline backlog.
+- Keep each durable HTTP envelope within 64 KiB; split offline backlog.
+- Derive/use a separate short-lived live session key. Live frames never delete spool data or reset durable delivery backoff.
 - Persist sequence before use so crashes cannot reuse a nonce.
+- Keep delivery payload/report ID stable across retries while allocating a fresh persisted transport sequence for each attempt.
 - Stop and rotate/re-enroll if persistent sequence state is lost or rolls back.
 - Never log enrollment tokens, root secrets, plaintext reports, control payloads, or private identity keys.
 - Keep the external claim limited to PQ hybrid key agreement, not complete PQ authentication.
@@ -80,6 +85,6 @@ Re-check locked rustls/workers-rs/prost/crypto APIs and platform support before 
 
 - Run fmt, clippy with warnings denied, unit/integration tests, and protocol golden vectors.
 - Fuzz envelope/protobuf/config parsers and assertion boundaries.
-- Test network loss, restart, spool full, clock skew, replay, key rotation, config failure, and duplicate commands.
+- Test 24h+ network loss, restart, 300-second backoff cap, network-change wakeup, ack loss, spool compaction/full, clock skew, replay, key rotation, config failure, and duplicate commands.
 - Test signed update success, corrupt artifact, expired metadata, rollback attack, failed health check, and rollback.
 - Test supported runtime adapters in real environments or documented fixtures; do not mark untested detection as complete.

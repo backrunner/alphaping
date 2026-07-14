@@ -165,7 +165,7 @@ AES-GCM nonce 固定 96 bits：
 
 - 顺序固定为 protobuf encode -> zstd compress -> AEAD encrypt。
 - 解密后先检查声明长度和最大解压比，再解压。
-- V1 单个 HTTP envelope hard limit 建议 64 KiB，使 Queue message 通常保持一个 64 KB 计费单元。
+- V1 单个 HTTP envelope hard limit 为 64 KiB，使 D1 5 分钟 block 的 5 个 report slots 理论最大仍只有 320 KiB。
 - 大量离线数据拆为多个 batch，不能提交超大 envelope。
 
 ## 7. 重放和时间验证
@@ -190,6 +190,20 @@ AES-GCM nonce 固定 96 bits：
 配置必须包含 revision、created_at 和完整内容 digest。Agent 先验证、解析和预检查，再原子替换 last-known-good config，并在下次 report 回报 applied revision。
 
 HTTP 状态码只表达 transport/auth 大类。详细错误码必须避免泄露 Agent 是否存在、token 是否匹配特定机器或密钥版本细节。
+
+### 8.1 Live WebSocket 安全
+
+Live channel 是独立、非权威的实时加速层，不复用 durable report key/sequence：
+
+1. Rust Ingest 在已认证 durable response 中签发 Agent live ticket。Ticket 包含 workspace/agent PK、随机 live session key、session ID、not-before/expiry 和 protocol version，用独立 `AGENT_LIVE_TICKET_KEY` 加密认证。
+2. `AGENT_LIVE_TICKET_KEY` 只存在 Ingest/Live Worker secret 中，ticket 不包含 ARS、MWK 或 durable directional key。Agent ticket 默认 15 分钟有效，通过正常 report response滚动刷新。
+3. Web 在服务端完成 RBAC/公开投影后，使用另一个 `VIEWER_LIVE_TICKET_KEY` 签发 viewer ticket，最长 5 分钟，显式列出 resource PK/topic、projection profile 和 expiry。Web 不持有 Agent ticket key。
+4. Live frame 使用 live session key 的 AES-256-GCM，AAD 包含 session ID、sequence、agent PK 和 observed time，明文最大 16 KiB。
+5. Hub 在当前 isolate 内维护 highest sequence，并严格拒绝超过 20 秒 freshness window 的帧。Hibernation 后 sequence memory 可丢失，但旧帧会因 session/freshness 失效；Live 帧不能触发持久、告警或命令副作用。
+6. Hub 只能下发 `LIVE_DEMAND_ON/OFF` 和协议级错误，不传送管理命令、更新指令或 config secret。
+7. Viewer 只收到 ticket projection 允许的字段；公开 viewer 不得获得 IP、Agent ID、容器内部 ID 或详细错误。
+
+WebSocket 连接仍使用 TLS 1.3 `X25519MLKEM768`。Live channel 失败不改变 Agent 的采集、SQLite spool、durable report 或退避状态。
 
 ## 9. Command 安全
 
