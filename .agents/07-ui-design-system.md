@@ -265,6 +265,8 @@ Machines 48 | Online 44 | Problems 3 | Offline 1 | Down 238 Mbps | Up 71 Mbps | 
 - Empty：说明缺少什么，并提供唯一下一步操作。
 - Error：上下文内错误、重试按钮和 correlation ID。
 - Stale：显示最近成功更新时间，不把 stale 数据当 live。
+- Live：页面可见时正常每 10 秒更新；超过 20 秒无 live frame 显示克制的“实时连接已中断”状态并回退持久数据。
+- Live 中断不等于 machine offline。机器在线状态只由 durable report/offline threshold 判定。
 - Permission denied：不泄露资源是否存在。
 
 Toast 只用于短暂结果。表单错误留在字段附近，后台处理状态留在对应资源行。
@@ -304,6 +306,6 @@ Toast 只用于短暂结果。表单错误留在字段附近，后台处理状�
 - 768x1024 tablet。
 - 390x844 mobile。
 - Light/Dark。
-- 默认、loading、empty、error、stale、permission denied。
+- 默认、loading、empty、error、live healthy/degraded、stale、permission denied。
 
 使用 Playwright screenshot 进行回归。检查文本溢出、状态重叠、动态数字引起的 layout shift、键盘导航和图表展开后的尺寸稳定性。

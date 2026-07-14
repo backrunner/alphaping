@@ -153,7 +153,7 @@ src/
 ├── envelope/
 ├── replay/
 ├── config/
-├── queue/
+├── telemetry/
 ├── limits/
 └── error.rs
 ```
@@ -164,32 +164,45 @@ src/
 - token/agent/key lookup。
 - AEAD decrypt 和 replay/time validation。
 - protobuf decode 与字段上限验证。
-- queue publish。
+- 使用稳定 report ID/hash 幂等 UPSERT `TELEMETRY_DB` 5 分钟 block 的 nominal minute slot。
+- 在同一 D1 batch/transaction 中更新 replay cursor、latest、已闭合 rollup 和状态事件。
 - 在 report response 中返回 revision、commands 和 key rotation。
 
-禁止执行 rollup、状态页查询和复杂历史写入。
+关键遥测必须在响应前完成 D1 持久化，禁止用 `waitUntil()` 延后写入。Ingest 不提供 dashboard/历史查询，也不执行大范围历史重算。
 
-## 7. `workers/telemetry`
+## 7. 遥测存储模块
 
-- 消费 Telemetry Queue 和 Check Result Queue。
-- 使用 `report_id`、`agent_id`、`key_epoch`、`sequence` 形成幂等键。
-- 对 batch 内 sample 计算 latest 和 5 分钟聚合。
-- 状态机生成 machine/service transition events。
-- 将多个 queue message 合并为单个 R2 immutable block，目标 object 256 KiB 到 4 MiB。
-- 写入 R2 成功后才提交 complete manifest。
-- 单批失败隔离到 message，避免一个坏 payload 阻塞整个 batch。
+- 代码位于 `workers/ingest/src/telemetry` 与 `packages/db` 的 telemetry repository，V1 不部署独立 Telemetry Worker。
+- `telemetry_blocks_5m` 每行提供 5 个固定分钟 slot；每个 60 秒 report 写一个 slot，完整保存 6 个 10 秒 sample。
+- latest 和 5m/1h rollup 服务常用查询；raw API 解码 block slots 还原所有 10 秒点。
+- 采用按 resource/time 排序的 `WITHOUT ROWID` 复合主键，不为高频 raw/latest 列添加二级索引。
+- 正常路径在 block 闭合时生成一条 5m rollup；迟到补报只重算受影响的 bucket。
+- 容器目录只在发现变化时写关系行；容器当前快照存在 machine latest payload，避免每容器每分钟写行。
 
-## 8. `workers/check-scheduler`
+## 8. `workers/live`
+
+- TypeScript Worker + SQLite-class Durable Object，使用 Hibernation WebSocket API。SQLite class 只是 DO 创建要求，不把 live snapshot 写入 storage。
+- 入口 Worker 在进入 DO 前验证 Upgrade、ticket envelope、body/query 上限和基本路由。
+- Agent ticket 由 Rust Ingest 签发，包含独立 live session key、agent/workspace PK、expiry 和 protocol version；不包含 ARS。
+- Viewer ticket 由 Web 按 RBAC/公开投影签发，最长 5 分钟，包含允许的 resource PK/topic 和 projection profile。
+- Socket attachment 仅保存身份、角色、ticket expiry 和必要 session metadata，严格低于 16,384 bytes。
+- 不使用 `setInterval`/周期 alarm，不阻止 hibernation。Protocol ping/pong 由 runtime 自动处理。
+- 第一个 viewer 进入时发 `LIVE_DEMAND_ON`，最后一个 viewer 离开时发 `LIVE_DEMAND_OFF`；demand 自带 TTL，Agent 不依赖 close event 才停止。
+- Live frame 最多 16 KiB，使用 live-specific AES-256-GCM 和 20 秒 freshness window，只广播不写 D1/DO storage。
+- 当前快照可在内存丢失；viewer 连接后最多等一个 10 秒帧，期间使用 D1 latest。这是对“persist first”的明确非权威例外。
+- DO 按 workspace 命名；超过 500 connections 后才按 stable shard 拆分，不使用全局单例。
+
+## 9. `workers/checks`
 
 - Cron 每分钟执行。
-- 查询 `next_run_at <= now` 且 lease 可用的任务。
-- 使用原子条件 update 领取 lease，生成 deterministic execution ID。
+- 30 台规模直接读取 enabled task，按 interval/phase 计算当前 nominal slot；读取额度远大于写入额度。
+- 使用 `UPDATE ... WHERE last_claimed_slot < ?` 原子领取 due task 并生成 deterministic execution ID。
+- 不维护高频变化的 `next_run_at` 索引；超过 500 个 central check 后才评估稳定 schedule bucket/shard。
 - Agent 任务写入 assignment/config revision。
-- Cloudflare 任务写入 Check Queue。
-- 根据固定周期计算下一次 nominal run，避免执行延迟累积漂移。
-- 限制每次扫描和 dispatch 数量，通过游标继续。
-
-## 9. `workers/check-executor`
+- Cloudflare HTTP/TCP 任务在同一 Cron invocation 内以最多 5 并发有界执行，30 台目标规模不使用 Queue。
+- 结果以 D1 batch 写入 `check_result_blocks_5m` slot、`check_latest`、已闭合 rollup 和状态事件。
+- 以固定 epoch、interval 和 phase 计算 nominal slot，避免执行延迟累积漂移。
+- 限制每次扫描和执行数量，通过游标继续。
 
 ### 9.1 HTTP executor
 
@@ -211,7 +224,7 @@ src/
 
 - `policy-loader`
 - `d1-pruner`
-- `r2-manifest-pruner`
+- `artifact-pruner`
 - `soft-delete-finalizer`
 - `compactor`
 - `run-recorder`
@@ -251,10 +264,12 @@ src/
 
 ### 11.2 本地 spool
 
-- 使用 append-only segments 或轻量 SQLite，设置总字节上限和最旧数据淘汰。
+- 固定使用 SQLite WAL，每个 sample/check event 先 commit 后才视为已采集。
 - 每条 batch 有 report ID 和 sequence。
-- 只有服务端确认后删除。
-- 队列满时优先保留状态转换、check failure 和较新的聚合，丢弃最旧高频 sample。
+- 只有服务端返回经认证的 D1 durable ACK 后删除。
+- 临时失败无限重试，equal-jitter 指数退避从 1 秒起且永不超过 300 秒。
+- 默认 512 MiB 上限，并保留 256 MiB 或磁盘 5% 空闲；按 70/85/95% 阈值聚合未尝试的低优先级数据。
+- 已尝试 delivery 不因 attempt count 或普通保留期删除，硬容量不足时必须记录 DataGap。
 
 ### 11.3 Container adapters
 

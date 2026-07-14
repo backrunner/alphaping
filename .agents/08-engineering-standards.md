@@ -75,10 +75,12 @@ pnpm verify
 - 优先 bindings/service bindings，不从 Worker 内调用 Cloudflare REST API 操作绑定资源。
 - 大 body/response 使用 streaming 或明确上限，不无界 `text()`/`arrayBuffer()`。
 - 不在 module global 保存请求、租户或 mutable cache state。
-- `ctx.waitUntil()` 只用于可丢失或有其他持久保证的 post-response work；关键遥测必须先进入 Queue。
+- `ctx.waitUntil()` 只用于可丢失或有其他持久保证的 post-response work；关键遥测必须在响应前完成 TELEMETRY_DB durable write。
 - 后台 Worker `workers_dev=false`、`preview_urls=false`。
 - 启用结构化 observability 和合适 sampling，生产不使用 100% verbose logs 作为长期默认。
-- Cron/Queue 处理幂等，支持 claim/lease、bounded batch 和 deadline。
+- Cron 处理幂等，支持 deterministic slot/claim、bounded batch 和 deadline。
+- Durable Object 必须使用 Hibernation WebSocket API，不用 `setInterval` 阻止休眠，不用全局单例承载所有 workspace。
+- Live snapshot 明确为非权威数据：不写 DO storage、不 ACK Agent spool、不触发告警或命令副作用。
 
 ## 7. Wrangler 与 secret
 
@@ -117,7 +119,7 @@ pnpm verify
 ### Integration
 
 - Better Auth + D1。
-- Worker bindings、Queue、Cron、R2 manifest。
+- Worker D1/DO/R2 bindings、Cron、Hibernation WebSocket 和 live fallback。
 - Agent fake server、spool、config revision、updater。
 
 ### Contract

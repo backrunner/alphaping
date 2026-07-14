@@ -2,12 +2,17 @@
 
 ## 1. 设计原则
 
-- D1 保存关系、权限、最新态、状态事件和压缩汇总，不保存无限增长的原始 sample 行。
-- R2 保存按时间和租户分区的不可变原始块。
+- `CONTROL_DB` 保存 Better Auth、RBAC、workspace、资源配置、Agent key metadata、incident 和公告。
+- `TELEMETRY_DB` 保存 replay state、完整 raw report/check batch、latest、5 分钟 rollup、状态桶/事件和 retention cursor。
+- 每个 60 秒 report 保存在 5 分钟 block row 的一个固定分钟槽中，内含全部 6 个 10 秒 sample；禁止默认拆成每 sample/磁盘/网卡/容器一行。
+- R2 只保存用户显式生成的 export/backup artifact，不保存 dashboard 在线遥测。
 - 所有表包含 `workspace_id` 或能通过不可变外键唯一归属 workspace。
-- 外部 ID 使用 UUIDv7/ULID 字符串，热点表可以保留内部 integer rowid。
+- 外部 ID 使用 UUIDv7/ULID；遥测热表使用内部 integer resource PK 和定长 binary report ID。
+- 热表优先使用按 resource/time 排序的 `WITHOUT ROWID` 复合主键，只为已定义的查询添加二级索引。
 - 时间以 Unix milliseconds `INTEGER` 保存，展示层转换时区。
 - secret 和 Agent data key 只保存密文、key ID 和元数据。
+
+两个 D1 数据库不能使用跨库事务。资源和 key 的源数据在 `CONTROL_DB`，遥测表使用对应 integer PK 的不可变副本；删除使用 soft-delete 与 retention 最终收敛。
 
 ## 2. 身份与初始化
 
@@ -139,6 +144,8 @@ Better Auth 核心表由其 schema 生成并纳入统一 migration：
 
 只由 ingest 写入。
 
+该表属于 `TELEMETRY_DB`；其余本节配置和 key 表属于 `CONTROL_DB`。
+
 ### `agent_commands`
 
 - `id`, `workspace_id`, `agent_id`
@@ -151,6 +158,26 @@ Better Auth 核心表由其 schema 生成并纳入统一 migration：
 命令类型只允许配置刷新、立即检查更新、更新到允许版本、重新探测 runtime 等固定动作。
 
 ## 5. 最新机器状态
+
+### `telemetry_blocks_5m`
+
+每台机器每 5 分钟最多一行：
+
+- `machine_pk`, `workspace_pk`, `block_start`
+- `report_0` ... `report_4` 可空 BLOB，分别对应 block 内第 0-4 分钟
+- `received_0` ... `received_4` 服务端接收时间，可放入 slot envelope 以减少列数
+- `schema_version`, `flags`
+
+每个 report slot 内含定长 report ID、payload hash、observed range、sample count、常用 minute summary 和压缩 protobuf payload。Payload 包含完整 machine/disk/NIC/container/Agent-check samples。
+
+主键：`PRIMARY KEY (machine_pk, block_start) WITHOUT ROWID`。
+
+- Ingest 根据 nominal minute 选择五个固定 UPSERT statement 之一，只修改对应 slot。
+- 重试必须保持 machine、block/slot、report ID 和 payload 不变；同一 slot 已有不同 report ID/hash 时拒绝覆盖并记录 protocol conflict。
+- 紧急状态转换可以提前发送，但写独立幂等 `state_events`；每台机器每 nominal minute 只有一个 raw slot。
+- 单 report hard limit 64 KiB，整个 block 理论上限 320 KiB，低于 D1 2 MB row limit。
+- 不建立全局 timestamp 索引。Retention Worker 按 machine/time 主键每五个 report 删一行，降低 D1 rows written。
+- raw API 按 resource/time 分页读取 block 并解码各 slot，所有原始点仍可查询。
 
 ### `machine_latest`
 
@@ -167,20 +194,9 @@ Better Auth 核心表由其 schema 生成并纳入统一 migration：
 - `network_rx_total_bytes`, `network_tx_total_bytes`
 - `uptime_seconds`
 - `agent_version`, `config_revision`
-- `summary_blob`，只放非查询热点扩展字段
+- `summary_blob`，只放非查询热点扩展字段和当前容器快照
 
-主键 `machine_id`。在线/故障总数由 workspace summary 表维护，避免频繁扫描和索引 `observed_at`。
-
-### `workspace_status_summary`
-
-- `workspace_id`
-- machine total/online/degraded/fault/offline counts
-- service healthy/degraded/down counts
-- current rx/tx bps
-- active incident count
-- `updated_at`
-
-由 telemetry processor 增量维护并定期重算校正。
+主键 `machine_id`。Dashboard 先从 `CONTROL_DB` 取得已授权 machine PK，再以主键 `IN (...)` 查询 latest 并计算总览。30 台规模不写 `workspace_status_summary`；对 500 台目标也只需分块读取 500 行，在实测证明有瓶颈前不增加高频汇总写入。
 
 ## 6. 机器历史汇总
 
@@ -197,14 +213,13 @@ Better Auth 核心表由其 schema 生成并纳入统一 migration：
 - network rx/tx delta bytes
 - `extra_blob` 用于非热点扩展指标
 
-唯一键：`machine_id,bucket_start`。
+主键：`PRIMARY KEY (machine_pk, bucket_start) WITHOUT ROWID`。
 
-索引：
+5 分钟 row 用于默认历史图表。最近原始图表从 `telemetry_blocks_5m` 读取并还原 10 秒 sample。不添加全局时间索引，retention 按 machine/time 主键执行。
 
-- `workspace_id,bucket_start`
-- 主键/唯一键用于单机时间范围查询
+### `machine_rollup_1h`
 
-5 分钟 row 代替每 10-30 秒 sample row。最近原始图表需要更细粒度时从 R2 raw block 读取。
+一台机器每小时一行，指标与 5 分钟 rollup 对应，主键为 `PRIMARY KEY (machine_pk, bucket_start) WITHOUT ROWID`。用于 90 天以上图表。
 
 ## 7. 容器
 
@@ -230,9 +245,13 @@ Better Auth 核心表由其 schema 生成并纳入统一 migration：
 
 不保存环境变量和 secret。
 
+V1 不在每次 report 逐容器 upsert 该表；当前容器快照从 `machine_latest.summary_blob` 读取。`container_latest` 仅在后续需要独立权限查询且实测证明值得额外写入时启用。
+
 ### `container_rollup_5m`
 
 结构与 machine rollup 类似，仅保存容器 CPU、内存、网络和 restart delta。
+
+V1 默认不生成每容器长保留 rollup。七天内原始容器数据由 machine block slot payload 查询；后续启用时必须有独立保留期和成本预算。
 
 ## 8. 服务监控
 
@@ -240,7 +259,6 @@ Better Auth 核心表由其 schema 生成并纳入统一 migration：
 
 - `id`, `workspace_id`, `name`, `slug`, `description`
 - `aggregation_policy`
-- `status`, `status_since`
 - `maintenance_until`
 - `created_at`, `updated_at`, `deleted_at`
 
@@ -252,12 +270,12 @@ Better Auth 核心表由其 schema 生成并纳入统一 migration：
 - `executor_agent_id` nullable
 - `interval_seconds`, `timeout_ms`
 - `failure_confirmations`, `recovery_confirmations`
-- `next_run_at`, `enabled`
+- `schedule_phase_seconds`, `last_claimed_slot`, `enabled`
 - `config_json`
 - `secret_refs_json`
 - `created_at`, `updated_at`
 
-索引：`enabled,next_run_at`，`workspace_id,service_id`。
+对 30 台目标规模不建 `enabled/next_run_at` 索引。Checks Worker 读取 enabled rows 并在应用层计算 nominal slot，用 `last_claimed_slot` 条件 update 幂等领取。`workspace_id,service_id` 索引仅服务配置页查询，高频 claim 不修改其列。
 
 ### `check_assertions`
 
@@ -270,15 +288,7 @@ Better Auth 核心表由其 schema 生成并纳入统一 migration：
 
 结构化行便于编辑和审计，执行时可缓存为 compiled config。
 
-### `check_execution_leases`
-
-- `check_id`
-- `execution_id`
-- `scheduled_for`
-- `lease_until`
-- `claimed_by`
-
-用于 Cron 至少一次和并发 scheduler 的幂等。
+不单独创建每次执行的 lease row。`last_claimed_slot` 和确定性 `execution_id = hash(check_id, nominal_slot)` 共同处理 Cron 至少一次语义。
 
 ### `check_latest`
 
@@ -288,12 +298,34 @@ Better Auth 核心表由其 schema 生成并纳入统一 migration：
 - `failure_code`, `failure_summary`
 - `consecutive_failures`, `consecutive_successes`
 
+### `check_result_blocks_5m`
+
+- `check_pk`, `workspace_pk`, `service_pk`
+- `block_start`
+- `result_0` ... `result_4` 可空 BLOB，每个 slot 保存 execution ID、observed/received time、status、latency、failure code、assertion summary 和有界 payload
+
+主键：`PRIMARY KEY (check_pk, block_start) WITHOUT ROWID`。Cloudflare 与 Agent 执行器都写入同一 contract。相同 nominal slot 的重试用确定性 execution ID 覆盖同一 slot。
+
 ### `check_rollup_5m`
 
 - `check_id`, `workspace_id`, `service_id`, `bucket_start`
 - success/degraded/down/unknown counts
 - latency avg/max/p95
 - `last_failure_code`
+
+主键：`PRIMARY KEY (check_pk, bucket_start) WITHOUT ROWID`。
+
+### `check_rollup_1h`
+
+字段与 5 分钟 rollup 对应，主键为 `PRIMARY KEY (check_pk, bucket_start) WITHOUT ROWID`，用于 90 天以上状态页和图表。
+
+### `service_latest`
+
+- `service_pk`, `workspace_pk`
+- `status`, `status_since`, `reason_code`
+- `last_transition_at`, `updated_at`
+
+属于 `TELEMETRY_DB`，只在服务聚合状态转换时写入，不因每次成功检查重写。
 
 ### `status_buckets`
 
@@ -317,7 +349,7 @@ Better Auth 核心表由其 schema 生成并纳入统一 migration：
 - `observed_at`, `created_at`
 - `source_execution_id` 或 `source_report_id`
 
-不可变。唯一幂等键防止重复 queue 生成重复转换。
+不可变。唯一幂等键防止 report/Cron 重试生成重复转换。
 
 ### `incidents`
 
@@ -352,17 +384,20 @@ Better Auth 核心表由其 schema 生成并纳入统一 migration：
 - `workspace_id`
 - `raw_telemetry_days`
 - `rollup_5m_days`
+- `rollup_1h_days`
 - `state_event_days`
 - `audit_log_days`
 - `expired_announcement_grace_days`
 - `soft_delete_grace_days`
 - `updated_at`
 
+系统默认为 raw telemetry/check result 7 天、5 分钟 rollup 30 天、1 小时 rollup 365 天、state event 365 天。管理员可调整，界面必须先显示预测存储和写入费用。
+
 ### `retention_runs`
 
 - `id`, `workspace_id`, `kind`
 - `cursor_json`, `lease_until`
-- `deleted_rows`, `deleted_objects`, `deleted_bytes`
+- `deleted_rows`, `deleted_artifacts`, `deleted_bytes`
 - `state`, `started_at`, `finished_at`, `error_code`
 
 ### `audit_logs`
@@ -374,32 +409,14 @@ Better Auth 核心表由其 schema 生成并纳入统一 migration：
 
 禁止把 secret 或完整敏感 payload 放入审计日志。
 
-## 11. R2 对象布局
+## 11. 查询、导出与备份
 
-```text
-telemetry/v1/workspace=<wid>/machine=<mid>/date=YYYY-MM-DD/hour=HH/<ulid>.pb.zst
-checks/v1/workspace=<wid>/service=<sid>/date=YYYY-MM-DD/hour=HH/<ulid>.pb.zst
-exports/v1/workspace=<wid>/<export-id>/...
-public-snapshots/v1/dashboard=<did>/<revision>.json.br
-```
-
-原始 object 内容：
-
-- header：schema version、workspace、resource、min/max observed time、report count。
-- records：长度分隔 protobuf batch。
-- 压缩：zstd level 1 或经基准测试后的等价低 CPU 配置。
-- object 目标 256 KiB 到 4 MiB，低流量租户允许按时间上限提前 flush。
-
-### `telemetry_manifests`
-
-- `id`, `workspace_id`, `resource_type`, `resource_id`
-- `object_key`
-- `min_observed_at`, `max_observed_at`
-- `record_count`, `size_bytes`, `sha256`
-- `state`: `pending|complete|delete_pending|deleted`
-- `created_at`, `deleted_at`
-
-历史查询和清理只查 manifest，不使用 R2 list 发现业务对象。
+- latest API 按已授权 resource PK 查 `machine_latest`/`check_latest`/`service_latest`，在服务端计算 workspace 总览。
+- 默认图表按 resource/time 查 `*_rollup_5m`，不扫 raw batch。
+- raw API 强制单个 resource、有界 time range、cursor 和 point 上限，服务端解码 protobuf 后返回结构化点。
+- 大型导出通过后台 job 分页读取 D1，完成后才将导出 artifact 写入 `EXPORT_BUCKET`。
+- R2 key 仅使用 `exports/v1/workspace=<wid>/<export-id>/...` 和 `backups/v1/<database>/<backup-id>/...`，不存在 telemetry/check object prefix 或 manifest table。
+- D1 Time Travel 用于 Paid 计划 30 天运营恢复；开源部署的长期备份是显式管理任务，不在上报热路径中执行。
 
 ## 12. Secret 引用
 
@@ -422,7 +439,7 @@ HTTP 检查的敏感 header/body 字段：
 
 - 每个 workspace list 查询必须有 `workspace_id` 前缀索引。
 - 高频写表避免对每个变化字段建索引。
-- 状态计数使用 summary 表，不在每次 dashboard 请求中全表聚合。
+- Dashboard 状态计数只聚合 authz 返回的已授权 latest PK，不扫描全租户历史表。
 - `SELECT *` 只允许 migration/调试，不进入 production repository。
 - 历史查询必须同时带 resource ID 和 bounded time range。
 - 在测试中读取 D1 query metadata，设置 rows-read 预算回归阈值。

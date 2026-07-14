@@ -26,7 +26,7 @@ Read relevant architecture/data/UI documents for the changed files.
 5. Scan tracked/untracked content and history range for secrets, Cloudflare IDs, production domains, customer data, signing material, and sensitive screenshots.
 6. Verify public projections and fixtures do not leak IPs, headers, payloads, Agent IDs, container secrets, or internal diagnostics.
 7. Review dependency licenses, notices, SBOM, vendored assets, fonts, icons, and Apache-2.0 metadata.
-8. Re-run 100/1000/10000 Agent cost models for hot-path changes and compare with the baseline.
+8. Re-run 30/100/200/1000 machine plus check cost models for Workers, D1, Live DO, and artifacts, then compare with the baseline.
 9. Verify rollout, backup, migration ordering, deploy dry-run, compatibility matrix, smoke tests, and rollback.
 10. Report failures first with commands/files and leave the repository in a non-destructive state.
 
@@ -80,6 +80,7 @@ Also run deterministic protobuf generation/breaking checks, D1 migration validat
 - Parse every Wrangler template and reject placeholders for real deploy.
 - Confirm background Workers are private and secrets are not vars.
 - Confirm binding/table ownership, idempotency, batch bounds, timeouts, logs, and observability.
+- Confirm Live Hub uses Hibernation WebSockets, workspace/shard routing, bounded attachments, short-lived tickets, no snapshot storage, and D1 fallback.
 - Run per-worker dry-run and verify intended production names.
 - Back up D1 before destructive/contract migrations and record restore steps.
 

@@ -63,7 +63,8 @@
 - 实现 Rust Agent 最小守护进程和跨平台身份存储。
 - 实现 Rust ingest Worker 的 enrollment、report、config response 和 replay protection。
 - TLS 1.3 PQ hybrid 配置、应用层 AES-256-GCM、key epoch 和轮换。
-- Agent 本地有界缓冲、退避、抖动和健康日志。
+- Agent 本地 SQLite WAL outbox、无限重试、300 秒退避上限、磁盘压力压缩和健康日志。
+- D1 `telemetry_blocks_5m`、`check_result_blocks_5m`、latest、5m/1h rollup 和 retention tables。
 - Linux systemd、macOS launchd 和 Windows Service 安装器骨架。
 
 ### 退出条件
@@ -71,14 +72,17 @@
 - Agent 在 Linux/macOS/Windows CI 或对应测试环境完成注册和加密上报。
 - 抓包只看到加密 payload，协议 fuzz test 不触发 panic 或无界分配。
 - 重复 sequence、错误 AAD、旧 key epoch、撤销 Agent 和超大 payload 均被拒绝。
-- 断网后恢复可补报，磁盘缓冲达到上限后按策略丢弃并上报丢失计数。
+- 断网 24 小时以上仍持续收集并补报，任意两次网络重试间隔不超过 300 秒。
+- 服务端只在 D1 batch/latest transaction 完成后确认；ack 丢失后的重复 report 不产生重复数据。
+- SQLite 缓冲达到阈值时按 10 秒到 1 分钟再到 5 分钟顺序压缩，并准确上报丢失/聚合计数。
 
 ## 6. M3 机器监控闭环
 
 ### 范围
 
 - Agent 采集 CPU、内存、磁盘、网络、运行时间和系统信息。
-- Queue consumer 写入最新态、事件、5 分钟 rollup 和 R2 原始块。
+- Ingest 使用 D1 transaction 写入可查询 5 分钟 raw block、最新态和关闭的 5 分钟/1 小时 rollup。
+- Live Worker 使用 Durable Object Hibernation WebSocket，有 viewer 时向机器 Dashboard 提供 10 秒 snapshot。
 - Dashboard 总览、机器 compact grid、筛选和排序。
 - 机器详情概览、折叠历史图表、事件和配置 revision。
 - 离线、降级、故障、维护和恢复状态机。
@@ -86,8 +90,8 @@
 
 ### 退出条件
 
-- 100、500、1000 Agent 的合成负载模型完成并记录成本估算。
-- 最新状态延迟满足一个上报周期加 15 秒目标。
+- 30/100/200/1000 Agent 及对应 check 的合成负载模型完成并记录 Workers/D1/DO 成本。
+- 页面可见且 live 健康时，最新状态延迟不高于 12 秒；Live 断开时正确回退 D1 而不误报 offline。
 - 图表折叠时不请求历史数据。
 - 清理 Worker 可从中断游标恢复并幂等重复执行。
 
@@ -97,7 +101,7 @@
 
 - Service、check、assertion、schedule 和 result 模型。
 - Cloudflare HTTP/TCP executor 和 Agent ICMP/HTTP/TCP executor。
-- Due-task scheduler、lease、Queue 和重复执行幂等键。
+- Due-task scheduler、`last_claimed_slot`、确定性 execution ID 和重复执行幂等。
 - HTTP header/body/JSONPath 断言和安全限制。
 - 服务状态聚合、确认窗口、维护窗口和事件。
 - 公开/私有状态页、胶囊时间线、incident 和定时公告。
@@ -133,8 +137,8 @@
 
 - TUF 风格 release metadata、签名发布、自动更新和回滚。
 - 面板下发立即检查/强制更新命令。
-- 完整保留策略、软删除、R2 manifest 清理和备份恢复演练。
-- Worker 请求、Queue operations、D1 rows、R2 operations 的预算告警。
+- 完整保留策略、软删除、D1 block/rollup 清理和备份恢复演练。
+- Worker 请求/CPU、D1 rows/storage、DO request/duration 和 export R2 的预算告警。
 - 安装脚本矩阵、release artifacts、SBOM、checksums 和签名。
 - 文档站、示例配置、升级指南和安全披露流程。
 
@@ -165,7 +169,7 @@
 - `feat(agent): encrypt protobuf report batches`
 - `feat(dashboard): add compact machine grid`
 - `fix(rbac): enforce container visibility override`
-- `perf(storage): batch telemetry objects by time bucket`
+- `perf(storage): pack telemetry into five-minute blocks`
 - `chore(release): publish signed agent artifacts`
 
 禁止把整个阶段压成单个超大提交。数据库 migration、协议变更和生成代码必须和对应实现处于同一提交或紧邻提交。

@@ -30,9 +30,9 @@ Read conditionally:
 1. Inspect the current repository and working tree. Preserve unrelated user changes.
 2. State the user outcome and the smallest behavior surface that satisfies it.
 3. Identify affected deployables, owned tables, contracts, public projections, permissions, secrets, and Cloudflare resources.
-4. Check whether the change crosses a documented service/table ownership boundary. Use a contract, queue, service binding, or shared domain command instead of copied SQL.
+4. Check whether the change crosses a documented service/table ownership boundary. Use a contract, service binding, or shared domain command instead of copied SQL.
 5. Identify migration and compatibility requirements for D1, protobuf, Agent versions, public APIs, and rolling deploys.
-6. Quantify request, Queue, D1 row, R2 operation/storage, and Agent resource effects when the change touches a hot path.
+6. Quantify Workers request/CPU, D1 row/storage, DO request/duration, R2 artifact, and Agent resource effects when the change touches a hot path.
 7. Define authorization behavior for admin, member `view`/`manage`, and guest. Include deny precedence and inherited container permissions where relevant.
 8. Define loading, empty, error, stale, permission-denied, accessibility, and responsive states for UI changes.
 9. List focused tests, observability, rollout, rollback, and documentation updates.
@@ -41,8 +41,9 @@ Read conditionally:
 ## Guardrails
 
 - Keep SvelteKit deployable only to Cloudflare Workers.
-- Keep Rust ingest responsible for Agent authentication/decryption and Queue handoff, not dashboard/history work.
-- Keep raw telemetry out of per-sample D1 rows and per-report R2 objects.
+- Keep Rust ingest responsible for durable Agent authentication/decryption and transactional TELEMETRY_DB writes, not dashboard/history reads.
+- Keep raw telemetry in five-minute D1 block slots, not per-sample D1 rows or R2 objects.
+- Keep 10-second Live Hub frames non-authoritative: no D1/DO storage, no spool ACK, no alert or command side effects.
 - Keep Cloudflare ICMP out of the design; assign ICMP to an Agent executor.
 - Keep guest responses on explicit public projections and hide sensitive fields by default.
 - Keep commands allowlisted; never add arbitrary shell execution or arbitrary update URLs.

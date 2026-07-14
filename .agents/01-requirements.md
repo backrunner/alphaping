@@ -253,9 +253,19 @@ V1 目标：
 ### 11.2 运行要求
 
 - 空闲内存目标小于 30 MiB，稳定态 CPU 平均目标小于单核 0.5%。
-- 默认 10 秒采样，30 秒或 60 秒批量上报，可由后台调整。
-- 网络不可用时在本地建立有界环形缓冲，恢复后分批补报，不能无限占用磁盘。
+- 默认 10 秒采样、60 秒 durable report，可由后台在允许范围内调整。
+- 机器 dashboard 有可见 viewer 时，Agent 通过 live channel 每 10 秒发当前 snapshot；正常情况下界面数据年龄不高于一个采样周期加 2 秒网络/渲染余量。
+- Live snapshot 是非持久加速层，不代替 durable report、本地 spool 或权威告警。Live 中断时 UI 标记降级并回退 D1 latest，不得误判机器离线。
+- 本地缓冲固定使用 SQLite WAL，不使用仅存在内存的环形队列，也不实现自定义 append-only 文件格式。
+- 每个 sample/check event 先持久化到 SQLite，只有收到服务端加密且通过认证的 durable acknowledgement 后才删除对应 delivery。
+- DNS、连接、TLS、timeout、HTTP 408/429/5xx 等临时失败的重试次数不设上限，不因 attempt count 或离线时长删除 delivery。
+- 退避使用 equal-jitter exponential backoff：从 1 秒开始，单次等待绝对上限 300 秒。服务长时间不可达时仍至少每 5 分钟尝试一次。
+- 网络恢复事件可以触发 0-5 秒随机延迟后的立即尝试，任何成功都会重置退避。
+- SQLite 默认上限 512 MiB，并保留至少 256 MiB 或磁盘 5% 的空闲空间。容量压力下先聚合未投递的低优先级原始样本，再在物理空间不足时按明确策略淘汰并上报数据缺口。
+- 无限重试不等于无限磁盘。已经进入 delivery 且可能被服务端接收的 batch 不允许因重试次数被改写或删除。
 - 进程崩溃由系统服务管理器自动重启，并使用退避防止重启风暴。
+
+详细状态机、SQLite schema 和磁盘压力策略以 `11-telemetry-storage-and-retry.md` 为准。
 
 ### 11.3 自动更新
 
@@ -281,8 +291,10 @@ V1 目标：
 - 系统设置允许配置原始遥测、5 分钟汇总、事件、审计日志和已过期公告的保留期。
 - 删除 workspace、机器或服务时先进入可恢复删除窗口，再由 retention Worker 物理清理。
 - retention Worker 必须幂等、分批、可续跑，并记录游标、删除量和错误。
-- R2 原始块使用 tenant/resource/time 前缀和 manifest 索引，避免全 bucket 扫描。
-- 备份与恢复必须覆盖 D1 配置数据、密钥包裹记录和必要的 R2 manifest。
+- 原始遥测、汇总和状态事件必须写入 D1，并通过 resource/time/resolution 查询 API 访问。
+- 每个 60 秒 report 使用 `telemetry_blocks_5m` 的一个固定分钟 slot 保存全部 10 秒 samples；raw 查询从 block slots 还原每个 sample。
+- R2 只保存显式导出或备份 artifact，不参与 dashboard 和历史图表的在线查询。
+- 备份与恢复必须覆盖 D1 配置、权限、密钥包裹记录和 telemetry tables。
 
 ## 14. 非功能需求
 
@@ -310,7 +322,7 @@ V1 目标：
 
 - Worker 使用结构化日志和 request/correlation ID。
 - 不记录 token、密钥、完整请求头、完整 payload 或用户 secret。
-- 记录队列延迟、处理失败、D1 写入量、R2 对象数、Agent 版本分布和更新失败率。
+- 记录 D1 持久延迟/写入量、Live Hub 连接/消息/hibernate 成本、Agent spool backlog、版本分布和更新失败率。
 
 ## 15. V1 验收标准
 
@@ -322,7 +334,7 @@ V1 目标：
 6. 公开状态页可以展示状态胶囊、incident 时间轴和自动过期公告。
 7. 管理员、普通用户和游客的资源权限通过服务端集成测试。
 8. 上报包在抓包时不可读取业务 payload，重放、过期 token 和撤销密钥会被拒绝。
-9. retention Worker 能按设置清理 D1/R2 测试数据，重复执行不产生错误结果。
+9. retention Worker 能按设置清理 D1 测试数据和过期 export/backup artifacts，重复执行不产生错误结果。
 10. Agent 可以完成签名更新、失败回滚和面板强制检查。
 
 ## 16. V1 非目标

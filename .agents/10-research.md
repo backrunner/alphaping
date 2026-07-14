@@ -18,10 +18,10 @@
 - Paid 最低 5 USD/月。
 - 10 million requests 和 30 million CPU ms included。
 - 超出 request 0.30 USD/million，CPU 0.02 USD/million ms。
-- WebSocket 只对初始 Upgrade 计 request，消息不计 request。
+- Workers 层 WebSocket 只对初始 Upgrade 计 request；消息不计 Workers request。Durable Object 有单独的 20:1 入站消息折算规则，见下文。
 - 静态资源请求免费。
 
-影响：V1 使用低频 HTTP batch 足够经济，不因 request 单价提前引入 WebSocket 状态复杂度。
+影响：权威持久仍使用 60 秒 HTTP batch。10 秒 UI 实时性使用按需 Hibernation WebSocket，避免每 10 秒产生一个 Worker HTTP request 和 D1 write。
 
 ### Workers limits
 
@@ -34,7 +34,7 @@
 - Cron/Queue invocation 最大 wall time 15 分钟。
 - 每 invocation 同时等待的出站连接限制为 6。
 
-影响：检查 executor 必须限制并发，Retention/Queue consumer 必须有 deadline 和 cursor。
+影响：检查 executor 必须限制并发，Retention Worker 必须有 deadline 和 cursor。
 
 ### D1 pricing
 
@@ -46,7 +46,7 @@
 - index 写入会增加 rows written。
 - 按行而非行大小计数。
 
-影响：不逐 sample 写 D1；使用 latest、summary 和 5 分钟 rollup。
+影响：不逐 sample 写 D1；每 5 分钟 block 提供固定 report/result slots，另使用 latest、5 分钟和 1 小时 rollup。热表不建无必要二级索引。
 
 ### R2 pricing
 
@@ -59,7 +59,7 @@
 - DeleteObject 免费，Internet egress 免费。
 - Infrequent Access 有读取费和 30 天最短存储期。
 
-影响：高频遥测必须批量形成较大 immutable object；短保留 raw 使用 Standard。
+影响：R2 只用于用户显式导出和备份 artifact。在线 raw/history 保持在 D1，避免 object/manifest 查询层。
 
 ### R2 lifecycle
 
@@ -70,7 +70,7 @@
 - lifecycle 可以按 prefix 和 age 删除/转层。
 - rule 上限 1000，应用后删除通常在 24 小时内完成。
 
-影响：可作为粗粒度兜底，不适合作为无限 workspace 自定义保留策略的唯一实现。
+影响：只管理 export/backup artifact，不参与 telemetry retention。
 
 ### Queues pricing
 
@@ -82,7 +82,20 @@
 - 小于 64 KB 的消息正常交付通常是 write/read/delete 三个 operations。
 - 按 message 而非 batch 计费。
 
-影响：Queue 是 1000 Agent 级别主要可变成本；report 要 batch 且保持 64 KB 内。
+影响：30-100 Agent 不使用 Telemetry Queue。Agent SQLite spool 已是 durable source，直写 D1 比每 report 额外支付三个 Queue operations 更便宜。
+
+### Durable Objects pricing
+
+来源：https://developers.cloudflare.com/durable-objects/platform/pricing/
+
+结论：
+
+- Paid 含 1 million DO requests/月，超出 0.15 USD/million。
+- 入站 WebSocket message 在 request 计费上使用 20:1 折算，出站 message 不计 request。
+- Paid 含 400,000 GB-s duration/月，超出 12.50 USD/million GB-s；Hibernation 期间不计 duration。
+- Duration 按每个实例 128 MB 计算，不按实际小内存使用计算。
+
+影响：100 Agent 全月每 10 秒发帧为 25.92m messages，折算 1.296m requests，仅超额 0.0444 USD。一个整月不 hibernate 的 workspace hub 约 331,776 GB-s，在 included 内；因此必须按需发帧，避免多个空闲 workspace 持续活跃。
 
 ### Analytics Engine
 
@@ -110,7 +123,7 @@
 - `event` macro 支持 fetch、scheduled 和 queue。
 - release profile 和 wasm-opt 对 binary size/startup 重要。
 
-影响：ingest 和 telemetry consumer 可以使用 Rust，并共享 prost/crypto crate。
+影响：ingest 使用 Rust 并共享 prost/crypto crate；V1 不部署独立 telemetry consumer。
 
 ### TCP sockets
 
@@ -145,9 +158,11 @@
 结论：
 
 - Hibernation 可在客户端保持连接时让 DO 休眠，休眠期间不累计 duration。
-- 高频小消息仍有上下文切换开销，官方建议 batching。
+- 入站 WebSocket 消息在 DO request 计费上按 20:1 折算；出站消息和协议 ping 不计 request。
+- `serializeAttachment()` 可跨 hibernation 保留连接元数据，上限 16,384 bytes，连接关闭后丢失。
+- 高频小消息仍有上下文切换开销，官方建议 batching或降低不必要帧。
 
-影响：作为未来低延迟通道候选，不是 V1 默认 Agent transport。
+影响：V1 使用按 workspace 路由的 Live Hub DO。Agent 只在 Dashboard 有 viewer 时每 10 秒发非持久 snapshot，仍使用 60 秒 HTTPS durable report。Socket attachment 不保存每帧 snapshot，避免高频 DO storage writes。
 
 ## 3. Post-quantum security
 
@@ -301,9 +316,10 @@ AlphaPing 的调整：
 ## 8. 仍需在实施阶段验证
 
 - rustls 对“只启用 X25519MLKEM768 并 fail closed”的具体配置 API 和平台兼容测试。
-- workers-rs queue/D1/R2 API 在锁定版本下的类型和 batch 行为。
+- workers-rs D1 API 在锁定版本下的 batch/transaction 行为。
+- TypeScript Durable Object Hibernation API、socket tags/attachments 和 Miniflare 本地测试行为。
 - Rust Worker 中 AES-GCM/zstd/prost 的 Wasm bundle size、startup 和 CPU。
 - Apple `container` 当前结构化输出/API 的稳定接口。
 - Colima containerd 多 profile 的最低权限读取方案。
 - shadcn-svelte 与 Bits UI 锁定版本的 Svelte 5 兼容矩阵。
-- Cloudflare 价格、Cron/Queue limits 和 Analytics Engine 实际计费状态。
+- Cloudflare 价格、Cron/DO/WebSocket limits 和 Analytics Engine 实际计费状态。
