@@ -1,5 +1,7 @@
 export * from "./repositories/dashboard.js";
 export * from "./repositories/check-results.js";
+export * from "./repositories/machine-history.js";
+export * from "./repositories/machines.js";
 export * from "./repositories/telemetry-blocks.js";
 export * from "./schema/auth.js";
 export * from "./schema/control.js";
