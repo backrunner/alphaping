@@ -1,8 +1,85 @@
-use alphaping_protocol::v1::{MachineReport, MetricSample};
+use alphaping_protocol::{
+    PROTOCOL_VERSION, encode_message,
+    v1::{EnrollmentRequest, MachineReport, MetricSample},
+};
+use ed25519_dalek::{Signature, VerifyingKey};
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
 use thiserror::Error;
 
 pub const MAX_REPORT_SAMPLES: usize = 6;
 pub const MAX_SAFE_SEQUENCE: u64 = 9_007_199_254_740_991;
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum EnrollmentValidationError {
+    #[error("enrollment fields are invalid")]
+    Fields,
+    #[error("enrollment identity proof is invalid")]
+    Signature,
+}
+
+pub fn enrollment_token_digest(
+    pepper: &[u8; 32],
+    token: &[u8],
+) -> Result<[u8; 32], hmac::digest::InvalidLength> {
+    let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(pepper)?;
+    mac.update(token);
+    Ok(mac.finalize().into_bytes().into())
+}
+
+pub fn validate_enrollment_request(
+    enrollment: &EnrollmentRequest,
+) -> Result<(), EnrollmentValidationError> {
+    let token_is_base64url = enrollment.token.len() == 43
+        && enrollment
+            .token
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric() || *byte == b'-' || *byte == b'_');
+    let machine_claim_is_uuid = enrollment.machine_claim_id.len() == 36
+        && enrollment
+            .machine_claim_id
+            .bytes()
+            .enumerate()
+            .all(|(index, byte)| match index {
+                8 | 13 | 18 | 23 => byte == b'-',
+                _ => byte.is_ascii_hexdigit(),
+            });
+    if enrollment.protocol_version != PROTOCOL_VERSION
+        || enrollment.supported_protocol_versions.len() > 8
+        || !enrollment
+            .supported_protocol_versions
+            .contains(&PROTOCOL_VERSION)
+        || !enrollment.pq_hybrid
+        || !token_is_base64url
+        || !machine_claim_is_uuid
+        || enrollment.identity_public_key.len() != 32
+        || enrollment.request_nonce.len() != 32
+        || enrollment.platform.is_empty()
+        || enrollment.platform.len() > 32
+        || enrollment.arch.is_empty()
+        || enrollment.arch.len() > 32
+        || enrollment.agent_version.is_empty()
+        || enrollment.agent_version.len() > 32
+        || enrollment.signature.len() != 64
+    {
+        return Err(EnrollmentValidationError::Fields);
+    }
+
+    let public_key_bytes: [u8; 32] = enrollment
+        .identity_public_key
+        .as_slice()
+        .try_into()
+        .map_err(|_| EnrollmentValidationError::Fields)?;
+    let public_key = VerifyingKey::from_bytes(&public_key_bytes)
+        .map_err(|_| EnrollmentValidationError::Fields)?;
+    let signature = Signature::from_slice(&enrollment.signature)
+        .map_err(|_| EnrollmentValidationError::Fields)?;
+    let mut canonical = enrollment.clone();
+    canonical.signature.clear();
+    public_key
+        .verify_strict(&encode_message(&canonical), &signature)
+        .map_err(|_| EnrollmentValidationError::Signature)
+}
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum ValidationError {
@@ -98,9 +175,54 @@ mod worker_entry;
 
 #[cfg(test)]
 mod tests {
-    use alphaping_protocol::v1::{MachineReport, MetricSample};
+    use alphaping_protocol::{
+        PROTOCOL_VERSION, encode_message,
+        v1::{EnrollmentRequest, MachineReport, MetricSample},
+    };
+    use ed25519_dalek::{Signer, SigningKey};
 
-    use super::{ValidationError, validate_report};
+    use super::{
+        EnrollmentValidationError, ValidationError, enrollment_token_digest,
+        validate_enrollment_request, validate_report,
+    };
+
+    #[test]
+    fn enrollment_requires_a_signed_machine_bound_proof() {
+        let signing_key = SigningKey::from_bytes(&[7; 32]);
+        let mut request = EnrollmentRequest {
+            token: b"abcdefghijklmnopqrstuvwxyzABCDEFGH012345678".to_vec(),
+            identity_public_key: signing_key.verifying_key().to_bytes().to_vec(),
+            platform: "linux".to_owned(),
+            arch: "x86_64".to_owned(),
+            agent_version: "0.1.0".to_owned(),
+            protocol_version: PROTOCOL_VERSION,
+            machine_claim_id: "018f5f7e-7d28-7e12-a521-23456789abcd".to_owned(),
+            request_nonce: vec![4; 32],
+            supported_protocol_versions: vec![PROTOCOL_VERSION],
+            pq_hybrid: true,
+            signature: Vec::new(),
+        };
+        request.signature = signing_key
+            .sign(&encode_message(&request))
+            .to_bytes()
+            .to_vec();
+        assert_eq!(validate_enrollment_request(&request), Ok(()));
+
+        request.machine_claim_id = "018f5f7e-7d28-7e12-a521-000000000000".to_owned();
+        assert_eq!(
+            validate_enrollment_request(&request),
+            Err(EnrollmentValidationError::Signature)
+        );
+    }
+
+    #[test]
+    fn enrollment_token_digest_is_peppered() {
+        let token = b"abcdefghijklmnopqrstuvwxyzABCDEFGH012345678";
+        assert_ne!(
+            enrollment_token_digest(&[1; 32], token).expect("valid key"),
+            enrollment_token_digest(&[2; 32], token).expect("valid key")
+        );
+    }
 
     #[test]
     fn report_scope_and_time_are_authenticated() {

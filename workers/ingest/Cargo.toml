@@ -13,9 +13,12 @@ crate-type = ["cdylib", "rlib"]
 alphaping-crypto = { path = "../../crates/crypto" }
 alphaping-protocol = { path = "../../crates/protocol" }
 blake3.workspace = true
+ed25519-dalek.workspace = true
+hmac.workspace = true
 hex.workspace = true
 prost.workspace = true
 serde.workspace = true
+sha2.workspace = true
 thiserror.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]

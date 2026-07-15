@@ -27,6 +27,7 @@ export const actions: Actions = {
         platform.env.CONTROL_DB,
         params.workspace,
         locals.session.user.id,
+        platform.env.ENROLLMENT_TOKEN_PEPPER,
         {
           name: String(form.get("name") ?? "").trim(),
           expectedHost: String(form.get("expectedHost") ?? "").trim(),

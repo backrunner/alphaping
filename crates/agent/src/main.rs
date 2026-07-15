@@ -1,13 +1,13 @@
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use alphaping_agent::{
-    backoff::equal_jitter_delay, config::AgentConfig, sampler::Sampler, spool::Spool,
-    uploader::Uploader,
+    backoff::equal_jitter_delay, config::AgentConfig, enrollment::enroll, sampler::Sampler,
+    spool::Spool, uploader::Uploader,
 };
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use rand::Rng;
 use tokio::time::{MissedTickBehavior, interval};
 use tracing::{error, info, warn};
@@ -23,11 +23,83 @@ async fn main() -> Result<()> {
         .with_target(false)
         .compact()
         .init();
-    let config_path = std::env::args_os()
-        .nth(1)
+    let arguments = std::env::args_os().skip(1).collect::<Vec<_>>();
+    if arguments
+        .first()
+        .is_some_and(|argument| argument == "enroll")
+    {
+        return run_enrollment(&arguments[1..]).await;
+    }
+    let config_path = arguments
+        .first()
         .map(PathBuf::from)
-        .context("usage: alphaping-agent <config.toml>")?;
-    let config = AgentConfig::load(&config_path)?;
+        .context("usage: alphaping-agent <config.toml> | alphaping-agent enroll --endpoint URL --token TOKEN --config PATH")?;
+    run_agent(&config_path).await
+}
+
+async fn run_enrollment(arguments: &[std::ffi::OsString]) -> Result<()> {
+    let mut endpoint = None;
+    let mut token = None;
+    let mut machine_claim_id = None;
+    let mut config_path = None;
+    let mut index = 0;
+    while index < arguments.len() {
+        let flag = arguments[index].to_string_lossy();
+        let value = arguments
+            .get(index + 1)
+            .context("enrollment flag is missing a value")?;
+        match flag.as_ref() {
+            "--endpoint" => endpoint = Some(value.to_string_lossy().into_owned()),
+            "--token" => token = Some(value.to_string_lossy().into_owned()),
+            "--machine" => machine_claim_id = Some(value.to_string_lossy().into_owned()),
+            "--config" => config_path = Some(PathBuf::from(value)),
+            _ => bail!("unknown enrollment flag"),
+        }
+        index += 2;
+    }
+    let endpoint = endpoint.context("--endpoint is required")?;
+    let token = token.context("--token is required")?;
+    let machine_claim_id = machine_claim_id.context("--machine is required")?;
+    let config_path = config_path.context("--config is required")?;
+    let material = enroll(&endpoint, &token, &machine_claim_id).await?;
+    let response = material.response;
+    let config = AgentConfig {
+        endpoint: format!("{}/v1/reports", endpoint.trim_end_matches('/')),
+        agent_id: response.agent_id,
+        machine_pk: response.machine_pk,
+        workspace_pk: response.workspace_pk,
+        key_epoch: response.key_epoch,
+        data_key_hex: hex::encode(response.data_key),
+        nonce_prefix_hex: hex::encode(response.nonce_prefix),
+        identity_private_key_hex: hex::encode(material.identity_private_key),
+        spool_path: default_spool_path(),
+        sample_interval_seconds: u64::from(response.sample_interval_seconds),
+        report_interval_seconds: u64::from(response.report_interval_seconds),
+        max_spool_bytes: 512 * 1024 * 1024,
+    };
+    config.save(&config_path)?;
+    info!(path = %config_path.display(), "agent enrollment completed");
+    Ok(())
+}
+
+fn default_spool_path() -> String {
+    #[cfg(target_os = "windows")]
+    {
+        let root = std::env::var("ProgramData").unwrap_or_else(|_| "C:\\ProgramData".to_owned());
+        format!("{root}\\AlphaPing\\spool.db")
+    }
+    #[cfg(target_os = "macos")]
+    {
+        "/Library/Application Support/AlphaPing/spool.db".to_owned()
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        "/var/lib/alphaping/spool.db".to_owned()
+    }
+}
+
+async fn run_agent(config_path: &Path) -> Result<()> {
+    let config = AgentConfig::load(config_path)?;
     let mut spool = Spool::open(&config.spool_path)?;
     let mut sampler = Sampler::new();
     let uploader = Uploader::new(

@@ -11,7 +11,9 @@ alphaping-crypto = { path = "../crypto" }
 alphaping-protocol = { path = "../protocol" }
 anyhow.workspace = true
 blake3.workspace = true
+ed25519-dalek.workspace = true
 fs2.workspace = true
+getrandom.workspace = true
 hex.workspace = true
 prost.workspace = true
 rand.workspace = true

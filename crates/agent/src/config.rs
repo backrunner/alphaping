@@ -1,9 +1,13 @@
-use std::{fs, path::Path};
+use std::{
+    fs::{self, OpenOptions},
+    io::Write,
+    path::Path,
+};
 
 use anyhow::{Context, Result, bail};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct AgentConfig {
     pub endpoint: String,
     pub agent_id: String,
@@ -12,6 +16,7 @@ pub struct AgentConfig {
     pub key_epoch: u32,
     pub data_key_hex: String,
     pub nonce_prefix_hex: String,
+    pub identity_private_key_hex: String,
     pub spool_path: String,
     #[serde(default = "default_sample_interval")]
     pub sample_interval_seconds: u64,
@@ -61,6 +66,9 @@ impl AgentConfig {
         if hex::decode(&self.nonce_prefix_hex)?.len() != 4 {
             bail!("nonce prefix must be 4 bytes");
         }
+        if hex::decode(&self.identity_private_key_hex)?.len() != 32 {
+            bail!("identity private key must be 32 bytes");
+        }
         Ok(())
     }
 
@@ -75,4 +83,37 @@ impl AgentConfig {
             .try_into()
             .map_err(|_| anyhow::anyhow!("invalid nonce prefix"))
     }
+
+    pub fn save(&self, path: &Path) -> Result<()> {
+        self.validate()?;
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+            set_directory_permissions(parent)?;
+        }
+        let temporary = path.with_extension(format!("tmp-{}", uuid::Uuid::now_v7()));
+        let mut options = OpenOptions::new();
+        options.create_new(true).write(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut file = options.open(&temporary)?;
+        file.write_all(toml::to_string_pretty(self)?.as_bytes())?;
+        file.sync_all()?;
+        fs::rename(&temporary, path)?;
+        Ok(())
+    }
+}
+
+#[cfg(unix)]
+fn set_directory_permissions(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn set_directory_permissions(_path: &Path) -> Result<()> {
+    Ok(())
 }

@@ -1,7 +1,10 @@
-use alphaping_crypto::{DirectionalKeys, open, seal, unwrap_key};
+use alphaping_crypto::{DirectionalKeys, open, seal, unwrap_key, wrap_key};
 use alphaping_protocol::{
     MAX_ENVELOPE_BYTES, PROTOCOL_VERSION, decode_message, decompress_message, encode_message,
-    v1::{AckStatus, DurableAck, EncryptedEnvelope, EnvelopeHeader, MachineReport},
+    v1::{
+        AckStatus, DurableAck, EncryptedEnvelope, EnrollmentRequest, EnrollmentResponse,
+        EnvelopeHeader, MachineReport,
+    },
 };
 use prost::Message;
 use serde::Deserialize;
@@ -10,7 +13,10 @@ use worker::{
     event, js_sys::Uint8Array, wasm_bindgen::JsValue,
 };
 
-use crate::{MAX_SAFE_SEQUENCE, MachineRollup, validate_report};
+use crate::{
+    MAX_SAFE_SEQUENCE, MachineRollup, enrollment_token_digest, validate_enrollment_request,
+    validate_report,
+};
 
 const MAX_CLOCK_SKEW_MS: i64 = 5 * 60_000;
 
@@ -53,6 +59,16 @@ struct StoredRollup {
     storage_max_bytes: f64,
     network_rx_bytes: f64,
     network_tx_bytes: f64,
+}
+
+#[derive(Debug, Deserialize)]
+struct EnrollmentTokenRow {
+    id: String,
+    machine_pk: f64,
+    workspace_pk: f64,
+    sample_interval_seconds: f64,
+    report_interval_seconds: f64,
+    config_revision: f64,
 }
 
 #[derive(Debug)]
@@ -102,6 +118,180 @@ fn wrapping_aad(agent_id: &str, key_epoch: u32) -> Vec<u8> {
     aad.extend_from_slice(agent_id.as_bytes());
     aad.extend_from_slice(&key_epoch.to_be_bytes());
     aad
+}
+
+fn random_bytes<const N: usize>() -> Result<[u8; N], IngestError> {
+    let mut bytes = [0_u8; N];
+    getrandom_02::getrandom(&mut bytes).map_err(|_| IngestError::Unauthorized)?;
+    Ok(bytes)
+}
+
+fn random_uuid() -> Result<String, IngestError> {
+    let mut bytes = random_bytes::<16>()?;
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    let value = hex::encode(bytes);
+    Ok(format!(
+        "{}-{}-{}-{}-{}",
+        &value[0..8],
+        &value[8..12],
+        &value[12..16],
+        &value[16..20],
+        &value[20..32]
+    ))
+}
+
+fn key_wrapping_secret(env: &Env) -> Result<[u8; 32], IngestError> {
+    hex::decode(env.secret("KEY_WRAPPING_SECRET")?.to_string())
+        .map_err(|_| IngestError::Unauthorized)?
+        .try_into()
+        .map_err(|_| IngestError::Unauthorized)
+}
+
+fn enrollment_token_pepper(env: &Env) -> Result<[u8; 32], IngestError> {
+    hex::decode(env.secret("ENROLLMENT_TOKEN_PEPPER")?.to_string())
+        .map_err(|_| IngestError::Unauthorized)?
+        .try_into()
+        .map_err(|_| IngestError::Unauthorized)
+}
+
+async fn handle_enrollment(mut request: Request, env: Env) -> Result<Response, IngestError> {
+    if request.method() != Method::Post {
+        return Err(IngestError::BadRequest);
+    }
+    if request
+        .headers()
+        .get("content-length")?
+        .and_then(|value| value.parse::<usize>().ok())
+        .is_some_and(|length| length > 16_384)
+    {
+        return Err(IngestError::BadRequest);
+    }
+    let body = request.bytes().await?;
+    if body.len() > 16_384 {
+        return Err(IngestError::BadRequest);
+    }
+    let enrollment: EnrollmentRequest =
+        decode_message(&body).map_err(|_| IngestError::BadRequest)?;
+    validate_enrollment_request(&enrollment).map_err(|_| IngestError::Unauthorized)?;
+    let digest = enrollment_token_digest(&enrollment_token_pepper(&env)?, &enrollment.token)
+        .map_err(|_| IngestError::Unauthorized)?;
+    let now = now_ms();
+    let control_db = env.d1("CONTROL_DB")?;
+    let token = control_db
+        .prepare(
+            "SELECT t.id, m.telemetry_pk AS machine_pk, w.telemetry_pk AS workspace_pk,
+                    m.sampling_interval_seconds AS sample_interval_seconds,
+                    m.report_interval_seconds AS report_interval_seconds,
+                    m.desired_config_revision AS config_revision
+             FROM agent_enrollment_tokens t
+             JOIN machines m ON m.id = t.machine_id
+             JOIN workspaces w ON w.id = t.workspace_id
+             WHERE t.token_digest = ? AND t.used_at IS NULL AND t.revoked_at IS NULL
+               AND t.expires_at >= ? AND m.id = ?
+               AND m.deleted_at IS NULL AND w.deleted_at IS NULL",
+        )
+        .bind(&[
+            blob(&digest),
+            number(now),
+            text(&enrollment.machine_claim_id),
+        ])?
+        .first::<EnrollmentTokenRow>(None)
+        .await?
+        .ok_or(IngestError::Unauthorized)?;
+    let agent_id = random_uuid()?;
+    let key_epoch = 1_u32;
+    let data_key = random_bytes::<32>()?;
+    let nonce_prefix = random_bytes::<4>()?;
+    let wrapping_nonce = random_bytes::<12>()?;
+    let wrapped = wrap_key(
+        &key_wrapping_secret(&env)?,
+        wrapping_nonce,
+        &data_key,
+        &wrapping_aad(&agent_id, key_epoch),
+    )
+    .map_err(|_| IngestError::Unauthorized)?;
+    let mut wrapped_data_key = Vec::with_capacity(12 + wrapped.len());
+    wrapped_data_key.extend_from_slice(&wrapping_nonce);
+    wrapped_data_key.extend_from_slice(&wrapped);
+    let valid_until = now.saturating_add(90 * 86_400_000);
+    let results = control_db
+        .batch(vec![
+            control_db
+                .prepare(
+                    "UPDATE agent_enrollment_tokens SET used_at = ?, used_by_agent_id = ?
+                     WHERE id = ? AND used_at IS NULL AND revoked_at IS NULL AND expires_at >= ?",
+                )
+                .bind(&[number(now), text(&agent_id), text(&token.id), number(now)])?,
+            control_db
+                .prepare(
+                    "INSERT INTO agents
+                      (id, workspace_id, machine_id, identity_public_key, platform, arch,
+                       agent_version, protocol_version, status, applied_config_revision, created_at)
+                     SELECT ?, t.workspace_id, t.machine_id, ?, ?, ?, ?, ?, 'active', ?, ?
+                     FROM agent_enrollment_tokens t
+                     WHERE t.id = ? AND t.used_by_agent_id = ?",
+                )
+                .bind(&[
+                    text(&agent_id),
+                    blob(&enrollment.identity_public_key),
+                    text(&enrollment.platform),
+                    text(&enrollment.arch),
+                    text(&enrollment.agent_version),
+                    unsigned(u64::from(enrollment.protocol_version)),
+                    unsigned(token.config_revision as u64),
+                    number(now),
+                    text(&token.id),
+                    text(&agent_id),
+                ])?,
+            control_db
+                .prepare(
+                    "INSERT INTO agent_keys
+                      (agent_id, key_epoch, wrapped_data_key, wrapping_key_id, nonce_prefix,
+                       valid_from, valid_until)
+                     SELECT ?, ?, ?, 'primary', ?, ?, ?
+                     WHERE EXISTS (SELECT 1 FROM agents WHERE id = ?)",
+                )
+                .bind(&[
+                    text(&agent_id),
+                    unsigned(u64::from(key_epoch)),
+                    blob(&wrapped_data_key),
+                    blob(&nonce_prefix),
+                    number(now),
+                    number(valid_until),
+                    text(&agent_id),
+                ])?,
+        ])
+        .await?;
+    if results
+        .first()
+        .and_then(|result| result.meta().ok().flatten())
+        .and_then(|meta| meta.changes)
+        != Some(1)
+    {
+        return Err(IngestError::Unauthorized);
+    }
+    let response = EnrollmentResponse {
+        agent_id,
+        machine_pk: token.machine_pk as u64,
+        workspace_pk: token.workspace_pk as u64,
+        key_epoch,
+        data_key: data_key.to_vec(),
+        nonce_prefix: nonce_prefix.to_vec(),
+        config_revision: token.config_revision as u64,
+        sample_interval_seconds: token.sample_interval_seconds as u32,
+        report_interval_seconds: token.report_interval_seconds as u32,
+        server_time_ms: u64::try_from(now).map_err(|_| IngestError::Unauthorized)?,
+        max_clock_skew_ms: MAX_CLOCK_SKEW_MS as u32,
+        max_envelope_bytes: MAX_ENVELOPE_BYTES as u32,
+        initial_client_sequence: 1,
+        initial_server_sequence: 1,
+        machine_claim_id: enrollment.machine_claim_id,
+    };
+    let headers = Headers::new();
+    headers.set("content-type", "application/x-protobuf")?;
+    headers.set("cache-control", "no-store")?;
+    Ok(Response::from_bytes(response.encode_to_vec())?.with_headers(headers))
 }
 
 async fn load_agent_key(
@@ -530,10 +720,7 @@ async fn handle_report(mut request: Request, env: Env) -> Result<Response, Inges
     if agent_key.wrapped_data_key.len() < 13 || agent_key.nonce_prefix.len() != 4 {
         return Err(IngestError::Unauthorized);
     }
-    let wrapping_key: [u8; 32] = hex::decode(env.secret("KEY_WRAPPING_SECRET")?.to_string())
-        .map_err(|_| IngestError::Unauthorized)?
-        .try_into()
-        .map_err(|_| IngestError::Unauthorized)?;
+    let wrapping_key = key_wrapping_secret(&env)?;
     let wrapping_nonce: [u8; 12] = agent_key.wrapped_data_key[..12]
         .try_into()
         .map_err(|_| IngestError::Unauthorized)?;
@@ -598,10 +785,12 @@ fn error_response(error: IngestError) -> WorkerResult<Response> {
 #[event(fetch)]
 pub async fn main(request: Request, env: Env, _context: Context) -> WorkerResult<Response> {
     let path = request.path();
-    if path != "/v1/reports" {
-        return Response::error("Not found", 404);
-    }
-    match handle_report(request, env).await {
+    let result = match path.as_str() {
+        "/v1/enroll" => handle_enrollment(request, env).await,
+        "/v1/reports" => handle_report(request, env).await,
+        _ => return Response::error("Not found", 404),
+    };
+    match result {
         Ok(response) => Ok(response),
         Err(error) => error_response(error),
     }

@@ -5,6 +5,7 @@ workspace_pk = 1
 key_epoch = 1
 data_key_hex = "replace-with-64-hex-characters-from-enrollment"
 nonce_prefix_hex = "replace-with-8-hex-characters-from-enrollment"
+identity_private_key_hex = "replace-with-64-hex-characters-from-enrollment"
 spool_path = "/var/lib/alphaping/spool.db"
 sample_interval_seconds = 10
 report_interval_seconds = 60

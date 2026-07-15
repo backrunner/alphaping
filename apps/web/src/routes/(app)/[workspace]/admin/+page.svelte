@@ -1,15 +1,24 @@
 <script lang="ts">
-  import { ArrowLeft, Copy, Server, SquareActivity } from "lucide-svelte";
+  import { ArrowLeft, Copy, Server, SquareActivity, Terminal, AppWindow } from "lucide-svelte";
 
   import Button from "$components/ui/button/button.svelte";
 
   let { data, form } = $props();
   let copied = $state(false);
+  let installMode = $state<"unix" | "windows">("unix");
 
-  const installCommand = $derived(
+  const unixInstallCommand = $derived(
     form?.kind === "machine" && form.machine
-      ? `curl -fsSL https://github.com/alkinum/alphaping/releases/latest/download/install.sh | sudo sh -s -- --endpoint ${data.ingestOrigin} --token ${form.machine.token}`
+      ? `curl -fsSL https://github.com/alkinum/alphaping/releases/latest/download/install.sh | sudo sh -s -- --endpoint ${data.ingestOrigin} --machine ${form.machine.machineId} --token ${form.machine.token}`
       : "",
+  );
+  const windowsInstallCommand = $derived(
+    form?.kind === "machine" && form.machine
+      ? `& ([scriptblock]::Create((irm https://github.com/alkinum/alphaping/releases/latest/download/install.ps1))) -Endpoint '${data.ingestOrigin}' -Machine '${form.machine.machineId}' -Token '${form.machine.token}'`
+      : "",
+  );
+  const installCommand = $derived(
+    installMode === "windows" ? windowsInstallCommand : unixInstallCommand,
   );
 
   async function copyInstallCommand() {
@@ -37,7 +46,29 @@
         <strong>Enrollment command ready</strong>
         <span>Expires {new Date(form.machine.expiresAt).toLocaleTimeString()}</span>
       </div>
-      <code>{installCommand}</code>
+      <div class="enrollment__command">
+        <div class="enrollment__modes" role="tablist" aria-label="Installation platform">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={installMode === "unix"}
+            class:active={installMode === "unix"}
+            onclick={() => (installMode = "unix")}
+          >
+            <Terminal size={12} />Shell
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={installMode === "windows"}
+            class:active={installMode === "windows"}
+            onclick={() => (installMode = "windows")}
+          >
+            <AppWindow size={12} />PowerShell
+          </button>
+        </div>
+        <code>{installCommand}</code>
+      </div>
       <Button variant="secondary" onclick={copyInstallCommand}
         ><Copy size={14} />{copied ? "Copied" : "Copy"}</Button
       >
@@ -288,7 +319,38 @@
     font-size: 10px;
   }
 
+  .enrollment__command {
+    min-width: 0;
+  }
+
+  .enrollment__modes {
+    display: flex;
+    gap: 2px;
+    margin-bottom: 6px;
+  }
+
+  .enrollment__modes button {
+    display: inline-flex;
+    height: 24px;
+    align-items: center;
+    gap: 5px;
+    padding: 0 7px;
+    border: 0;
+    border-radius: 4px;
+    color: var(--text-muted);
+    background: transparent;
+    font: inherit;
+    font-size: 10px;
+    cursor: pointer;
+  }
+
+  .enrollment__modes button.active {
+    color: var(--text);
+    background: var(--surface-strong);
+  }
+
   .enrollment code {
+    display: block;
     overflow: hidden;
     padding: 7px 8px;
     border-radius: 4px;
@@ -317,6 +379,10 @@
     }
 
     .enrollment code {
+      grid-column: 1 / -1;
+    }
+
+    .enrollment__command {
       grid-column: 1 / -1;
       grid-row: 2;
     }

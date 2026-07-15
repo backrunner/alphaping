@@ -18,8 +18,25 @@ function randomToken(): string {
     .replace(/\//g, "_");
 }
 
-async function tokenDigest(token: string): Promise<ArrayBuffer> {
-  return crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+function decodeHexSecret(value: string): ArrayBuffer {
+  if (!/^[0-9a-fA-F]{64}$/.test(value)) throw error(500, "Enrollment pepper is invalid");
+  const buffer = new ArrayBuffer(32);
+  const bytes = new Uint8Array(buffer);
+  for (let index = 0; index < bytes.length; index += 1) {
+    bytes[index] = Number.parseInt(value.slice(index * 2, index * 2 + 2), 16);
+  }
+  return buffer;
+}
+
+async function tokenDigest(token: string, pepper: string): Promise<ArrayBuffer> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    decodeHexSecret(pepper),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  return crypto.subtle.sign("HMAC", key, new TextEncoder().encode(token));
 }
 
 async function requireAdmin(
@@ -55,6 +72,7 @@ export async function createMachine(
   db: D1Database,
   workspaceSlug: string,
   userId: string,
+  enrollmentPepper: string,
   input: { name: string; expectedHost: string; containersEnabled: boolean },
 ): Promise<{ token: string; machineId: string; expiresAt: number }> {
   const membership = await requireAdmin(db, workspaceSlug, userId);
@@ -62,7 +80,7 @@ export async function createMachine(
   if (input.expectedHost.length > 253) throw error(400, "Expected host is invalid");
   const telemetryPk = await nextSequence(db, "machine");
   const token = randomToken();
-  const digest = await tokenDigest(token);
+  const digest = await tokenDigest(token, enrollmentPepper);
   const now = Date.now();
   const expiresAt = now + 15 * 60_000;
   const machineId = crypto.randomUUID();

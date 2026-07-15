@@ -43,6 +43,24 @@ pub struct Uploader {
     keys: DirectionalKeys,
 }
 
+pub fn pq_client() -> Result<Client, UploadError> {
+    let provider = CryptoProvider {
+        kx_groups: vec![aws_lc_rs::kx_group::X25519MLKEM768],
+        ..aws_lc_rs::default_provider()
+    };
+    let roots = RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    let tls = ClientConfig::builder_with_provider(Arc::new(provider))
+        .with_protocol_versions(&[&TLS13])
+        .map_err(|_| UploadError::Protocol)?
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+    Ok(Client::builder()
+        .use_preconfigured_tls(tls)
+        .connect_timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(8))
+        .build()?)
+}
+
 impl Uploader {
     pub fn new(
         endpoint: String,
@@ -53,21 +71,7 @@ impl Uploader {
     ) -> Result<Self, UploadError> {
         let keys = DirectionalKeys::derive(&root_key, &agent_id, key_epoch)
             .map_err(|_| UploadError::Authentication)?;
-        let provider = CryptoProvider {
-            kx_groups: vec![aws_lc_rs::kx_group::X25519MLKEM768],
-            ..aws_lc_rs::default_provider()
-        };
-        let roots = RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-        let tls = ClientConfig::builder_with_provider(Arc::new(provider))
-            .with_protocol_versions(&[&TLS13])
-            .map_err(|_| UploadError::Protocol)?
-            .with_root_certificates(roots)
-            .with_no_client_auth();
-        let client = Client::builder()
-            .use_preconfigured_tls(tls)
-            .connect_timeout(Duration::from_secs(5))
-            .timeout(Duration::from_secs(8))
-            .build()?;
+        let client = pq_client()?;
         Ok(Self {
             client,
             endpoint,

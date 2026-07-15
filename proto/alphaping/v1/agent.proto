@@ -38,6 +38,38 @@ message MachineReport {
   uint32 schema_version = 6;
 }
 
+message EnrollmentRequest {
+  bytes token = 1;
+  bytes identity_public_key = 2;
+  string platform = 3;
+  string arch = 4;
+  string agent_version = 5;
+  uint32 protocol_version = 6;
+  string machine_claim_id = 7;
+  bytes request_nonce = 8;
+  repeated uint32 supported_protocol_versions = 9;
+  bool pq_hybrid = 10;
+  bytes signature = 11;
+}
+
+message EnrollmentResponse {
+  string agent_id = 1;
+  uint64 machine_pk = 2;
+  uint64 workspace_pk = 3;
+  uint32 key_epoch = 4;
+  bytes data_key = 5;
+  bytes nonce_prefix = 6;
+  uint64 config_revision = 7;
+  uint32 sample_interval_seconds = 8;
+  uint32 report_interval_seconds = 9;
+  uint64 server_time_ms = 10;
+  uint32 max_clock_skew_ms = 11;
+  uint32 max_envelope_bytes = 12;
+  uint64 initial_client_sequence = 13;
+  uint64 initial_server_sequence = 14;
+  string machine_claim_id = 15;
+}
+
 enum AckStatus {
   ACK_STATUS_UNSPECIFIED = 0;
   ACK_STATUS_COMMITTED = 1;

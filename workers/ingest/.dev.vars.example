@@ -1,1 +1,2 @@
 KEY_WRAPPING_SECRET=replace-with-32-random-bytes-encoded-as-hex
+ENROLLMENT_TOKEN_PEPPER=replace-with-an-independent-32-byte-hex-secret
