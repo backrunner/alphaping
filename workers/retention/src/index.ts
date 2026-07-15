@@ -1,4 +1,5 @@
 interface RetentionPolicyRow {
+  workspace_id: string;
   workspace_pk: number;
   raw_days: number;
   rollup_5m_days: number;
@@ -16,21 +17,24 @@ type RetentionKind =
   | "machine_1h"
   | "check_raw"
   | "check_5m"
-  | "check_1h";
+  | "check_1h"
+  | "status_5m";
 
 interface RetentionTarget {
   kind: RetentionKind;
-  controlTable: "machines" | "check_configs";
+  controlTable: "machines" | "check_configs" | "services";
   telemetryTable:
     | "telemetry_blocks_5m"
     | "machine_rollups_5m"
     | "machine_rollups_1h"
     | "check_result_blocks_5m"
     | "check_rollups_5m"
-    | "check_rollups_1h";
-  resourceColumn: "machine_pk" | "check_pk";
+    | "check_rollups_1h"
+    | "status_buckets";
+  resourceColumn: "machine_pk" | "check_pk" | "resource_pk";
   timeColumn: "block_start" | "bucket_start";
   retentionDays: keyof Pick<RetentionPolicyRow, "raw_days" | "rollup_5m_days" | "rollup_1h_days">;
+  resourceType?: number;
 }
 
 const RESOURCE_BATCH = 40;
@@ -85,6 +89,15 @@ const TARGETS: readonly RetentionTarget[] = [
     timeColumn: "bucket_start",
     retentionDays: "rollup_1h_days",
   },
+  {
+    kind: "status_5m",
+    controlTable: "services",
+    telemetryTable: "status_buckets",
+    resourceColumn: "resource_pk",
+    timeColumn: "bucket_start",
+    retentionDays: "rollup_5m_days",
+    resourceType: 2,
+  },
 ];
 
 async function deleteResourceRows(
@@ -94,17 +107,24 @@ async function deleteResourceRows(
   timeColumn: string,
   resourcePk: number,
   cutoff: number,
+  resourceType?: number,
 ): Promise<number> {
+  const outerTypePredicate = resourceType === undefined ? "" : "resource_type = ? AND";
+  const typePredicate = resourceType === undefined ? "" : "AND resource_type = ?";
+  const bindings =
+    resourceType === undefined
+      ? [resourcePk, cutoff, ROW_BATCH]
+      : [resourceType, resourcePk, resourceType, cutoff, ROW_BATCH];
   const statement = db
     .prepare(
       `DELETE FROM ${table}
-       WHERE (${resourceColumn}, ${timeColumn}) IN (
+       WHERE ${outerTypePredicate} (${resourceColumn}, ${timeColumn}) IN (
          SELECT ${resourceColumn}, ${timeColumn} FROM ${table}
-         WHERE ${resourceColumn} = ? AND ${timeColumn} < ?
+         WHERE ${resourceColumn} = ? ${typePredicate} AND ${timeColumn} < ?
          ORDER BY ${timeColumn} LIMIT ?
        )`,
     )
-    .bind(resourcePk, cutoff, ROW_BATCH);
+    .bind(...bindings);
   const result = await statement.run();
   return result.meta.changes ?? 0;
 }
@@ -139,6 +159,7 @@ async function cleanTarget(
       target.timeColumn,
       resource.telemetry_pk,
       now - policy[target.retentionDays] * DAY_MS,
+      target.resourceType,
     );
   }
   const lastResource = resources.results.at(-1)?.telemetry_pk ?? 0;
@@ -170,7 +191,15 @@ async function cleanWorkspace(env: Env, policy: RetentionPolicyRow, now: number)
   )
     .bind(policy.workspace_pk, now - policy.event_days * DAY_MS, ROW_BATCH)
     .run();
-  return deleted + (events.meta.changes ?? 0);
+  const announcements = await env.CONTROL_DB.prepare(
+    `DELETE FROM announcements WHERE id IN (
+       SELECT id FROM announcements WHERE workspace_id = ? AND expires_at < ?
+       ORDER BY expires_at LIMIT ?
+     )`,
+  )
+    .bind(policy.workspace_id, now - 7 * DAY_MS, ROW_BATCH)
+    .run();
+  return deleted + (events.meta.changes ?? 0) + (announcements.meta.changes ?? 0);
 }
 
 async function runRetention(env: Env, now: number): Promise<void> {
@@ -182,7 +211,8 @@ async function runRetention(env: Env, now: number): Promise<void> {
     .run();
   try {
     const policies = await env.CONTROL_DB.prepare(
-      `SELECT w.telemetry_pk AS workspace_pk, p.raw_days, p.rollup_5m_days,
+      `SELECT w.id AS workspace_id, w.telemetry_pk AS workspace_pk,
+              p.raw_days, p.rollup_5m_days,
               p.rollup_1h_days, p.event_days
        FROM retention_policies p JOIN workspaces w ON w.id = p.workspace_id
        WHERE w.deleted_at IS NULL LIMIT 100`,

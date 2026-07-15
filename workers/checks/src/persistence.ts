@@ -1,7 +1,10 @@
-import { floorToFiveMinuteBlock, reportSlot } from "@alphaping/contracts";
+import { d1BlobToArrayBuffer, floorToFiveMinuteBlock, reportSlot } from "@alphaping/contracts";
 import { prepareCheckBlockWrite } from "@alphaping/db";
 
 import type { CheckConfigRow, ExecutedCheck } from "./types.js";
+
+type CheckState = ExecutedCheck["state"] | "unknown";
+type ServiceState = CheckState | "maintenance";
 
 interface CheckRollup {
   totalCount: number;
@@ -22,11 +25,39 @@ interface StoredCheckRollup {
   latency_max_ms: number | null;
 }
 
-type BlockResultRow = Record<`result_${0 | 1 | 2 | 3}`, ArrayBuffer | null>;
-
-function uuidBytes(id: string): ArrayBuffer {
-  return new TextEncoder().encode(id).buffer;
+interface ConfirmationState {
+  state: CheckState;
+  failure_code: string | null;
+  failure_summary: string | null;
+  consecutive_failures: number;
+  consecutive_successes: number;
 }
+
+interface PreviousCheckLatest extends ConfirmationState {
+  result_id: unknown;
+}
+
+interface ServiceCheckLatest {
+  check_pk: number;
+  state: CheckState;
+}
+
+interface PreviousServiceLatest {
+  state: ServiceState;
+}
+
+interface ConfirmedResult extends Omit<ExecutedCheck, "state"> {
+  state: CheckState;
+  consecutiveFailures: number;
+  consecutiveSuccesses: number;
+}
+
+interface ClosedRollups {
+  statements: readonly D1PreparedStatement[];
+  fiveMinute: CheckRollup | null;
+}
+
+type BlockResultRow = Record<`result_${0 | 1 | 2 | 3}`, unknown>;
 
 function emptyRollup(): CheckRollup {
   return {
@@ -66,10 +97,10 @@ function addStoredRollup(rollup: CheckRollup, stored: StoredCheckRollup): void {
   }
 }
 
-function parseStoredResult(payload: ArrayBuffer | null): ExecutedCheck | null {
-  if (payload === null) return null;
+function parseStoredResult(payload: unknown): ExecutedCheck | null {
+  if (payload === null || payload === undefined) return null;
   try {
-    const parsed = JSON.parse(new TextDecoder().decode(payload)) as unknown;
+    const parsed = JSON.parse(new TextDecoder().decode(d1BlobToArrayBuffer(payload))) as unknown;
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
     const data = parsed as Readonly<Record<string, unknown>>;
     if (data.state !== "healthy" && data.state !== "degraded" && data.state !== "down") {
@@ -79,6 +110,7 @@ function parseStoredResult(payload: ArrayBuffer | null): ExecutedCheck | null {
       state: data.state,
       latencyMs: typeof data.latencyMs === "number" ? data.latencyMs : null,
       failureCode: typeof data.failureCode === "string" ? data.failureCode : null,
+      failureSummary: typeof data.failureSummary === "string" ? data.failureSummary : null,
     };
   } catch {
     return null;
@@ -126,8 +158,8 @@ async function prepareClosedRollups(
   config: CheckConfigRow,
   nominalMinute: number,
   current: ExecutedCheck,
-): Promise<readonly D1PreparedStatement[]> {
-  if (reportSlot(nominalMinute) !== 4) return [];
+): Promise<ClosedRollups> {
+  if (reportSlot(nominalMinute) !== 4) return { statements: [], fiveMinute: null };
   const fiveMinuteBucket = floorToFiveMinuteBlock(nominalMinute);
   const block = await db
     .prepare(
@@ -149,7 +181,7 @@ async function prepareClosedRollups(
   ];
 
   const minuteInHour = Math.floor((nominalMinute % 3_600_000) / 60_000);
-  if (minuteInHour !== 59) return statements;
+  if (minuteInHour !== 59) return { statements, fiveMinute };
   const hourStart = Math.floor(nominalMinute / 3_600_000) * 3_600_000;
   const previous = await db
     .prepare(
@@ -175,7 +207,143 @@ async function prepareClosedRollups(
     latency_max_ms: fiveMinute.latencyMaxMs,
   });
   statements.push(prepareRollupStatement(db, "check_rollups_1h", config, hourStart, hourly));
-  return statements;
+  return { statements, fiveMinute };
+}
+
+export function applyConfirmationWindow(
+  config: CheckConfigRow,
+  previous: ConfirmationState | null,
+  result: ExecutedCheck,
+): ConfirmedResult {
+  if (result.state === "healthy") {
+    const successes = (previous?.consecutive_successes ?? 0) + 1;
+    const priorState = previous?.state ?? "healthy";
+    const confirmed =
+      previous === null || priorState === "healthy" || successes >= config.recovery_confirmations;
+    return {
+      state: confirmed ? "healthy" : priorState === "unknown" ? "unknown" : priorState,
+      latencyMs: result.latencyMs,
+      failureCode: confirmed ? null : (previous?.failure_code ?? "recovery_pending"),
+      failureSummary: confirmed ? null : (previous?.failure_summary ?? "recovery_pending"),
+      consecutiveFailures: 0,
+      consecutiveSuccesses: successes,
+    };
+  }
+
+  const failures = (previous?.consecutive_failures ?? 0) + 1;
+  const priorState = previous?.state ?? "unknown";
+  const alreadyFailed = priorState === "down" || priorState === "degraded";
+  const confirmed = alreadyFailed || failures >= config.failure_confirmations;
+  const state =
+    priorState === "down" && result.state === "degraded"
+      ? "down"
+      : confirmed
+        ? result.state
+        : priorState;
+  return {
+    state,
+    latencyMs: result.latencyMs,
+    failureCode: confirmed ? result.failureCode : "failure_pending",
+    failureSummary: confirmed
+      ? result.failureSummary
+      : (result.failureSummary ?? result.failureCode),
+    consecutiveFailures: failures,
+    consecutiveSuccesses: 0,
+  };
+}
+
+function serviceState(
+  states: readonly CheckState[],
+  maintenanceUntil: number | null,
+  now: number,
+): ServiceState {
+  if (maintenanceUntil !== null && maintenanceUntil > now) return "maintenance";
+  if (states.includes("down")) return "down";
+  if (states.includes("degraded")) return "degraded";
+  if (states.includes("healthy")) return "healthy";
+  return "unknown";
+}
+
+function serviceReason(state: ServiceState): string {
+  return state === "maintenance" ? "maintenance_window" : `check_${state}`;
+}
+
+function prepareStatusBucket(
+  db: D1Database,
+  config: CheckConfigRow,
+  nominalMinute: number,
+  rollup: CheckRollup,
+): D1PreparedStatement {
+  const state: ServiceState =
+    config.service_maintenance_until !== null && config.service_maintenance_until > nominalMinute
+      ? "maintenance"
+      : rollup.downCount > 0
+        ? "down"
+        : rollup.degradedCount > 0
+          ? "degraded"
+          : rollup.healthyCount > 0
+            ? "healthy"
+            : "unknown";
+  const availability =
+    rollup.totalCount === 0 ? 0 : Math.round((rollup.healthyCount / rollup.totalCount) * 1_000);
+  const latencyAverage =
+    rollup.latencyCount === 0 ? null : Math.round(rollup.latencyTotalMs / rollup.latencyCount);
+  const bucketStart = floorToFiveMinuteBlock(nominalMinute);
+  return db
+    .prepare(
+      `INSERT INTO status_buckets
+        (resource_type, resource_pk, workspace_pk, bucket_start, bucket_seconds,
+         state, availability_permille, latency_avg_ms, latency_max_ms, summary_code)
+       VALUES (2, ?, ?, ?, 300, ?, ?, ?, ?, ?)
+       ON CONFLICT(resource_type, resource_pk, bucket_seconds, bucket_start) DO UPDATE SET
+         state = CASE
+           WHEN status_buckets.state = 'maintenance' OR excluded.state = 'maintenance' THEN 'maintenance'
+           WHEN status_buckets.state = 'down' OR excluded.state = 'down' THEN 'down'
+           WHEN status_buckets.state = 'degraded' OR excluded.state = 'degraded' THEN 'degraded'
+           WHEN status_buckets.state = 'healthy' OR excluded.state = 'healthy' THEN 'healthy'
+           ELSE 'unknown' END,
+         availability_permille = MIN(status_buckets.availability_permille, excluded.availability_permille),
+         latency_avg_ms = CASE
+           WHEN status_buckets.latency_avg_ms IS NULL THEN excluded.latency_avg_ms
+           WHEN excluded.latency_avg_ms IS NULL THEN status_buckets.latency_avg_ms
+           ELSE MAX(status_buckets.latency_avg_ms, excluded.latency_avg_ms) END,
+         latency_max_ms = CASE
+           WHEN status_buckets.latency_max_ms IS NULL THEN excluded.latency_max_ms
+           WHEN excluded.latency_max_ms IS NULL THEN status_buckets.latency_max_ms
+           ELSE MAX(status_buckets.latency_max_ms, excluded.latency_max_ms) END,
+         summary_code = CASE
+           WHEN status_buckets.state = 'maintenance' OR excluded.state = 'maintenance' THEN 'maintenance_window'
+           WHEN status_buckets.state = 'down' OR excluded.state = 'down' THEN 'check_down'
+           WHEN status_buckets.state = 'degraded' OR excluded.state = 'degraded' THEN 'check_degraded'
+           ELSE excluded.summary_code END`,
+    )
+    .bind(
+      config.service_telemetry_pk,
+      config.workspace_telemetry_pk,
+      bucketStart,
+      state,
+      availability,
+      latencyAverage,
+      rollup.latencyMaxMs,
+      serviceReason(state),
+    );
+}
+
+async function executionId(checkId: string, nominalMinute: number): Promise<ArrayBuffer> {
+  return crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${checkId}:${nominalMinute}`));
+}
+
+function hex(bytes: ArrayBuffer): string {
+  return Array.from(new Uint8Array(bytes), (value) => value.toString(16).padStart(2, "0")).join("");
+}
+
+function equalBytes(left: ArrayBuffer, right: ArrayBuffer): boolean {
+  const leftBytes = new Uint8Array(left);
+  const rightBytes = new Uint8Array(right);
+  return (
+    leftBytes.byteLength === rightBytes.byteLength &&
+    leftBytes.every((value, index) => value === rightBytes[index])
+  );
 }
 
 export async function persistCheckResult(
@@ -185,15 +353,41 @@ export async function persistCheckResult(
   observedAt: number,
   result: ExecutedCheck,
 ): Promise<void> {
-  const resultId = crypto.randomUUID();
+  const [resultId, previousCheck, serviceChecks, previousService] = await Promise.all([
+    executionId(config.id, nominalMinute),
+    db
+      .prepare(
+        `SELECT state, failure_code, failure_summary, consecutive_failures,
+              consecutive_successes, result_id
+       FROM check_latest WHERE check_pk = ?`,
+      )
+      .bind(config.telemetry_pk)
+      .first<PreviousCheckLatest>(),
+    db
+      .prepare(`SELECT check_pk, state FROM check_latest WHERE service_pk = ?`)
+      .bind(config.service_telemetry_pk)
+      .all<ServiceCheckLatest>(),
+    db
+      .prepare(`SELECT state FROM service_latest WHERE service_pk = ?`)
+      .bind(config.service_telemetry_pk)
+      .first<PreviousServiceLatest>(),
+  ]);
+  if (
+    previousCheck !== null &&
+    equalBytes(d1BlobToArrayBuffer(previousCheck.result_id), resultId)
+  ) {
+    return;
+  }
+  const confirmed = applyConfirmationWindow(config, previousCheck, result);
   const payload = new TextEncoder().encode(
     JSON.stringify({
       v: 1,
-      id: resultId,
+      id: hex(resultId),
       observedAt,
       state: result.state,
       latencyMs: result.latencyMs,
       failureCode: result.failureCode,
+      failureSummary: result.failureSummary,
     }),
   );
   const payloadHash = await crypto.subtle.digest("SHA-256", payload);
@@ -201,7 +395,7 @@ export async function persistCheckResult(
     checkPk: config.telemetry_pk,
     workspacePk: config.workspace_telemetry_pk,
     nominalMinute,
-    resultId: uuidBytes(resultId),
+    resultId,
     payloadHash,
     payload: payload.buffer,
     schemaVersion: 1,
@@ -209,26 +403,104 @@ export async function persistCheckResult(
   const latest = db
     .prepare(
       `INSERT INTO check_latest
-        (check_pk, workspace_pk, observed_at, state, latency_ms, failure_code, result_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(check_pk) DO UPDATE SET
-        workspace_pk = excluded.workspace_pk,
-        observed_at = excluded.observed_at,
-        state = excluded.state,
-        latency_ms = excluded.latency_ms,
-        failure_code = excluded.failure_code,
-        result_id = excluded.result_id
-       WHERE excluded.observed_at >= check_latest.observed_at`,
+      (check_pk, workspace_pk, service_pk, observed_at, state, latency_ms, failure_code,
+       failure_summary, consecutive_failures, consecutive_successes, result_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(check_pk) DO UPDATE SET
+      workspace_pk = excluded.workspace_pk,
+      service_pk = excluded.service_pk,
+      observed_at = excluded.observed_at,
+      state = excluded.state,
+      latency_ms = excluded.latency_ms,
+      failure_code = excluded.failure_code,
+      failure_summary = excluded.failure_summary,
+      consecutive_failures = excluded.consecutive_failures,
+      consecutive_successes = excluded.consecutive_successes,
+      result_id = excluded.result_id
+     WHERE excluded.observed_at >= check_latest.observed_at`,
     )
     .bind(
       config.telemetry_pk,
       config.workspace_telemetry_pk,
+      config.service_telemetry_pk,
       observedAt,
-      result.state,
-      result.latencyMs,
-      result.failureCode,
-      uuidBytes(resultId),
+      confirmed.state,
+      confirmed.latencyMs,
+      confirmed.failureCode,
+      confirmed.failureSummary?.slice(0, 160) ?? null,
+      confirmed.consecutiveFailures,
+      confirmed.consecutiveSuccesses,
+      resultId,
     );
+
+  const currentStates = serviceChecks.results
+    .filter((check) => check.check_pk !== config.telemetry_pk)
+    .map((check) => check.state);
+  currentStates.push(confirmed.state);
+  const nextServiceState = serviceState(
+    currentStates,
+    config.service_maintenance_until,
+    observedAt,
+  );
+  const serviceStatements: D1PreparedStatement[] = [];
+  if (previousService?.state !== nextServiceState) {
+    const previousState = previousService?.state ?? "unknown";
+    serviceStatements.push(
+      db
+        .prepare(
+          `INSERT INTO service_latest
+          (service_pk, workspace_pk, state, status_since, reason_code, last_transition_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(service_pk) DO UPDATE SET
+           workspace_pk = excluded.workspace_pk,
+           state = excluded.state,
+           status_since = excluded.status_since,
+           reason_code = excluded.reason_code,
+           last_transition_at = excluded.last_transition_at,
+           updated_at = excluded.updated_at`,
+        )
+        .bind(
+          config.service_telemetry_pk,
+          config.workspace_telemetry_pk,
+          nextServiceState,
+          observedAt,
+          serviceReason(nextServiceState),
+          observedAt,
+          observedAt,
+        ),
+    );
+    if (previousState !== nextServiceState) {
+      serviceStatements.push(
+        db
+          .prepare(
+            `INSERT OR IGNORE INTO state_events
+          (workspace_pk, resource_type, resource_pk, occurred_at, event_id,
+           previous_state, current_state, reason_code)
+         VALUES (?, 2, ?, ?, ?, ?, ?, ?)`,
+          )
+          .bind(
+            config.workspace_telemetry_pk,
+            config.service_telemetry_pk,
+            observedAt,
+            resultId,
+            previousState,
+            nextServiceState,
+            serviceReason(nextServiceState),
+          ),
+      );
+    }
+  }
+
   const closedRollups = await prepareClosedRollups(db, config, nominalMinute, result);
-  await db.batch([db.prepare(block.query).bind(...block.values), latest, ...closedRollups]);
+  const statusStatements =
+    closedRollups.fiveMinute === null
+      ? []
+      : [prepareStatusBucket(db, config, nominalMinute, closedRollups.fiveMinute)];
+  await db.batch([
+    db.prepare(block.query).bind(...block.values),
+    latest,
+    ...closedRollups.statements,
+    ...serviceStatements,
+    ...statusStatements,
+  ]);
 }

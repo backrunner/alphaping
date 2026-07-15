@@ -108,16 +108,17 @@ check_result_blocks_5m DELETE          259,200
 check_latest UPDATE                  1,296,000
 check_rollup_5m INSERT + DELETE        518,400
 check_rollup_1h INSERT + DELETE         43,200
+service status bucket INSERT + DELETE  518,400
 last_claimed_slot UPDATE             1,296,000
-subtotal                             4,708,800
+subtotal                             5,227,200
 ```
 
 ```text
-combined known rows written          9,417,600/month
-25% implementation/retry margin      2,354,400/month
-budgeted total                      11,772,000/month
+combined known rows written          9,936,000/month
+25% implementation/retry margin      2,484,000/month
+budgeted total                      12,420,000/month
 Paid included                       50,000,000/month
-remaining headroom                  38,228,000/month
+remaining headroom                  37,580,000/month
 D1 write overage                          0.00 USD
 ```
 
@@ -196,7 +197,7 @@ Cloudflare 对 DO 入站 WebSocket 消息按 20:1 折算 request，出站消息�
 
 | 方案 | 30 machines + 30 checks | 100 machines + 100 checks |
 | --- | ---: | ---: |
-| 按需 10s Live Hub + 60s durable D1 writes | 9.418m | 31.392m |
+| 按需 10s Live Hub + 60s durable D1 writes | 9.936m | 33.120m |
 | 每 10s 全部 durable D1 writes | 28.858m | 96.192m |
 | 每 10s 全部 durable 的估算总费 | 约 5.24 USD | 至少 58.20 USD，未计 storage |
 
@@ -280,7 +281,7 @@ Durable Object 对比只计 request：
 | 新增资源 | D1 known writes/月 | Worker requests/月 | 目标 storage |
 | --- | ---: | ---: | ---: |
 | 1 台 60s report machine | 156,960 | 43,200 | 约 26.2 MB |
-| 1 个 60s centralized check | 156,960 | 0 | 约 10.7 MB |
+| 1 个 60s centralized check | 174,240 | 0 | 约 11.6 MB |
 
 中央 check 的 outbound `fetch`/TCP 是同一 Cron invocation 的 subrequest，因此不增加 Workers request 计费，但会增加 CPU 和 D1 rows。上表 storage 要求：
 
@@ -293,12 +294,12 @@ Durable Object 对比只计 request：
 ```text
 machine reports/check executions      4,320,000 each/month
 machine known D1 writes              15,696,000/month
-check known D1 writes                15,696,000/month
-combined known D1 writes             31,392,000/month
-25% margin                            7,848,000/month
-budgeted D1 writes                   39,240,000/month
+check known D1 writes                17,424,000/month
+combined known D1 writes             33,120,000/month
+25% margin                            8,280,000/month
+budgeted D1 writes                   41,400,000/month
 Paid included                        50,000,000/month
-headroom                             10,760,000/month
+headroom                              8,600,000/month
 ```
 
 Workers requests：
@@ -323,8 +324,9 @@ CPU 有两个可验证区间：
 7d machine raw at 2 KiB/report         2.064 GB
 7d check raw at 512 B/result           0.516 GB
 30d 5m + 365d 1h, 3.48m * 320 B       1.114 GB
+service status buckets                 0.090 GB
 control/latest/events/index reserve    0.500 GB
-total target                           4.194 GB
+total target                           4.284 GB
 storage overage                         0.00 USD
 ```
 
@@ -336,13 +338,13 @@ storage overage                         0.00 USD
 
 | Machines + checks | D1 known writes | Requests | Target storage | 估算总费 |
 | --- | ---: | ---: | ---: | ---: |
-| 30 + 30 | 9.42m | 1.48m | 约 1.36 GB | 5.00 USD |
-| 100 + 100 | 31.39m | 4.51m | 约 4.19 GB | 5.00-5.45 USD |
-| 150 + 150 | 47.09m | 6.67m | 约 6.29 GB | 约 6.94 USD；加 25% write margin 时约 15.80 USD |
-| 200 + 200 | 62.78m | 8.83m | 约 8.39 GB | 约 21.83 USD |
-| 300 + 300 | 94.18m | 13.15m | 约 12.58 GB | 约 58.33 USD |
+| 30 + 30 | 9.94m | 1.48m | 约 1.63 GB | 5.00 USD |
+| 100 + 100 | 33.12m | 4.51m | 约 4.28 GB | 5.00-5.45 USD |
+| 150 + 150 | 49.68m | 6.67m | 约 6.17 GB | 约 18.96 USD，含 25% write margin 与保守 CPU |
+| 200 + 200 | 66.24m | 8.83m | 约 8.06 GB | 约 41.59 USD，含 25% write margin 与保守 CPU |
+| 300 + 300 | 99.36m | 13.15m | 约 11.84 GB | 约 87.83 USD，含 25% write margin 与保守 CPU |
 
-增长最终由 D1 rows written 主导，大约在 100+100 之后开始逼近 included 边界。每台机器或每个 60 秒 check 将已知月写入增加 156,960；将 interval 从 60 秒改为 300 秒时，该 check 的请求/CPU/行写入约降为五分之一。
+增长最终由 D1 rows written 主导，大约在 100+100 之后开始逼近 included 边界。每台 60 秒 machine report 将已知月写入增加 156,960；每个 60 秒 centralized check 因增加可直接查询的 5 分钟 service status bucket，将已知月写入增加 174,240。将 interval 从 60 秒改为 300 秒时，该 check 的执行、CPU 和主要写入约降为五分之一。
 
 ## 11. 性能和扩展门槛
 

@@ -44,6 +44,12 @@ importers:
 
   apps/web:
     dependencies:
+      '@alphaping/authz':
+        specifier: workspace:*
+        version: link:../../packages/authz
+      '@alphaping/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@alphaping/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -148,6 +154,12 @@ importers:
       '@alphaping/db':
         specifier: workspace:*
         version: link:../../packages/db
+      jsonpath-plus:
+        specifier: 10.4.0
+        version: 10.4.0
+      re2js:
+        specifier: 2.8.6
+        version: 2.8.6
     devDependencies:
       '@cloudflare/workers-types':
         specifier: 'catalog:'
@@ -667,6 +679,18 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.9':
     resolution: {integrity: sha512-3Belt6tdc8bPgAtbcmdtNJlirVoTmEb5e2gC94PnkwEW9jI6CAHUeoG85tjWP5WquqfavoMtMwiG4P926ZKKuQ==, tarball: https://registry.npmjs.org/@jridgewell/trace-mapping/-/trace-mapping-0.3.9.tgz}
+
+  '@jsep-plugin/assignment@1.3.0':
+    resolution: {integrity: sha512-VVgV+CXrhbMI3aSusQyclHkenWSAm95WaiKrMxRFam3JSUiIaQjoMIw2sEs/OX4XifnqeQUN4DYbJjlA8EfktQ==, tarball: https://registry.npmjs.org/@jsep-plugin/assignment/-/assignment-1.3.0.tgz}
+    engines: {node: '>= 10.16.0'}
+    peerDependencies:
+      jsep: ^0.4.0||^1.0.0
+
+  '@jsep-plugin/regex@1.0.4':
+    resolution: {integrity: sha512-q7qL4Mgjs1vByCaTnDFcBnV9HS7GVPJX5vyVoCgZHNSC9rjwIlmbXG5sUuorR5ndfHAIlJ8pVStxvjXHbNvtUg==, tarball: https://registry.npmjs.org/@jsep-plugin/regex/-/regex-1.0.4.tgz}
+    engines: {node: '>= 10.16.0'}
+    peerDependencies:
+      jsep: ^0.4.0||^1.0.0
 
   '@noble/ciphers@2.2.0':
     resolution: {integrity: sha512-Z6pjIZ/8IJcCGzb2S/0Px5J81yij85xASuk1teLNeg75bfT07MV3a/O2Mtn1I2se43k3lkVEcFaR10N4cgQcZA==, tarball: https://registry.npmjs.org/@noble/ciphers/-/ciphers-2.2.0.tgz}
@@ -1242,6 +1266,15 @@ packages:
   js-tokens@9.0.1:
     resolution: {integrity: sha512-mxa9E9ITFOt0ban3j6L5MpjwegGz6lBQmM1IJkWeBZGcMxto50+eWdjC/52xDbS2vy0k7vIMK0Fe2wfL9OQSpQ==, tarball: https://registry.npmjs.org/js-tokens/-/js-tokens-9.0.1.tgz}
 
+  jsep@1.4.0:
+    resolution: {integrity: sha512-B7qPcEVE3NVkmSJbaYxvv4cHkVW7DQsZz13pUMrfS8z8Q/BuShN+gcTXrUlPiGqM2/t/EEaI030bpxMqY8gMlw==, tarball: https://registry.npmjs.org/jsep/-/jsep-1.4.0.tgz}
+    engines: {node: '>= 10.16.0'}
+
+  jsonpath-plus@10.4.0:
+    resolution: {integrity: sha512-T92WWatJXmhBbKsgH/0hl+jxjdXrifi5IKeMY02DWggRxX0UElcbVzPlmgLTbvsPeW1PasQ6xE2Q75stkhGbsA==, tarball: https://registry.npmjs.org/jsonpath-plus/-/jsonpath-plus-10.4.0.tgz}
+    engines: {node: '>=18.0.0'}
+    hasBin: true
+
   kleur@4.1.5:
     resolution: {integrity: sha512-o+NO+8WrRiQEE4/7nwRJhN1HWpVmJm511pBHUxPLtp0BUISzlBplORYSmTclCnJvQq2tKu/sgl3xVpkc7ZWuQQ==, tarball: https://registry.npmjs.org/kleur/-/kleur-4.1.5.tgz}
     engines: {node: '>=6'}
@@ -1403,6 +1436,10 @@ packages:
     resolution: {integrity: sha512-I7AIg5boAr5R0FFtJ6rCfD+LFsWHp81dolrFD8S79U9tb8Az2nGrJncnMSnys+bpQJfRUzqs9hnA81OAA3hCuQ==, tarball: https://registry.npmjs.org/prettier/-/prettier-3.6.2.tgz}
     engines: {node: '>=14'}
     hasBin: true
+
+  re2js@2.8.6:
+    resolution: {integrity: sha512-xLgQil4kIUCrAzVk9fRSkxkFNwmygLFjVxXrLc65aE1F0+Zsb8rxumFBy4XKyvgMCTL6kilDq3EZ0piE2dP/Dg==, tarball: https://registry.npmjs.org/re2js/-/re2js-2.8.6.tgz}
+    engines: {node: '>=18.0.0'}
 
   readdirp@4.1.2:
     resolution: {integrity: sha512-GDhwkLfywWL2s6vEjyhri+eXmfH6j1L7JE27WhqLeYzoh/A3DBaYGEj2H/HFZCn/kMfim73FXxEJTw06WtxQwg==, tarball: https://registry.npmjs.org/readdirp/-/readdirp-4.1.2.tgz}
@@ -2010,6 +2047,14 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
+  '@jsep-plugin/assignment@1.3.0(jsep@1.4.0)':
+    dependencies:
+      jsep: 1.4.0
+
+  '@jsep-plugin/regex@1.0.4(jsep@1.4.0)':
+    dependencies:
+      jsep: 1.4.0
+
   '@noble/ciphers@2.2.0': {}
 
   '@noble/hashes@2.2.0': {}
@@ -2393,6 +2438,14 @@ snapshots:
 
   js-tokens@9.0.1: {}
 
+  jsep@1.4.0: {}
+
+  jsonpath-plus@10.4.0:
+    dependencies:
+      '@jsep-plugin/assignment': 1.3.0(jsep@1.4.0)
+      '@jsep-plugin/regex': 1.0.4(jsep@1.4.0)
+      jsep: 1.4.0
+
   kleur@4.1.5: {}
 
   kysely@0.29.3: {}
@@ -2507,6 +2560,8 @@ snapshots:
       svelte: 5.56.5
 
   prettier@3.6.2: {}
+
+  re2js@2.8.6: {}
 
   readdirp@4.1.2: {}
 

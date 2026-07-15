@@ -339,6 +339,8 @@ V1 默认不生成每容器长保留 rollup。七天内原始容器数据由 mac
 
 允许公开页面一次查询得到胶囊时间线，不扫描原始结果。
 
+Checks Worker 只在五分钟 block 闭合时写一次 service bucket。同一服务的多个 check 使用最差状态、最低可用率和最高延迟幂等合并，因此并发 Cron 不需要额外 lease row。该写入和 retention delete 已作为每个 60 秒 centralized check 每月额外 17,280 rows written 纳入成本门禁。
+
 ## 9. 事件、Incident 和公告
 
 ### `state_events`

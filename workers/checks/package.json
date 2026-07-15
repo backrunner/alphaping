@@ -9,11 +9,13 @@
     "check": "tsc -p tsconfig.json --noEmit",
     "dev": "wrangler dev --config wrangler.checks.template.toml --test-scheduled",
     "test": "vitest run",
-    "types": "wrangler types src/env.d.ts --include-runtime=false --config wrangler.checks.template.toml"
+    "types": "wrangler types src/env.d.ts --include-runtime=false --env-file .dev.vars.example --config wrangler.checks.template.toml"
   },
   "dependencies": {
     "@alphaping/contracts": "workspace:*",
-    "@alphaping/db": "workspace:*"
+    "@alphaping/db": "workspace:*",
+    "jsonpath-plus": "10.4.0",
+    "re2js": "2.8.6"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "catalog:",
