@@ -1,0 +1,45 @@
+name = "alphaping-web-template"
+main = ".svelte-kit/cloudflare/_worker.js"
+compatibility_date = "2026-07-15"
+compatibility_flags = ["nodejs_compat"]
+
+[assets]
+directory = ".svelte-kit/cloudflare"
+binding = "ASSETS"
+
+[observability]
+enabled = true
+head_sampling_rate = 0.1
+
+[vars]
+INGEST_ORIGIN = "https://ingest.example.com"
+
+[[d1_databases]]
+binding = "CONTROL_DB"
+database_name = "alphaping-control-template"
+database_id = "00000000-0000-0000-0000-000000000000"
+
+[[d1_databases]]
+binding = "TELEMETRY_DB"
+database_name = "alphaping-telemetry-template"
+database_id = "00000000-0000-0000-0000-000000000000"
+
+[env.production]
+name = "alphaping-web-production"
+
+[env.production.vars]
+INGEST_ORIGIN = "https://ingest.example.com"
+
+[env.production.assets]
+directory = ".svelte-kit/cloudflare"
+binding = "ASSETS"
+
+[[env.production.d1_databases]]
+binding = "CONTROL_DB"
+database_name = "alphaping-control-template"
+database_id = "00000000-0000-0000-0000-000000000000"
+
+[[env.production.d1_databases]]
+binding = "TELEMETRY_DB"
+database_name = "alphaping-telemetry-template"
+database_id = "00000000-0000-0000-0000-000000000000"

@@ -1,9 +1,12 @@
 .agents
+.playwright-cli
 .svelte-kit
+.wrangler
 build
 coverage
 dist
 node_modules
+output/playwright
 pnpm-lock.yaml
 target
 worker-configuration.d.ts

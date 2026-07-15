@@ -6,10 +6,13 @@
 .env.*
 !.env.example
 .svelte-kit/
+.playwright-cli/
+.wrangler/
 .turbo/
 build/
 coverage/
 dist/
+output/playwright/
 node_modules/
 target/
 *.db
