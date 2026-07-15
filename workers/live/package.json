@@ -1,0 +1,19 @@
+{
+  "name": "@alphaping/worker-live",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "build": "wrangler deploy --dry-run --env= --config wrangler.live.template.toml --outdir dist",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "dev": "wrangler dev --config wrangler.live.template.toml",
+    "test": "vitest run",
+    "types": "wrangler types src/env.d.ts --include-runtime=false --env-file .dev.vars.example --config wrangler.live.template.toml"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "@alphaping/worker-checks",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "build": "wrangler deploy --dry-run --env= --config wrangler.checks.template.toml --outdir dist",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "dev": "wrangler dev --config wrangler.checks.template.toml --test-scheduled",
+    "test": "vitest run",
+    "types": "wrangler types src/env.d.ts --include-runtime=false --config wrangler.checks.template.toml"
+  },
+  "dependencies": {
+    "@alphaping/contracts": "workspace:*",
+    "@alphaping/db": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

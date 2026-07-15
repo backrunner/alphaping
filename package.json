@@ -1,0 +1,30 @@
+{
+  "name": "alphaping",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@11.10.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "check": "turbo run check",
+    "cost:check": "node scripts/check-cost-model.mjs",
+    "dev": "turbo run dev --parallel",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "turbo run test",
+    "workers:list": "node scripts/deploy-workers.mjs --list",
+    "workers:deploy": "node scripts/deploy-workers.mjs"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20260715.1",
+    "prettier": "3.6.2",
+    "prettier-plugin-svelte": "3.4.0",
+    "turbo": "2.5.6",
+    "typescript": "5.9.2",
+    "vitest": "3.2.4",
+    "wrangler": "4.111.0"
+  }
+}

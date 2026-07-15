@@ -1,0 +1,9 @@
+.agents
+.svelte-kit
+build
+coverage
+dist
+node_modules
+pnpm-lock.yaml
+target
+worker-configuration.d.ts

@@ -1,0 +1,26 @@
+name = "alphaping-live-template"
+main = "src/index.ts"
+compatibility_date = "2026-07-15"
+
+[observability]
+enabled = true
+head_sampling_rate = 0.1
+
+[[durable_objects.bindings]]
+name = "LIVE_HUBS"
+class_name = "LiveHub"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["LiveHub"]
+
+[env.production]
+name = "alphaping-live-production"
+
+[[env.production.durable_objects.bindings]]
+name = "LIVE_HUBS"
+class_name = "LiveHub"
+
+[[env.production.migrations]]
+tag = "v1"
+new_sqlite_classes = ["LiveHub"]
