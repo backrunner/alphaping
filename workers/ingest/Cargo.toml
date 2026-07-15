@@ -1,0 +1,24 @@
+[package]
+name = "alphaping-ingest"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+alphaping-crypto = { path = "../../crates/crypto" }
+alphaping-protocol = { path = "../../crates/protocol" }
+blake3.workspace = true
+hex.workspace = true
+prost.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom_02 = { package = "getrandom", version = "0.2.17", features = ["js"] }
+wasm-bindgen = "=0.2.125"
+worker.workspace = true

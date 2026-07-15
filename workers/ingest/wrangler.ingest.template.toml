@@ -1,0 +1,33 @@
+name = "alphaping-ingest-template"
+main = "build/worker/shim.mjs"
+compatibility_date = "2026-07-15"
+
+[build]
+command = "node ../../scripts/build-rust-worker.mjs"
+
+[observability]
+enabled = true
+head_sampling_rate = 0.1
+
+[[d1_databases]]
+binding = "CONTROL_DB"
+database_name = "alphaping-control-template"
+database_id = "00000000-0000-0000-0000-000000000000"
+
+[[d1_databases]]
+binding = "TELEMETRY_DB"
+database_name = "alphaping-telemetry-template"
+database_id = "00000000-0000-0000-0000-000000000000"
+
+[env.production]
+name = "alphaping-ingest-production"
+
+[[env.production.d1_databases]]
+binding = "CONTROL_DB"
+database_name = "alphaping-control-template"
+database_id = "00000000-0000-0000-0000-000000000000"
+
+[[env.production.d1_databases]]
+binding = "TELEMETRY_DB"
+database_name = "alphaping-telemetry-template"
+database_id = "00000000-0000-0000-0000-000000000000"

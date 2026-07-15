@@ -92,6 +92,8 @@ importers:
         specifier: 'catalog:'
         version: 3.2.4
 
+  workers/ingest: {}
+
   workers/live:
     devDependencies:
       '@cloudflare/workers-types':

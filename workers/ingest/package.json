@@ -1,0 +1,11 @@
+{
+  "name": "@alphaping/worker-ingest",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "scripts": {
+    "build": "wrangler deploy --dry-run --env= --config wrangler.ingest.template.toml --outdir dist",
+    "check": "cargo check -p alphaping-ingest",
+    "test": "cargo test -p alphaping-ingest"
+  }
+}
