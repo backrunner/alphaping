@@ -59,7 +59,7 @@ pub fn issue_live_session(
     machine_pk: u64,
     now_ms: i64,
 ) -> Result<LiveSessionCredential, LiveSessionError> {
-    if secret.as_bytes().len() < 32 {
+    if secret.len() < 32 {
         return Err(LiveSessionError::Secret);
     }
     if origin.len() > 256

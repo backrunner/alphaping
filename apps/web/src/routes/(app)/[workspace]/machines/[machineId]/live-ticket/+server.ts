@@ -36,10 +36,7 @@ export const GET: RequestHandler = async ({ locals, params, platform }) => {
     );
     const origin = liveOrigin(platform.env.LIVE_ORIGIN);
     if (!origin) {
-      return json(
-        { available: false },
-        { headers: { "cache-control": "private, no-store" } },
-      );
+      return json({ available: false }, { headers: { "cache-control": "private, no-store" } });
     }
     const signed = await signViewerLiveTicket(
       {
