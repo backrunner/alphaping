@@ -1,44 +1,37 @@
 import { describe, expect, it } from "vitest";
 
-import { verifyLiveTicket } from "./tickets.js";
-
-function base64Url(bytes: Uint8Array): string {
-  return btoa(String.fromCharCode(...bytes))
-    .replace(/=/g, "")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_");
-}
+import { signViewerLiveTicket, verifyLiveTicket } from "@alphaping/contracts";
 
 describe("live tickets", () => {
   it("accepts a valid short-lived HMAC ticket", async () => {
-    const secret = "test-secret-with-sufficient-entropy";
-    const payload = base64Url(
-      new TextEncoder().encode(
-        JSON.stringify({
-          workspaceId: "workspace-1",
-          subjectId: "viewer-1",
-          role: "viewer",
-          topics: ["machine:1"],
-          expiresAt: 10_000,
-        }),
-      ),
-    );
-    const key = await crypto.subtle.importKey(
-      "raw",
-      new TextEncoder().encode(secret),
-      { name: "HMAC", hash: "SHA-256" },
-      false,
-      ["sign"],
-    );
-    const signature = new Uint8Array(
-      await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload)),
+    const secret = "0123456789abcdef0123456789abcdef";
+    const { ticket } = await signViewerLiveTicket(
+      { workspaceId: "workspace-1", subjectId: "viewer-1", machinePk: 1 },
+      secret,
+      1_000,
     );
 
-    await expect(
-      verifyLiveTicket(`${payload}.${base64Url(signature)}`, secret, 1_000),
-    ).resolves.toMatchObject({
+    await expect(verifyLiveTicket(ticket, secret, 1_000)).resolves.toMatchObject({
       workspaceId: "workspace-1",
       role: "viewer",
     });
+  });
+
+  it("rejects cross-role edits, expiry, and invalid machine topics", async () => {
+    const secret = "0123456789abcdef0123456789abcdef";
+    const { ticket, expiresAt } = await signViewerLiveTicket(
+      { workspaceId: "workspace-1", subjectId: "viewer-1", machinePk: 7 },
+      secret,
+      10_000,
+    );
+    await expect(verifyLiveTicket(ticket, secret, expiresAt)).rejects.toThrow("invalid_ticket");
+    await expect(
+      signViewerLiveTicket(
+        { workspaceId: "workspace-1", subjectId: "viewer-1", machinePk: 0 },
+        secret,
+      ),
+    ).rejects.toThrow("invalid_machine_scope");
+    const changed = `${ticket.slice(0, -1)}${ticket.endsWith("A") ? "B" : "A"}`;
+    await expect(verifyLiveTicket(changed, secret, 10_000)).rejects.toThrow("invalid_ticket");
   });
 });

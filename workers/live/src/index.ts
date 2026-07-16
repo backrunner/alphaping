@@ -1,5 +1,6 @@
+import { LIVE_PROTOCOL, ticketFromProtocols, verifyLiveTicket } from "@alphaping/contracts";
+
 import { LiveHub } from "./live-hub.js";
-import { ticketFromProtocols, verifyLiveTicket } from "./tickets.js";
 
 export { LiveHub };
 
@@ -18,6 +19,12 @@ export default {
       headers.set("x-alphaping-subject", claims.subjectId);
       headers.set("x-alphaping-expires", String(claims.expiresAt));
       headers.set("x-alphaping-topics", JSON.stringify(claims.topics));
+      headers.set("x-alphaping-projection", claims.projection);
+      headers.set("x-alphaping-protocol", LIVE_PROTOCOL);
+      if (claims.role === "agent") {
+        headers.set("x-alphaping-session", claims.sessionId);
+        headers.set("x-alphaping-nonce-prefix", claims.noncePrefix);
+      }
       return env.LIVE_HUBS.getByName(claims.workspaceId).fetch(
         new Request(request.url, { method: "GET", headers }),
       );
