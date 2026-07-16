@@ -17,6 +17,7 @@
 | [09-roadmap.md](./09-roadmap.md) | 分阶段路线图、依赖关系和阶段退出条件 |
 | [10-research.md](./10-research.md) | 官方资料、调研结论和关键取舍 |
 | [11-telemetry-storage-and-retry.md](./11-telemetry-storage-and-retry.md) | 可查询遥测主存储、Agent 本地缓冲、补报与退避 |
+| [12-release-and-agent-updates.md](./12-release-and-agent-updates.md) | 发布密钥仪式、签名元数据、首次安装信任、更新命令与回滚 |
 | [skills](./skills) | 项目内 Codex skills，约束后续实现和评审 |
 
 ## 已确定的核心决策
@@ -32,6 +33,7 @@
 9. 权限模型包含管理员、普通用户和游客。普通用户获得资源级 `view`/`manage` 权限，游客只能访问显式公开的投影数据。
 10. 项目使用 Apache-2.0 发布，目标仓库为 `alkinum/alphaping`，开发提交身份为 `BackRunner <dev@backrunner.top>`。
 11. Agent 使用 SQLite WAL 本地 outbox 持续收集。网络失败无限重试，equal-jitter 指数退避绝对上限为 5 分钟。
+12. Agent 更新使用编译期嵌入的离线 public root、threshold-signed metadata 和固定 GitHub versioned artifacts；未嵌入 production root 的构建必须拒绝更新。
 
 ## 规范用词
 

@@ -10,12 +10,12 @@
 
   const unixInstallCommand = $derived(
     form?.kind === "machine" && form.machine
-      ? `curl -fsSL https://github.com/alkinum/alphaping/releases/latest/download/install.sh | sudo sh -s -- --endpoint ${data.ingestOrigin} --machine ${form.machine.machineId} --token ${form.machine.token}`
+      ? `curl -fsSL ${data.installOrigin}/install.sh | sudo sh -s -- --endpoint ${data.ingestOrigin} --manifest-origin ${data.installOrigin} --machine ${form.machine.machineId} --token ${form.machine.token}`
       : "",
   );
   const windowsInstallCommand = $derived(
     form?.kind === "machine" && form.machine
-      ? `& ([scriptblock]::Create((irm https://github.com/alkinum/alphaping/releases/latest/download/install.ps1))) -Endpoint '${data.ingestOrigin}' -Machine '${form.machine.machineId}' -Token '${form.machine.token}'`
+      ? `& ([scriptblock]::Create((irm ${data.installOrigin}/install.ps1))) -Endpoint '${data.ingestOrigin}' -ManifestOrigin '${data.installOrigin}' -Machine '${form.machine.machineId}' -Token '${form.machine.token}'`
       : "",
   );
   const installCommand = $derived(

@@ -6,7 +6,7 @@ import { createServiceMonitor } from "$lib/server/service-config";
 
 import type { Actions, PageServerLoad } from "./$types";
 
-export const load: PageServerLoad = async ({ locals, params, platform }) => {
+export const load: PageServerLoad = async ({ locals, params, platform, url }) => {
   if (!locals.session) throw redirect(303, "/login");
   if (!platform) throw error(503, "Cloudflare bindings are unavailable");
   const panel = await loadDeveloperPanel(
@@ -17,6 +17,7 @@ export const load: PageServerLoad = async ({ locals, params, platform }) => {
   return {
     workspace: params.workspace,
     ingestOrigin: platform.env.INGEST_ORIGIN,
+    installOrigin: url.origin,
     agents: panel.agents,
   };
 };

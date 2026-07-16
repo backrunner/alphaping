@@ -60,6 +60,7 @@ dependencies = [
  "alphaping-protocol",
  "alphaping-runtime-adapters",
  "anyhow",
+ "base64",
  "blake3",
  "ed25519-dalek",
  "fs2",
@@ -89,6 +90,7 @@ dependencies = [
  "uuid",
  "webpki-roots",
  "windows-service",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

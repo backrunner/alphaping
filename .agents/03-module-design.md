@@ -287,8 +287,9 @@ src/
 
 - Shell installer 识别 OS、arch、init system，下载对应 release artifact。
 - PowerShell installer 创建 Windows Service。
-- 校验签名、hash、版本和下载长度后才安装。
+- 安装脚本由 control-plane origin 提供，并从同一 origin 获取固定 release manifest；校验下载长度、SHA-256 和二进制自报版本后才安装，GitHub 只承载 versioned artifact。
 - 默认配置目录与二进制目录分离，升级不覆盖 identity。
+- Linux 使用 `/opt/alphaping/bin` + systemd，macOS 使用 `/Library/Application Support/AlphaPing` + LaunchDaemon，Windows binary 的 `service` 子命令实现 SCM ServiceMain。
 - 卸载默认保留 identity 需显式选择，完全卸载才撤销并删除。
 - 安装 token 可能出现在命令历史，因此短时、一次性并允许立即撤销。
 

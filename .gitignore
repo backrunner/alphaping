@@ -7,12 +7,15 @@
 !.env.example
 .svelte-kit/
 .playwright-cli/
+.release-keys/
 .wrangler/
 .turbo/
 build/
 coverage/
 dist/
 output/playwright/
+release-artifacts/
+signed-release/
 node_modules/
 target/
 *.db

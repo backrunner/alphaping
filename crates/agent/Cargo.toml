@@ -11,6 +11,7 @@ alphaping-crypto = { path = "../crypto" }
 alphaping-protocol = { path = "../protocol" }
 alphaping-runtime-adapters = { path = "../runtime-adapters" }
 anyhow.workspace = true
+base64.workspace = true
 blake3.workspace = true
 ed25519-dalek.workspace = true
 fs2.workspace = true
@@ -44,3 +45,4 @@ tempfile = "3.20.0"
 
 [target.'cfg(windows)'.dependencies]
 windows-service = "0.8.0"
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }

@@ -5,6 +5,8 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
+#[cfg(windows)]
+use base64::{Engine, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -56,10 +58,15 @@ fn default_update_channel() -> String {
 
 impl AgentConfig {
     pub fn load(path: &Path) -> Result<Self> {
-        let content = fs::read_to_string(path)
+        let stored = fs::read(path)
             .with_context(|| format!("failed to read config at {}", path.display()))?;
+        let (plaintext, legacy_plaintext) = decode_stored_config(&stored)?;
+        let content = String::from_utf8(plaintext).context("agent config is not UTF-8")?;
         let config: Self = toml::from_str(&content).context("agent config is invalid")?;
         config.validate()?;
+        if legacy_plaintext {
+            config.save(path)?;
+        }
         Ok(config)
     }
 
@@ -125,11 +132,115 @@ impl AgentConfig {
             options.mode(0o600);
         }
         let mut file = options.open(&temporary)?;
-        file.write_all(toml::to_string_pretty(self)?.as_bytes())?;
+        let serialized = toml::to_string_pretty(self)?;
+        file.write_all(&encode_stored_config(serialized.as_bytes())?)?;
         file.sync_all()?;
         fs::rename(&temporary, path)?;
         Ok(())
     }
+}
+
+#[cfg(not(windows))]
+fn decode_stored_config(stored: &[u8]) -> Result<(Vec<u8>, bool)> {
+    Ok((stored.to_vec(), false))
+}
+
+#[cfg(not(windows))]
+fn encode_stored_config(plaintext: &[u8]) -> Result<Vec<u8>> {
+    Ok(plaintext.to_vec())
+}
+
+#[cfg(windows)]
+fn decode_stored_config(stored: &[u8]) -> Result<(Vec<u8>, bool)> {
+    const PREFIX: &[u8] = b"ALPHAPING-DPAPI-1\n";
+    if !stored.starts_with(PREFIX) {
+        return Ok((stored.to_vec(), true));
+    }
+    let protected = STANDARD
+        .decode(&stored[PREFIX.len()..])
+        .context("DPAPI config encoding is invalid")?;
+    Ok((dpapi_unprotect(&protected)?, false))
+}
+
+#[cfg(windows)]
+fn encode_stored_config(plaintext: &[u8]) -> Result<Vec<u8>> {
+    let protected = dpapi_protect(plaintext)?;
+    let mut encoded = b"ALPHAPING-DPAPI-1\n".to_vec();
+    encoded.extend_from_slice(STANDARD.encode(protected).as_bytes());
+    encoded.push(b'\n');
+    Ok(encoded)
+}
+
+#[cfg(windows)]
+fn dpapi_protect(plaintext: &[u8]) -> Result<Vec<u8>> {
+    use windows_sys::Win32::{
+        Foundation::LocalFree,
+        Security::Cryptography::{
+            CRYPT_INTEGER_BLOB, CRYPTPROTECT_LOCAL_MACHINE, CryptProtectData,
+        },
+    };
+
+    let input_length = u32::try_from(plaintext.len()).context("Agent config is too large")?;
+    let input = CRYPT_INTEGER_BLOB {
+        cbData: input_length,
+        pbData: plaintext.as_ptr().cast_mut(),
+    };
+    let mut output = CRYPT_INTEGER_BLOB::default();
+    let succeeded = unsafe {
+        CryptProtectData(
+            &input,
+            std::ptr::null(),
+            std::ptr::null(),
+            std::ptr::null(),
+            std::ptr::null(),
+            CRYPTPROTECT_LOCAL_MACHINE,
+            &mut output,
+        )
+    };
+    if succeeded == 0 {
+        return Err(std::io::Error::last_os_error()).context("DPAPI config protection failed");
+    }
+    let protected =
+        unsafe { std::slice::from_raw_parts(output.pbData, output.cbData as usize).to_vec() };
+    unsafe {
+        LocalFree(output.pbData.cast());
+    }
+    Ok(protected)
+}
+
+#[cfg(windows)]
+fn dpapi_unprotect(protected: &[u8]) -> Result<Vec<u8>> {
+    use windows_sys::Win32::{
+        Foundation::LocalFree,
+        Security::Cryptography::{CRYPT_INTEGER_BLOB, CryptUnprotectData},
+    };
+
+    let input_length = u32::try_from(protected.len()).context("Agent config is too large")?;
+    let input = CRYPT_INTEGER_BLOB {
+        cbData: input_length,
+        pbData: protected.as_ptr().cast_mut(),
+    };
+    let mut output = CRYPT_INTEGER_BLOB::default();
+    let succeeded = unsafe {
+        CryptUnprotectData(
+            &input,
+            std::ptr::null_mut(),
+            std::ptr::null(),
+            std::ptr::null(),
+            std::ptr::null(),
+            0,
+            &mut output,
+        )
+    };
+    if succeeded == 0 {
+        return Err(std::io::Error::last_os_error()).context("DPAPI config decryption failed");
+    }
+    let plaintext =
+        unsafe { std::slice::from_raw_parts(output.pbData, output.cbData as usize).to_vec() };
+    unsafe {
+        LocalFree(output.pbData.cast());
+    }
+    Ok(plaintext)
 }
 
 #[cfg(unix)]
