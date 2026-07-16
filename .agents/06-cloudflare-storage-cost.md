@@ -152,6 +152,8 @@ Agent command delivery 在每个 report 增加一次 `(agent_id,state,not_before
 
 Retention 每个 workspace 每小时最多写 7 个 resource cursor、1 次 workspace lease claim 和 1 次 lease release，即 `9 * 720 = 6,480` cursor rows written/月。一个常见单 workspace 部署只占 30 台模型 2.484m margin 的 0.261%。Agent command expiry/completion partial indexes 只随低频管理命令变化，不进入稳态遥测账本。
 
+软删除 finalizer 复用同一 hourly invocation 和 workspace lease。无待删除资源时只增加有界候选读取；物理删除只发生在用户删除资源之后，并替代该资源未来的常规 retention DELETE，因此不进入稳态按月写入基线，也不新增 Worker request。
+
 ## 6. Workers request 和 CPU
 
 主路径 request：

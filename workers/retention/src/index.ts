@@ -1,5 +1,6 @@
 import { cleanAgentCommands, cleanAuditLogs, cleanExpiredAnnouncements } from "./control-retention";
 import { acquireWorkspaceRetentionLease, releaseWorkspaceRetentionLease } from "./cursor";
+import { finalizeDeletedWorkspace, finalizeSoftDeletedResources } from "./soft-delete";
 import {
   cleanStateEvents,
   cleanTelemetryHistory,
@@ -30,8 +31,10 @@ async function cleanWorkspace(env: Env, policy: RetentionPolicyRow, now: number)
     now,
     policy.audit_log_days,
   );
+  const softDeletes = await finalizeSoftDeletedResources(env, policy, now);
   await releaseWorkspaceRetentionLease(env.TELEMETRY_DB, lease, events.timeCursor, Date.now());
-  return telemetry + events.deleted + announcements + auditLogs;
+  const workspace = await finalizeDeletedWorkspace(env, policy, now);
+  return telemetry + events.deleted + announcements + auditLogs + softDeletes + workspace;
 }
 
 export async function runRetention(env: Env, scheduledTime: number): Promise<void> {
@@ -46,11 +49,12 @@ export async function runRetention(env: Env, scheduledTime: number): Promise<voi
   try {
     const policies = await env.CONTROL_DB.prepare(
       `SELECT w.id AS workspace_id, w.telemetry_pk AS workspace_pk,
+              w.deleted_at AS workspace_deleted_at,
               p.raw_days, p.rollup_5m_days, p.rollup_1h_days, p.event_days,
               p.audit_log_days, p.expired_announcement_grace_days,
               p.soft_delete_grace_days
        FROM retention_policies p JOIN workspaces w ON w.id = p.workspace_id
-       WHERE w.deleted_at IS NULL ORDER BY w.telemetry_pk LIMIT ?`,
+       ORDER BY w.telemetry_pk LIMIT ?`,
     )
       .bind(POLICY_BATCH)
       .all<RetentionPolicyRow>();

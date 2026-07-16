@@ -175,6 +175,7 @@ Ingest 暴露不访问 D1 的 `GET|HEAD /healthz` liveness。数据库读写健�
 3. 按复合主键范围分批删除 TELEMETRY_DB raw/rollup/event，DELETE rows 同样计入 D1 write cost。
 4. 只对到期的 export/backup artifact 执行 R2 删除，不扫描 R2 查找 telemetry。
 5. 成功后提交游标。失败时保留 lease 超时，后续运行可重试。
+6. 软删除恢复窗口到期后，先按资源主键分批清空 TELEMETRY_DB；确认无剩余后再物理删除 CONTROL_DB 资源。删除 workspace 时先收敛全部子资源，最后删除 workspace summary/cursor 和控制面记录。
 
 ## 7. 一致性模型
 

@@ -1,6 +1,7 @@
 export interface RetentionPolicyRow {
   workspace_id: string;
   workspace_pk: number;
+  workspace_deleted_at: number | null;
   raw_days: number;
   rollup_5m_days: number;
   rollup_1h_days: number;
