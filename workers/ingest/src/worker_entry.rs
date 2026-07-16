@@ -18,7 +18,9 @@ use crate::{
     agent_commands::{load_commands, persist_command_results},
     agent_config::build_config_snapshot,
     check_results::{ProbePersistenceError, persist_probe_results},
-    enrollment_token_digest, validate_enrollment_request, validate_report,
+    enrollment_token_digest,
+    live_session::issue_live_session,
+    validate_enrollment_request, validate_report,
 };
 
 const MAX_CLOCK_SKEW_MS: i64 = 5 * 60_000;
@@ -864,6 +866,7 @@ async fn durable_ack(
     duplicate: bool,
     config: Option<AgentConfigSnapshot>,
     commands: Vec<AgentCommand>,
+    live_session: Option<alphaping_protocol::v1::LiveSessionCredential>,
 ) -> Result<Response, IngestError> {
     let now = now_ms();
     let previous_container_inventory = if !duplicate && report.container_inventory.is_some() {
@@ -945,6 +948,7 @@ async fn durable_ack(
         config_revision: agent_key.desired_config_revision as u64,
         config,
         commands,
+        live_session,
     };
     let response_header = EnvelopeHeader {
         protocol_version: PROTOCOL_VERSION,
@@ -1075,6 +1079,21 @@ async fn handle_report(mut request: Request, env: Env) -> Result<Response, Inges
         None
     };
     let commands = load_commands(&control_db, agent_id, now).await?;
+    let live_session = env
+        .secret("LIVE_TICKET_SECRET")
+        .ok()
+        .and_then(|secret| env.var("LIVE_ORIGIN").ok().map(|origin| (secret, origin)))
+        .and_then(|(secret, origin)| {
+            issue_live_session(
+                &secret.to_string(),
+                &origin.to_string(),
+                &agent_key.workspace_id,
+                agent_id,
+                report.machine_pk,
+                now,
+            )
+            .ok()
+        });
     durable_ack(
         &control_db,
         &telemetry_db,
@@ -1088,6 +1107,7 @@ async fn handle_report(mut request: Request, env: Env) -> Result<Response, Inges
         duplicate,
         config,
         commands,
+        live_session,
     )
     .await
 }

@@ -9,6 +9,9 @@ command = "node ../../scripts/build-rust-worker.mjs"
 enabled = true
 head_sampling_rate = 0.1
 
+[vars]
+LIVE_ORIGIN = "wss://live.example.com"
+
 [[d1_databases]]
 binding = "CONTROL_DB"
 database_name = "alphaping-control-template"
@@ -21,6 +24,9 @@ database_id = "00000000-0000-0000-0000-000000000000"
 
 [env.production]
 name = "alphaping-ingest-production"
+
+[env.production.vars]
+LIVE_ORIGIN = "wss://live.example.com"
 
 [[env.production.d1_databases]]
 binding = "CONTROL_DB"

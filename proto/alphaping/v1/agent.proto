@@ -305,4 +305,14 @@ message DurableAck {
   uint64 config_revision = 4;
   AgentConfigSnapshot config = 5;
   repeated AgentCommand commands = 6;
+  LiveSessionCredential live_session = 7;
+}
+
+message LiveSessionCredential {
+  string endpoint = 1;
+  string ticket = 2;
+  bytes session_id = 3;
+  bytes session_key = 4;
+  bytes nonce_prefix = 5;
+  int64 expires_at_ms = 6;
 }

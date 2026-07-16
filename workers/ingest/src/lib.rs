@@ -10,6 +10,8 @@ use thiserror::Error;
 #[cfg(any(target_arch = "wasm32", test))]
 #[path = "check_results/model.rs"]
 mod check_result_model;
+#[cfg(any(target_arch = "wasm32", test))]
+mod live_session;
 
 pub const MAX_REPORT_SAMPLES: usize = 6;
 pub const MAX_CONTAINER_COUNT: usize = 64;

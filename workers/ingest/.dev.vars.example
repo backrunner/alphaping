@@ -1,3 +1,4 @@
 KEY_WRAPPING_SECRET=replace-with-32-random-bytes-encoded-as-hex
 ENROLLMENT_TOKEN_PEPPER=replace-with-an-independent-32-byte-hex-secret
 CHECK_SECRET_WRAPPING_KEY=replace-with-the-same-32-byte-hex-secret-as-web-and-checks
+LIVE_TICKET_SECRET=replace-with-the-same-32-byte-secret-as-live-and-web
