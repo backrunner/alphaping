@@ -56,7 +56,7 @@ async function requireAdmin(
   return membership;
 }
 
-async function nextSequence(db: D1Database, kind: "machine" | "service" | "check") {
+async function nextSequence(db: D1Database, kind: "machine") {
   const row = await db
     .prepare(
       `UPDATE telemetry_resource_sequences SET value = value + 1
@@ -120,80 +120,4 @@ export async function createMachine(
       ),
   ]);
   return { token, machineId, expiresAt };
-}
-
-export async function createHttpService(
-  db: D1Database,
-  workspaceSlug: string,
-  userId: string,
-  input: { name: string; url: string; intervalSeconds: number; expectedStatus: number },
-): Promise<{ serviceId: string }> {
-  const membership = await requireAdmin(db, workspaceSlug, userId);
-  if (input.name.length < 2 || input.name.length > 80) throw error(400, "Service name is invalid");
-  let url: URL;
-  try {
-    url = new URL(input.url);
-  } catch {
-    throw error(400, "Service URL is invalid");
-  }
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw error(400, "Service URL must use HTTP or HTTPS");
-  }
-  if (
-    !Number.isInteger(input.intervalSeconds) ||
-    input.intervalSeconds < 60 ||
-    input.intervalSeconds > 86_400
-  ) {
-    throw error(400, "Cloudflare check interval must be between 60 and 86400 seconds");
-  }
-  if (
-    !Number.isInteger(input.expectedStatus) ||
-    input.expectedStatus < 100 ||
-    input.expectedStatus > 599
-  ) {
-    throw error(400, "Expected HTTP status is invalid");
-  }
-  const [servicePk, checkPk] = await Promise.all([
-    nextSequence(db, "service"),
-    nextSequence(db, "check"),
-  ]);
-  const serviceId = crypto.randomUUID();
-  const checkId = crypto.randomUUID();
-  const now = Date.now();
-  const requestJson = JSON.stringify({
-    url: url.toString(),
-    method: "GET",
-    headers: {},
-    body: null,
-    expectedStatus: [input.expectedStatus],
-    degradedAfterMs: 1_500,
-  });
-  await db.batch([
-    db
-      .prepare(
-        `INSERT INTO services
-          (id, telemetry_pk, workspace_id, name, status_rule_json, created_at, updated_at)
-         VALUES (?, ?, ?, ?, '{}', ?, ?)`,
-      )
-      .bind(serviceId, servicePk, membership.workspace_id, input.name, now, now),
-    db
-      .prepare(
-        `INSERT INTO check_configs
-          (id, telemetry_pk, workspace_id, service_id, name, kind, executor_kind,
-           enabled, interval_seconds, phase_seconds, timeout_ms, request_json,
-           last_claimed_slot, created_at, updated_at)
-         VALUES (?, ?, ?, ?, 'Availability', 'http', 'cloudflare', 1, ?, 0, 5000, ?, 0, ?, ?)`,
-      )
-      .bind(
-        checkId,
-        checkPk,
-        membership.workspace_id,
-        serviceId,
-        input.intervalSeconds,
-        requestJson,
-        now,
-        now,
-      ),
-  ]);
-  return { serviceId };
 }

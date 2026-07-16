@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { DashboardService } from "@alphaping/db";
 
+  import StatusCapsules from "$components/status/status-capsules.svelte";
   import StatusLabel from "$components/status/status-label.svelte";
   import { formatRelativeTime } from "$lib/utils/format";
 
@@ -13,15 +14,12 @@
     <span>Checked {formatRelativeTime(service.lastCheckedAt)}</span>
   </div>
   <StatusLabel status={service.state} />
-  <div class="service__timeline" aria-label={`${service.name} status over the last 150 minutes`}>
-    {#each service.timeline as bucket (bucket.bucketStart)}
-      <span
-        class={`capsule capsule--${bucket.state}`}
-        role="img"
-        aria-label={`${new Date(bucket.bucketStart).toLocaleTimeString()}: ${bucket.state}`}
-        title={`${new Date(bucket.bucketStart).toLocaleTimeString()} · ${bucket.state}`}
-      ></span>
-    {/each}
+  <div class="service__timeline">
+    <StatusCapsules
+      buckets={service.timeline}
+      label={`${service.name} status over the last 150 minutes`}
+      compact
+    />
   </div>
 </article>
 
@@ -60,40 +58,8 @@
   }
 
   .service__timeline {
-    display: grid;
-    grid-template-columns: repeat(30, minmax(3px, 1fr));
-    gap: 3px;
     min-width: 0;
-  }
-
-  .capsule {
-    display: block;
-    width: 100%;
-    height: 22px;
-    border-radius: 999px;
-    background: var(--surface-strong);
-  }
-
-  .capsule--healthy {
-    background: var(--status-healthy);
-  }
-
-  .capsule--degraded {
-    background: var(--status-degraded);
-  }
-
-  .capsule--down {
-    background: var(--status-down);
-  }
-
-  .capsule--unknown {
-    background: repeating-linear-gradient(
-      45deg,
-      var(--surface-strong),
-      var(--surface-strong) 2px,
-      var(--border-strong) 2px,
-      var(--border-strong) 3px
-    );
+    --capsule-count: 30;
   }
 
   @media (max-width: 760px) {

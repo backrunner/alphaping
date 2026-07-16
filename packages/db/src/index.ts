@@ -6,6 +6,7 @@ export * from "./repositories/machines.js";
 export * from "./repositories/public-status.js";
 export * from "./repositories/services.js";
 export * from "./repositories/telemetry-blocks.js";
+export * from "./repositories/workspace-shell.js";
 export * from "./schema/auth.js";
 export * from "./schema/control.js";
 export * from "./schema/telemetry.js";

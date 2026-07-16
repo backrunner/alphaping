@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { ArrowLeft, Copy, Server, SquareActivity, Terminal, AppWindow } from "lucide-svelte";
+  import { ArrowLeft, Copy, Server, Terminal, AppWindow } from "lucide-svelte";
 
+  import ServiceMonitorForm from "$components/admin/service-monitor-form.svelte";
   import Button from "$components/ui/button/button.svelte";
 
   let { data, form } = $props();
@@ -111,57 +112,7 @@
       </form>
     </section>
 
-    <section>
-      <header>
-        <SquareActivity size={18} />
-        <div>
-          <h2>Add HTTP service</h2>
-          <p>Runs from the centralized Cloudflare checker.</p>
-        </div>
-      </header>
-      <form method="POST" action="?/service">
-        {#if form?.kind === "service" && form.message}<p class="form-error" role="alert">
-            {form.message}
-          </p>{/if}
-        {#if form?.kind === "service" && form.created}<p class="form-success">
-            Service monitor created.
-          </p>{/if}
-        <label
-          ><span>Name</span><input
-            name="name"
-            required
-            maxlength="80"
-            placeholder="Public API"
-          /></label
-        >
-        <label
-          ><span>URL</span><input
-            type="url"
-            name="url"
-            required
-            placeholder="https://api.example.com/health"
-          /></label
-        >
-        <div class="form-grid">
-          <label
-            ><span>Interval</span><select name="intervalSeconds"
-              ><option value="60">60 seconds</option><option value="300">5 minutes</option></select
-            ></label
-          >
-          <label
-            ><span>Expected status</span><input
-              type="number"
-              name="expectedStatus"
-              value="200"
-              min="100"
-              max="599"
-              required
-            /></label
-          >
-        </div>
-        <Button type="submit">Create service</Button>
-      </form>
-    </section>
+    <div class="service-monitor"><ServiceMonitorForm agents={data.agents} result={form} /></div>
   </div>
 </main>
 
@@ -205,7 +156,7 @@
     padding-top: 28px;
   }
 
-  .admin__grid > section + section {
+  .admin__grid > .service-monitor {
     padding-left: 28px;
     border-left: 1px solid var(--border);
   }
@@ -239,8 +190,7 @@
     font-weight: 600;
   }
 
-  input,
-  select {
+  input {
     width: 100%;
     height: 36px;
     padding: 0 10px;
@@ -251,8 +201,7 @@
     font: inherit;
   }
 
-  input:focus,
-  select:focus {
+  input:focus {
     border-color: var(--accent);
     outline: 2px solid color-mix(in srgb, var(--accent) 22%, transparent);
   }
@@ -272,14 +221,7 @@
     margin: 0;
   }
 
-  .form-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
-  }
-
-  .form-error,
-  .form-success {
+  .form-error {
     margin: 0;
     padding: 8px 10px;
     border-radius: 6px;
@@ -289,11 +231,6 @@
   .form-error {
     color: var(--status-down);
     background: var(--status-down-bg);
-  }
-
-  .form-success {
-    color: var(--status-healthy);
-    background: var(--status-healthy-bg);
   }
 
   .enrollment {
@@ -367,7 +304,7 @@
       grid-template-columns: 1fr;
     }
 
-    .admin__grid > section + section {
+    .admin__grid > .service-monitor {
       padding-top: 28px;
       padding-left: 0;
       border-top: 1px solid var(--border);
