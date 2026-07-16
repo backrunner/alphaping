@@ -43,7 +43,7 @@ pub struct Uploader {
     keys: DirectionalKeys,
 }
 
-pub fn pq_client() -> Result<Client, UploadError> {
+pub fn pq_tls_config() -> Result<Arc<ClientConfig>, UploadError> {
     let provider = CryptoProvider {
         kx_groups: vec![aws_lc_rs::kx_group::X25519MLKEM768],
         ..aws_lc_rs::default_provider()
@@ -54,8 +54,12 @@ pub fn pq_client() -> Result<Client, UploadError> {
         .map_err(|_| UploadError::Protocol)?
         .with_root_certificates(roots)
         .with_no_client_auth();
+    Ok(Arc::new(tls))
+}
+
+pub fn pq_client() -> Result<Client, UploadError> {
     Ok(Client::builder()
-        .use_preconfigured_tls(tls)
+        .use_preconfigured_tls(pq_tls_config()?)
         .connect_timeout(Duration::from_secs(5))
         .timeout(Duration::from_secs(8))
         .build()?)

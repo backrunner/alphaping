@@ -18,6 +18,7 @@ use crate::{
     commands::{CommandExecution, command_result, execute_update_command},
     config::AgentConfig,
     containers::ContainerMonitor,
+    live::LiveHandle,
     probes::{ProbeMonitor, validate_config},
     sampler::Sampler,
     spool::Spool,
@@ -45,6 +46,7 @@ pub async fn run(
         config.data_key()?,
         config.nonce_prefix()?,
     )?;
+    let live = LiveHandle::start(config.machine_pk);
     let updater = match Updater::new(&config, config_path, unix_time_ms()?) {
         Ok(updater) => Some(Arc::new(updater)),
         Err(error) => {
@@ -78,7 +80,12 @@ pub async fn run(
             _ = sample_tick.tick() => {
                 let now = unix_time_ms()?;
                 let sample = sampler.sample(now);
-                spool.append_sample(&sample, now)?;
+                let inserted = spool.append_sample(&sample, now)?;
+                if inserted
+                    && let Err(error) = live.send_snapshot(&mut spool, config.machine_pk, &sample, now)
+                {
+                    warn!(error = %error, "live snapshot was dropped");
+                }
                 let dropped = spool.enforce_capacity(config.max_spool_bytes, now)?;
                 if dropped > 0 {
                     warn!(dropped_samples = dropped, "spool pressure compacted unassigned samples");
@@ -100,6 +107,7 @@ pub async fn run(
                     &mut spool,
                     &uploader,
                     &probe_monitor,
+                    &live,
                     unix_time_ms()?,
                 ).await?;
             }
@@ -171,6 +179,7 @@ async fn upload_due_report(
     spool: &mut Spool,
     uploader: &Uploader,
     probe_monitor: &ProbeMonitor,
+    live: &LiveHandle,
     now_ms: i64,
 ) -> Result<()> {
     let Some(delivery) = spool.due_delivery(now_ms)? else {
@@ -181,6 +190,7 @@ async fn upload_due_report(
             let local_result = apply_ack(
                 spool,
                 probe_monitor,
+                live,
                 &delivery.report_id,
                 &acknowledgement,
                 now_ms,
@@ -211,6 +221,7 @@ async fn upload_due_report(
 fn apply_ack(
     spool: &mut Spool,
     probe_monitor: &ProbeMonitor,
+    live: &LiveHandle,
     report_id: &[u8],
     acknowledgement: &alphaping_protocol::v1::DurableAck,
     now_ms: i64,
@@ -227,6 +238,11 @@ fn apply_ack(
         }
     }
     spool.accept_commands(&acknowledgement.commands, now_ms)?;
+    if let Some(credential) = acknowledgement.live_session.clone()
+        && let Err(error) = live.update_credential(credential, now_ms)
+    {
+        warn!(error = %error, "authenticated live session credential was ignored");
+    }
     if !spool.acknowledge(report_id)? {
         bail!("durable ACK did not match a local delivery");
     }

@@ -52,6 +52,21 @@ fn sequence_is_persisted_before_use() {
 }
 
 #[test]
+fn live_sequence_is_persisted_per_session_and_rotates_with_the_key() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let path = directory.path().join("spool.db");
+    let mut spool = Spool::open(&path).expect("open spool");
+    assert_eq!(spool.next_live_sequence(&[1; 16]).expect("first"), 1);
+    assert_eq!(spool.next_live_sequence(&[1; 16]).expect("second"), 2);
+    drop(spool);
+
+    let mut reopened = Spool::open(&path).expect("reopen spool");
+    assert_eq!(reopened.next_live_sequence(&[1; 16]).expect("persisted"), 3);
+    assert_eq!(reopened.next_live_sequence(&[2; 16]).expect("rotated"), 1);
+    assert!(reopened.next_live_sequence(&[3; 15]).is_err());
+}
+
+#[test]
 fn catalog_is_resent_until_ack_then_metrics_remain_compact() {
     let directory = tempdir().expect("temp directory");
     let mut spool = Spool::open(directory.path().join("spool.db")).expect("open spool");

@@ -3,6 +3,7 @@ pub mod commands;
 pub mod config;
 pub mod containers;
 pub mod enrollment;
+pub mod live;
 pub mod probes;
 pub mod runtime;
 pub mod sampler;

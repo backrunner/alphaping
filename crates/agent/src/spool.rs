@@ -132,6 +132,10 @@ impl Spool {
             "INSERT OR IGNORE INTO meta (key, value) VALUES ('applied_config_revision', 0)",
             [],
         )?;
+        connection.execute(
+            "INSERT OR IGNORE INTO meta (key, value) VALUES ('live_sequence', 0)",
+            [],
+        )?;
         Ok(Self { connection, path })
     }
 
@@ -382,6 +386,43 @@ impl Spool {
         )?;
         transaction.commit()?;
         u64::try_from(next).context("transport sequence rolled back")
+    }
+
+    pub fn next_live_sequence(&mut self, session_id: &[u8]) -> Result<u64> {
+        if session_id.len() != 16 {
+            bail!("live session ID must be 16 bytes");
+        }
+        let transaction = self.connection.transaction()?;
+        let stored = transaction
+            .query_row(
+                "SELECT value FROM meta_blobs WHERE key = 'live_session_id'",
+                [],
+                |row| row.get::<_, Vec<u8>>(0),
+            )
+            .optional()?;
+        if stored.as_deref() != Some(session_id) {
+            transaction.execute(
+                "INSERT INTO meta_blobs (key, value) VALUES ('live_session_id', ?)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                [session_id],
+            )?;
+            transaction.execute("UPDATE meta SET value = 0 WHERE key = 'live_sequence'", [])?;
+        }
+        let current: i64 = transaction.query_row(
+            "SELECT value FROM meta WHERE key = 'live_sequence'",
+            [],
+            |row| row.get(0),
+        )?;
+        let next = current.checked_add(1).context("live sequence exhausted")?;
+        if next > 1_000_000 {
+            bail!("live sequence exceeded the session limit");
+        }
+        transaction.execute(
+            "UPDATE meta SET value = ? WHERE key = 'live_sequence'",
+            [next],
+        )?;
+        transaction.commit()?;
+        u64::try_from(next).context("live sequence rolled back")
     }
 
     pub fn mark_failure(
