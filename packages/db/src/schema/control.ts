@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { blob, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const workspaces = sqliteTable(
@@ -87,6 +88,12 @@ export const agentCommands = sqliteTable(
   },
   (table) => [
     index("agent_commands_agent_state_idx").on(table.agentId, table.state, table.notBefore),
+    index("agent_commands_expiry_idx")
+      .on(table.expiresAt)
+      .where(sql`${table.state} IN ('pending', 'delivered')`),
+    index("agent_commands_completion_idx")
+      .on(table.completedAt)
+      .where(sql`${table.completedAt} IS NOT NULL`),
   ],
 );
 
