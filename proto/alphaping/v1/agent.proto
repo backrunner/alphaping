@@ -29,6 +29,94 @@ message MetricSample {
   uint64 network_tx_bytes_total = 10;
 }
 
+enum ContainerRuntimeKind {
+  CONTAINER_RUNTIME_KIND_UNSPECIFIED = 0;
+  CONTAINER_RUNTIME_KIND_DOCKER = 1;
+  CONTAINER_RUNTIME_KIND_COLIMA_DOCKER = 2;
+  CONTAINER_RUNTIME_KIND_COLIMA_CONTAINERD = 3;
+  CONTAINER_RUNTIME_KIND_APPLE_CONTAINER = 4;
+}
+
+enum RuntimeAvailability {
+  RUNTIME_AVAILABILITY_UNSPECIFIED = 0;
+  RUNTIME_AVAILABILITY_AVAILABLE = 1;
+  RUNTIME_AVAILABILITY_ABSENT = 2;
+  RUNTIME_AVAILABILITY_STOPPED = 3;
+  RUNTIME_AVAILABILITY_PERMISSION_DENIED = 4;
+  RUNTIME_AVAILABILITY_INCOMPATIBLE = 5;
+  RUNTIME_AVAILABILITY_ERROR = 6;
+}
+
+enum ContainerState {
+  CONTAINER_STATE_UNSPECIFIED = 0;
+  CONTAINER_STATE_CREATED = 1;
+  CONTAINER_STATE_RUNNING = 2;
+  CONTAINER_STATE_PAUSED = 3;
+  CONTAINER_STATE_RESTARTING = 4;
+  CONTAINER_STATE_EXITED = 5;
+  CONTAINER_STATE_DEAD = 6;
+  CONTAINER_STATE_UNKNOWN = 7;
+}
+
+enum ContainerHealth {
+  CONTAINER_HEALTH_UNSPECIFIED = 0;
+  CONTAINER_HEALTH_NONE = 1;
+  CONTAINER_HEALTH_STARTING = 2;
+  CONTAINER_HEALTH_HEALTHY = 3;
+  CONTAINER_HEALTH_UNHEALTHY = 4;
+  CONTAINER_HEALTH_UNKNOWN = 5;
+}
+
+message RuntimeSnapshot {
+  ContainerRuntimeKind kind = 1;
+  string instance = 2;
+  RuntimeAvailability availability = 3;
+  string version = 4;
+  string detail_code = 5;
+}
+
+message ContainerPort {
+  uint32 private_port = 1;
+  uint32 public_port = 2;
+  string protocol = 3;
+  string host_ip = 4;
+}
+
+message ContainerCatalogEntry {
+  bytes container_key = 1;
+  ContainerRuntimeKind runtime = 2;
+  string runtime_instance = 3;
+  string runtime_container_id = 4;
+  string name = 5;
+  string image = 6;
+}
+
+message ContainerMetric {
+  bytes container_key = 1;
+  ContainerState state = 2;
+  ContainerHealth health = 3;
+  int64 started_at_ms = 4;
+  uint32 restart_count = 5;
+  uint32 cpu_permille = 6;
+  uint64 memory_used_bytes = 7;
+  uint64 memory_limit_bytes = 8;
+  uint64 network_rx_bytes_per_second = 9;
+  uint64 network_tx_bytes_per_second = 10;
+  uint64 network_rx_bytes_total = 11;
+  uint64 network_tx_bytes_total = 12;
+  repeated ContainerPort ports = 13;
+  int32 exit_code = 14;
+}
+
+message ContainerInventory {
+  int64 observed_at_ms = 1;
+  bytes catalog_digest = 2;
+  repeated RuntimeSnapshot runtimes = 3;
+  repeated ContainerCatalogEntry catalog = 4;
+  repeated ContainerMetric metrics = 5;
+  bool catalog_included = 6;
+}
+
 message MachineReport {
   bytes report_id = 1;
   uint64 machine_pk = 2;
@@ -36,6 +124,7 @@ message MachineReport {
   int64 nominal_minute_ms = 4;
   repeated MetricSample samples = 5;
   uint32 schema_version = 6;
+  ContainerInventory container_inventory = 7;
 }
 
 message EnrollmentRequest {
@@ -68,6 +157,7 @@ message EnrollmentResponse {
   uint64 initial_client_sequence = 13;
   uint64 initial_server_sequence = 14;
   string machine_claim_id = 15;
+  bool container_monitoring_enabled = 16;
 }
 
 enum AckStatus {

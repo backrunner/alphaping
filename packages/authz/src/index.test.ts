@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { canAccessResource, type ResourceGrant } from "./index.js";
+import { canAccessContainer, canAccessResource, type ResourceGrant } from "./index.js";
 
 describe("resource authorization", () => {
   const grants: readonly ResourceGrant[] = [
@@ -38,5 +38,26 @@ describe("resource authorization", () => {
 
   it("lets administrators access the workspace", () => {
     expect(canAccessResource("admin", [], "service", "service-1", "manage")).toBe(true);
+  });
+
+  it("inherits machine access and lets a container deny win", () => {
+    expect(canAccessContainer("member", grants, "machine-1", "container-1", "view")).toBe(true);
+    expect(
+      canAccessContainer(
+        "member",
+        [
+          ...grants,
+          {
+            resourceType: "container",
+            resourceId: "container-1",
+            capability: "view",
+            effect: "deny",
+          },
+        ],
+        "machine-1",
+        "container-1",
+        "view",
+      ),
+    ).toBe(false);
   });
 });

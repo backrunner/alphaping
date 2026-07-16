@@ -1,99 +1,179 @@
 <script lang="ts">
+  import type { MachineDetail } from "@alphaping/db";
   import { Boxes, Clock3 } from "lucide-svelte";
 
-  const runtimes = [
-    { name: "Docker Engine", detail: "Socket and API negotiation" },
-    { name: "Colima", detail: "Profiles and runtime discovery" },
-    { name: "Apple container", detail: "Version and availability detection" },
-  ];
+  import ContainerList from "$components/machines/container-list.svelte";
+  import ContainerRuntimeList from "$components/machines/container-runtime-list.svelte";
+  import { formatRelativeTime } from "$lib/utils/format";
+
+  let { inventory }: { inventory: MachineDetail["containerInventory"] } = $props();
+
+  const runningCount = $derived(
+    inventory?.containers.filter((container) => container.state === "running").length ?? 0,
+  );
+  const problemCount = $derived(
+    inventory?.containers.filter(
+      (container) =>
+        container.state === "dead" ||
+        container.state === "restarting" ||
+        container.health === "unhealthy",
+    ).length ?? 0,
+  );
 </script>
 
-<header>
-  <div>
-    <h2>Runtime inventory</h2>
-    <p>Container monitoring is enabled for this machine.</p>
-  </div>
-  <span class="pending"><Clock3 size={12} />Awaiting Agent inventory</span>
-</header>
-<div class="runtime-list">
-  {#each runtimes as runtime}
+{#if !inventory}
+  <div class="awaiting" role="status">
+    <Clock3 size={20} />
     <div>
-      <Boxes size={15} />
-      <span><strong>{runtime.name}</strong><small>{runtime.detail}</small></span>
-      <em>Pending</em>
+      <h2>Awaiting container inventory</h2>
+      <p>The Agent will report detected runtimes with its next durable report.</p>
     </div>
-  {/each}
-</div>
+  </div>
+{:else}
+  <section class="summary" aria-label="Container inventory summary">
+    <div><span>Containers</span><strong>{inventory.containers.length}</strong></div>
+    <div><span>Running</span><strong>{runningCount}</strong></div>
+    <div><span>Problems</span><strong class:problem={problemCount > 0}>{problemCount}</strong></div>
+    <p>
+      Collected {formatRelativeTime(inventory.observedAt)}
+      <time datetime={new Date(inventory.observedAt).toISOString()}
+        >{new Date(inventory.observedAt).toLocaleString()}</time
+      >
+    </p>
+  </section>
+
+  <ContainerRuntimeList runtimes={inventory.runtimes} />
+
+  <section class="container-section" aria-labelledby="container-heading">
+    <header>
+      <div>
+        <h2 id="container-heading">Containers</h2>
+        <p>Current state and resource usage</p>
+      </div>
+    </header>
+    {#if inventory.containers.length === 0}
+      <div class="empty">
+        <Boxes size={20} />
+        <strong>No containers detected</strong>
+        <span>Available runtimes are reporting an empty inventory.</span>
+      </div>
+    {:else}
+      <ContainerList containers={inventory.containers} />
+    {/if}
+  </section>
+{/if}
 
 <style>
-  header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 11px;
-  }
-
   h2,
   p {
     margin: 0;
   }
 
-  h2 {
+  .awaiting {
+    display: flex;
+    min-height: 240px;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    color: var(--text-faint);
+  }
+
+  .awaiting h2,
+  .container-section h2 {
+    color: var(--text);
     font-size: 14px;
   }
 
-  p {
+  .awaiting p,
+  header p {
+    margin-top: 2px;
     color: var(--text-muted);
     font-size: 10px;
   }
 
-  .pending {
-    display: inline-flex;
+  .summary {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(88px, 140px)) minmax(0, 1fr);
     align-items: center;
-    gap: 5px;
-    padding: 4px 7px;
-    border-radius: 999px;
-    color: var(--status-degraded);
-    background: var(--status-degraded-bg);
-    font-size: 9px;
-  }
-
-  .runtime-list {
     border-block: 1px solid var(--border);
   }
 
-  .runtime-list > div {
-    display: grid;
-    min-height: 54px;
-    grid-template-columns: 20px minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 8px;
-    padding: 7px 10px;
+  .summary > div {
+    padding: 9px 12px;
+    border-right: 1px solid var(--border);
   }
 
-  .runtime-list > div + div {
-    border-top: 1px solid var(--border);
-  }
-
-  strong,
-  small {
+  .summary span,
+  .summary strong {
     display: block;
   }
 
-  strong {
-    font-size: 11px;
-  }
-
-  small {
-    margin-top: 2px;
+  .summary span {
     color: var(--text-faint);
     font-size: 9px;
   }
 
-  em {
+  .summary strong {
+    margin-top: 2px;
+    font-family: var(--font-mono);
+    font-size: 14px;
+  }
+
+  .summary strong.problem {
+    color: var(--status-down);
+  }
+
+  .summary p {
+    justify-self: end;
     color: var(--text-muted);
+    font-size: 10px;
+  }
+
+  .summary time {
+    display: block;
+    margin-top: 2px;
+    color: var(--text-faint);
+    font-family: var(--font-mono);
     font-size: 9px;
-    font-style: normal;
+  }
+
+  .container-section {
+    padding-top: 20px;
+  }
+
+  .container-section > header {
+    margin-bottom: 10px;
+  }
+
+  .empty {
+    display: grid;
+    min-height: 160px;
+    place-content: center;
+    justify-items: center;
+    gap: 5px;
+    border-block: 1px solid var(--border);
+    color: var(--text-faint);
+  }
+
+  .empty strong {
+    color: var(--text);
+    font-size: 11px;
+  }
+
+  .empty span {
+    font-size: 9px;
+  }
+
+  @media (max-width: 820px) {
+    .summary {
+      grid-template-columns: repeat(3, 1fr);
+    }
+
+    .summary p {
+      grid-column: 1 / -1;
+      justify-self: start;
+      padding: 8px 12px;
+      border-top: 1px solid var(--border);
+    }
   }
 </style>

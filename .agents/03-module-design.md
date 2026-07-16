@@ -116,6 +116,8 @@ interface AuthorizationQuery {
 - `MachineSample`
 - `DiskSample`
 - `NetworkSample`
+- `RuntimeSnapshot`
+- `ContainerCatalogEntry`
 - `ContainerSnapshot`
 - `CheckResult`
 - `AgentConfig`

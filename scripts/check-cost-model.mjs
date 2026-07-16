@@ -8,6 +8,13 @@ const D1_STORAGE_PRICE_PER_GB = 0.75;
 const WORKERS_INCLUDED_REQUESTS = 10_000_000;
 const WORKERS_REQUEST_PRICE_PER_MILLION = 0.3;
 const IMPLEMENTATION_MARGIN = 1.25;
+const REPORTS_PER_MACHINE_7D = 10_080;
+const TYPICAL_CONTAINER_COUNT = 10;
+const TYPICAL_REPORT_BYTES = 2 * 1024;
+const MAX_CONTAINER_COUNT = 64;
+const MAX_REPORT_BYTES = 8 * 1024;
+const MACHINE_NON_RAW_STORAGE_GB =
+  0.0262 - (REPORTS_PER_MACHINE_7D * TYPICAL_REPORT_BYTES) / 1_000_000_000;
 
 function writesPerMachine() {
   return (
@@ -24,10 +31,30 @@ function writesPerCheck() {
   return writesPerMachine() + FIVE_MINUTE_BUCKETS * 2;
 }
 
-export function estimateScale(machines, checks) {
-  const knownWrites = machines * writesPerMachine() + checks * writesPerCheck();
+function reportBytesForContainers(containersPerMachine) {
+  const bounded = Math.max(0, Math.min(MAX_CONTAINER_COUNT, containersPerMachine));
+  if (bounded <= TYPICAL_CONTAINER_COUNT) return TYPICAL_REPORT_BYTES;
+  const ratio =
+    (bounded - TYPICAL_CONTAINER_COUNT) / (MAX_CONTAINER_COUNT - TYPICAL_CONTAINER_COUNT);
+  return TYPICAL_REPORT_BYTES + ratio * (MAX_REPORT_BYTES - TYPICAL_REPORT_BYTES);
+}
+
+export function estimateScale(
+  machines,
+  checks,
+  { containersPerMachine = TYPICAL_CONTAINER_COUNT, catalogChangesPerDay = 0 } = {},
+) {
+  const catalogWrites =
+    machines *
+    catalogChangesPerDay *
+    30 *
+    (Math.min(MAX_CONTAINER_COUNT, containersPerMachine) * 2 + 1);
+  const knownWrites = machines * writesPerMachine() + checks * writesPerCheck() + catalogWrites;
   const budgetedWrites = knownWrites * IMPLEMENTATION_MARGIN;
-  const storageGb = machines * 0.0262 + checks * 0.0116 + 0.5;
+  const machineStorageGb =
+    MACHINE_NON_RAW_STORAGE_GB +
+    (REPORTS_PER_MACHINE_7D * reportBytesForContainers(containersPerMachine)) / 1_000_000_000;
+  const storageGb = machines * machineStorageGb + checks * 0.0116 + 0.5;
   const workersRequests = machines * MONTH_MINUTES + MONTH_MINUTES;
   const d1WriteOverage =
     (Math.max(0, budgetedWrites - D1_INCLUDED_WRITES) / 1_000_000) * D1_WRITE_PRICE_PER_MILLION;
@@ -38,6 +65,8 @@ export function estimateScale(machines, checks) {
   return {
     machines,
     checks,
+    containersPerMachine,
+    catalogWrites,
     knownWrites,
     budgetedWrites,
     storageGb,
@@ -50,10 +79,16 @@ function millions(value) {
 }
 
 const scales = [30, 100, 150, 200, 1_000].map((resources) => estimateScale(resources, resources));
+scales.push(
+  estimateScale(100, 100, {
+    containersPerMachine: 64,
+    catalogChangesPerDay: 1,
+  }),
+);
 
 console.table(
   scales.map((scale) => ({
-    scale: `${scale.machines}+${scale.checks}`,
+    scale: `${scale.machines}+${scale.checks} / ${scale.containersPerMachine}c`,
     knownWrites: millions(scale.knownWrites),
     budgetedWrites: millions(scale.budgetedWrites),
     storage: `${scale.storageGb.toFixed(3)} GB`,
@@ -64,6 +99,13 @@ console.table(
 const baseline = estimateScale(100, 100);
 if (baseline.budgetedWrites > D1_INCLUDED_WRITES || baseline.storageGb > D1_INCLUDED_STORAGE_GB) {
   throw new Error("100 machines + 100 checks no longer fit the Cloudflare Paid baseline");
+}
+const maximumContainerDensity = estimateScale(100, 100, {
+  containersPerMachine: 64,
+  catalogChangesPerDay: 1,
+});
+if (maximumContainerDensity.catalogWrites !== 387_000) {
+  throw new Error(`container catalog ledger drifted: ${maximumContainerDensity.catalogWrites}`);
 }
 if (writesPerMachine() !== 156_960 || writesPerCheck() !== 174_240) {
   throw new Error(

@@ -4,8 +4,8 @@ use std::{
 };
 
 use alphaping_agent::{
-    backoff::equal_jitter_delay, config::AgentConfig, enrollment::enroll, sampler::Sampler,
-    spool::Spool, uploader::Uploader,
+    backoff::equal_jitter_delay, config::AgentConfig, containers::ContainerMonitor,
+    enrollment::enroll, sampler::Sampler, spool::Spool, uploader::Uploader,
 };
 use anyhow::{Context, Result, bail};
 use rand::Rng;
@@ -76,6 +76,7 @@ async fn run_enrollment(arguments: &[std::ffi::OsString]) -> Result<()> {
         sample_interval_seconds: u64::from(response.sample_interval_seconds),
         report_interval_seconds: u64::from(response.report_interval_seconds),
         max_spool_bytes: 512 * 1024 * 1024,
+        container_monitoring_enabled: response.container_monitoring_enabled,
     };
     config.save(&config_path)?;
     info!(path = %config_path.display(), "agent enrollment completed");
@@ -102,6 +103,9 @@ async fn run_agent(config_path: &Path) -> Result<()> {
     let config = AgentConfig::load(config_path)?;
     let mut spool = Spool::open(&config.spool_path)?;
     let mut sampler = Sampler::new();
+    let container_monitor = config
+        .container_monitoring_enabled
+        .then(ContainerMonitor::start);
     let uploader = Uploader::new(
         config.endpoint.clone(),
         config.agent_id.as_bytes().to_vec(),
@@ -131,6 +135,11 @@ async fn run_agent(config_path: &Path) -> Result<()> {
             }
             _ = report_tick.tick() => {
                 let now = unix_time_ms()?;
+                if let Some(inventory) = container_monitor.as_ref().and_then(ContainerMonitor::snapshot)
+                    && let Err(error) = spool.append_container_inventory(&inventory, now)
+                {
+                    error!(error = %error, "failed to persist container inventory");
+                }
                 if let Err(error) = spool.create_next_delivery(config.machine_pk, config.workspace_pk, now) {
                     error!(error = %error, "failed to create durable report");
                 }

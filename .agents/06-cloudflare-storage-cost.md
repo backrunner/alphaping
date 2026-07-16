@@ -285,7 +285,8 @@ Durable Object 对比只计 request：
 
 中央 check 的 outbound `fetch`/TCP 是同一 Cron invocation 的 subrequest，因此不增加 Workers request 计费，但会增加 CPU 和 D1 rows。上表 storage 要求：
 
-- Machine compressed report 平均/P95 预算不高于 2 KiB，通过 dimension ID、delta 和 zstd 控制。
+- 常见每机约 10 个容器时，完整 machine compressed report 的确定性 fixture 上限为 2 KiB；通过 16-byte stable container key、catalog-on-change 和压缩控制。
+- 64 个容器的硬上限 fixture 将常规 report 限制在 8 KiB，catalog 变化 report 限制在 16 KiB；catalog 只在上次认证 ACK 后发生变化时重发。
 - Check raw result 平均不高于 512 bytes，不保存完整 response body。
 - Rollup 的实际 SQLite 物理占用平均不高于 320 bytes/row。
 
@@ -331,6 +332,26 @@ storage overage                         0.00 USD
 ```
 
 结论：按上述 payload/rollup 预算、CPU 目标和每天 8 小时有 live viewer 的默认，**100 台机器 + 100 个每分钟服务检查仍可完整覆盖在 5 USD Workers Paid included usage 内**。如果全月始终有 live viewer，DO request overage 约 0.0444 USD；如果 CPU 只达到保守基准，再增加约 0.4512 USD/月。这些结论必须由实际 Worker/DO 基准和 D1 page size fixture 验证。
+
+### 容器密度的存储拐点
+
+上面的 100+100 结论已经包含常见每台约 10 个容器的 2 KiB machine report。容器状态复用现有每分钟 report、`machine_latest` 和 5 分钟 block，因此不会增加 Workers request、replay/latest row write 或 retention delete 行数。
+
+如果 100 台机器全部达到 64 容器硬上限，并且每个常规 report 都达到 8 KiB fixture 门禁：
+
+```text
+7d machine raw at 8 KiB/report         8.258 GB
+7d check raw at 512 B/result           0.516 GB
+30d 5m + 365d 1h rollups               1.114 GB
+status/control/latest reserve           0.585 GB
+total target                           10.473 GB
+storage over 5 GB included              5.473 GB
+D1 storage overage at 0.75 USD/GB       4.1048 USD/month
+```
+
+这个极端档位的总费约为 9.10 USD/月，加上保守 CPU 约为 9.56 USD/月；同时单 TELEMETRY_DB 会在到达硬上限前触发 8 GB 分片门槛。产品必须在预测接近该档位时缩短 raw retention、限制单机高频容器数或按 workspace/resource hash 分片，不能等到 D1 10 GB 硬上限。
+
+即使按每台 64 个容器每天发生一次完整 catalog 变化，100 台每月最多约增加 387,000 CONTROL_DB logical writes（每次最多 64 upsert、soft-delete sweep 更新 64 行，再更新一次 machine digest），仍被 100+100 的 8.28m 写入 margin 覆盖。catalog report 相比常规 report 的额外存储上限约 24.6 MB/月，不改变上述价格档位。
 
 ### 更大规模
 

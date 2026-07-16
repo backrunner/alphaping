@@ -10,3 +10,4 @@ spool_path = "/var/lib/alphaping/spool.db"
 sample_interval_seconds = 10
 report_interval_seconds = 60
 max_spool_bytes = 536870912
+container_monitoring_enabled = false

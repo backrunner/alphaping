@@ -112,7 +112,7 @@ GET /api/workspaces/:wid/machines/:mid/metrics
 GET /api/workspaces/:wid/machines/:mid/containers/:cid/metrics
 ```
 
-查询对应机器/time blocks，再从 slot payload 选择 container ID。容器名称、镜像等维度放在 `containers` 表，不在每个 sample 重复保存。
+查询对应机器/time blocks，再按稳定 16-byte container key 选择指标。容器名称、镜像和 runtime instance 等维度只在 catalog digest 变化时随 report 发送并同步到 `CONTROL_DB.containers`，不在每个 sample 或每分钟常规 report 重复保存。
 
 ### 4.3 Service history
 
@@ -367,7 +367,8 @@ Live frame 不写 D1，因此 10 秒 UI 实时性不会将 D1 rows written 扩�
 ## 13. 存储与 payload 门禁
 
 - 30 台中位物理存储估算约 2.21 GB，保守情况约 3.79 GB。
-- 100+100 要留在 5 GB included 内，machine compressed report 预算不高于 2 KiB、check result 不高于 512 bytes、rollup 物理平均不高于 320 bytes/row。
+- 100+100 在常见每机约 10 个容器时要留在 5 GB included 内，machine compressed report fixture 不高于 2 KiB、check result 不高于 512 bytes、rollup 物理平均不高于 320 bytes/row。
+- 64 容器硬上限的常规 report fixture 不高于 8 KiB，catalog 变化 report 不高于 16 KiB；100 台全部达到该上限时预计 D1 storage overage 约 4.1048 USD/月，并提前触发 8 GB telemetry 分片评估。
 - 容器名称、镜像、磁盘名称和网卡名称放在维度表，block slot 只引用 integer ID，避免重复长字符串。
 - 实现后必须用 `meta.rows_read/rows_written` 和 `PRAGMA page_count * page_size` 替换估算。
 - 单个 TELEMETRY_DB 达 8 GB、持续 overloaded 或预测含 margin 的月写入达 40m 时启动分片评估。

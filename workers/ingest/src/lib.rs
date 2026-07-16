@@ -8,6 +8,9 @@ use sha2::Sha256;
 use thiserror::Error;
 
 pub const MAX_REPORT_SAMPLES: usize = 6;
+pub const MAX_CONTAINER_COUNT: usize = 64;
+pub const MAX_CONTAINER_PORTS: usize = 8;
+pub const MAX_RUNTIME_COUNT: usize = 16;
 pub const MAX_SAFE_SEQUENCE: u64 = 9_007_199_254_740_991;
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -124,6 +127,27 @@ pub fn validate_report(
     }) {
         return Err(ValidationError::ReportTime);
     }
+    if let Some(inventory) = &report.container_inventory
+        && (inventory.observed_at_ms < report.nominal_minute_ms
+            || inventory.observed_at_ms >= report.nominal_minute_ms.saturating_add(60_000)
+            || inventory.catalog_digest.len() != 32
+            || inventory.runtimes.len() > MAX_RUNTIME_COUNT
+            || inventory.catalog.len() > MAX_CONTAINER_COUNT
+            || (!inventory.catalog_included && !inventory.catalog.is_empty())
+            || inventory.metrics.len() > MAX_CONTAINER_COUNT
+            || inventory.catalog.iter().any(|entry| {
+                entry.container_key.len() != 16
+                    || entry.runtime_instance.len() > 64
+                    || entry.runtime_container_id.len() > 128
+                    || entry.name.len() > 128
+                    || entry.image.len() > 512
+            })
+            || inventory.metrics.iter().any(|metric| {
+                metric.container_key.len() != 16 || metric.ports.len() > MAX_CONTAINER_PORTS
+            }))
+    {
+        return Err(ValidationError::ReportTime);
+    }
     Ok(())
 }
 
@@ -236,6 +260,7 @@ mod tests {
                 ..MetricSample::default()
             }],
             schema_version: 1,
+            container_inventory: None,
         };
         assert_eq!(validate_report(&report, &[1; 16], 7, 2, 180_000), Ok(()));
         assert_eq!(

@@ -3,6 +3,7 @@ members = [
   "crates/agent",
   "crates/crypto",
   "crates/protocol",
+  "crates/runtime-adapters",
   "workers/ingest",
 ]
 resolver = "3"

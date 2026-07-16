@@ -58,6 +58,7 @@ version = "0.1.0"
 dependencies = [
  "alphaping-crypto",
  "alphaping-protocol",
+ "alphaping-runtime-adapters",
  "anyhow",
  "blake3",
  "ed25519-dalek",
@@ -70,6 +71,7 @@ dependencies = [
  "rusqlite",
  "rustls",
  "serde",
+ "serde_json",
  "sysinfo",
  "tempfile",
  "thiserror",
@@ -105,6 +107,7 @@ dependencies = [
  "hmac",
  "prost",
  "serde",
+ "serde_json",
  "sha2",
  "thiserror",
  "wasm-bindgen",
@@ -115,10 +118,21 @@ dependencies = [
 name = "alphaping-protocol"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "miniz_oxide",
  "prost",
  "prost-build",
  "protoc-bin-vendored",
+ "thiserror",
+]
+
+[[package]]
+name = "alphaping-runtime-adapters"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "serde",
+ "serde_json",
  "thiserror",
 ]
 

@@ -5,7 +5,7 @@ use std::{
 
 use alphaping_protocol::{
     compress_message, decode_message, encode_message,
-    v1::{MachineReport, MetricSample},
+    v1::{ContainerInventory, MachineReport, MetricSample},
 };
 use anyhow::{Context, Result, bail};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -42,6 +42,10 @@ impl Spool {
                key TEXT PRIMARY KEY NOT NULL,
                value INTEGER NOT NULL
              ) WITHOUT ROWID;
+             CREATE TABLE IF NOT EXISTS meta_blobs (
+               key TEXT PRIMARY KEY NOT NULL,
+               value BLOB NOT NULL
+             ) WITHOUT ROWID;
              CREATE TABLE IF NOT EXISTS samples (
                id INTEGER PRIMARY KEY AUTOINCREMENT,
                sample_bucket INTEGER NOT NULL UNIQUE,
@@ -49,6 +53,12 @@ impl Spool {
                payload BLOB NOT NULL,
                created_at INTEGER NOT NULL
              );
+             CREATE TABLE IF NOT EXISTS container_snapshots (
+               nominal_minute INTEGER PRIMARY KEY NOT NULL,
+               observed_at INTEGER NOT NULL,
+               payload BLOB NOT NULL,
+               created_at INTEGER NOT NULL
+             ) WITHOUT ROWID;
              CREATE TABLE IF NOT EXISTS deliveries (
                report_id BLOB PRIMARY KEY NOT NULL,
                nominal_minute INTEGER NOT NULL UNIQUE,
@@ -57,7 +67,9 @@ impl Spool {
                created_at INTEGER NOT NULL,
                next_attempt_at INTEGER NOT NULL,
                attempt_count INTEGER NOT NULL DEFAULT 0,
-               last_error_code TEXT
+               last_error_code TEXT,
+               catalog_digest BLOB,
+               catalog_included INTEGER NOT NULL DEFAULT 0
              ) WITHOUT ROWID;
              CREATE TABLE IF NOT EXISTS delivery_samples (
                report_id BLOB NOT NULL REFERENCES deliveries(report_id) ON DELETE CASCADE,
@@ -71,6 +83,7 @@ impl Spool {
                updated_at INTEGER NOT NULL
              ) WITHOUT ROWID;",
         )?;
+        ensure_delivery_catalog_columns(&connection)?;
         connection.execute(
             "INSERT OR IGNORE INTO meta (key, value) VALUES ('transport_sequence', 0)",
             [],
@@ -91,6 +104,29 @@ impl Spool {
             ],
         )?;
         Ok(inserted == 1)
+    }
+
+    pub fn append_container_inventory(
+        &self,
+        inventory: &ContainerInventory,
+        now_ms: i64,
+    ) -> Result<()> {
+        let nominal_minute = inventory.observed_at_ms.div_euclid(60_000) * 60_000;
+        self.connection.execute(
+            "INSERT INTO container_snapshots (nominal_minute, observed_at, payload, created_at)
+             VALUES (?, ?, ?, ?)
+             ON CONFLICT(nominal_minute) DO UPDATE SET
+               observed_at = excluded.observed_at, payload = excluded.payload,
+               created_at = excluded.created_at
+             WHERE excluded.observed_at >= container_snapshots.observed_at",
+            params![
+                nominal_minute,
+                inventory.observed_at_ms,
+                encode_message(inventory),
+                now_ms
+            ],
+        )?;
+        Ok(())
     }
 
     pub fn create_next_delivery(
@@ -141,6 +177,36 @@ impl Spool {
         if samples.is_empty() {
             return Ok(None);
         }
+        let mut container_inventory = self
+            .connection
+            .query_row(
+                "SELECT payload FROM container_snapshots WHERE nominal_minute = ?",
+                [nominal_minute],
+                |row| row.get::<_, Vec<u8>>(0),
+            )
+            .optional()?
+            .map(|bytes| decode_message::<ContainerInventory>(&bytes))
+            .transpose()?;
+        let catalog_digest = container_inventory
+            .as_ref()
+            .map(|inventory| inventory.catalog_digest.clone());
+        let last_acked_catalog = self
+            .connection
+            .query_row(
+                "SELECT value FROM meta_blobs WHERE key = 'container_catalog_digest'",
+                [],
+                |row| row.get::<_, Vec<u8>>(0),
+            )
+            .optional()?;
+        let catalog_included = catalog_digest
+            .as_ref()
+            .is_some_and(|digest| last_acked_catalog.as_ref() != Some(digest));
+        if let Some(inventory) = &mut container_inventory {
+            inventory.catalog_included = catalog_included;
+            if !catalog_included {
+                inventory.catalog.clear();
+            }
+        }
 
         let report_id = Uuid::now_v7().into_bytes().to_vec();
         let report = MachineReport {
@@ -149,7 +215,8 @@ impl Spool {
             workspace_pk,
             nominal_minute_ms: nominal_minute,
             samples,
-            schema_version: 1,
+            schema_version: 2,
+            container_inventory,
         };
         let payload = compress_message(&report)?;
         let payload_hash = blake3::hash(&payload);
@@ -167,12 +234,20 @@ impl Spool {
                 now_ms
             ],
         )?;
+        transaction.execute(
+            "UPDATE deliveries SET catalog_digest = ?, catalog_included = ? WHERE report_id = ?",
+            params![catalog_digest, catalog_included, report_id],
+        )?;
         for sample_id in sample_ids {
             transaction.execute(
                 "INSERT INTO delivery_samples (report_id, sample_id) VALUES (?, ?)",
                 params![report_id, sample_id],
             )?;
         }
+        transaction.execute(
+            "DELETE FROM container_snapshots WHERE nominal_minute = ?",
+            [nominal_minute],
+        )?;
         transaction.commit()?;
         Ok(Some(report_id))
     }
@@ -240,6 +315,13 @@ impl Spool {
 
     pub fn acknowledge(&mut self, report_id: &[u8]) -> Result<bool> {
         let transaction = self.connection.transaction()?;
+        let catalog = transaction
+            .query_row(
+                "SELECT catalog_digest, catalog_included FROM deliveries WHERE report_id = ?",
+                [report_id],
+                |row| Ok((row.get::<_, Option<Vec<u8>>>(0)?, row.get::<_, bool>(1)?)),
+            )
+            .optional()?;
         let sample_ids = {
             let mut statement = transaction
                 .prepare("SELECT sample_id FROM delivery_samples WHERE report_id = ?")?;
@@ -253,6 +335,13 @@ impl Spool {
         )?;
         let deleted_delivery =
             transaction.execute("DELETE FROM deliveries WHERE report_id = ?", [report_id])?;
+        if let Some((Some(digest), true)) = catalog {
+            transaction.execute(
+                "INSERT INTO meta_blobs (key, value) VALUES ('container_catalog_digest', ?)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                [digest],
+            )?;
+        }
         let mut deleted_samples = 0;
         for sample_id in sample_ids {
             deleted_samples +=
@@ -338,9 +427,31 @@ impl Spool {
     }
 }
 
+fn ensure_delivery_catalog_columns(connection: &Connection) -> Result<()> {
+    let columns = {
+        let mut statement = connection.prepare("PRAGMA table_info(deliveries)")?;
+        statement
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    if !columns.iter().any(|column| column == "catalog_digest") {
+        connection.execute("ALTER TABLE deliveries ADD COLUMN catalog_digest BLOB", [])?;
+    }
+    if !columns.iter().any(|column| column == "catalog_included") {
+        connection.execute(
+            "ALTER TABLE deliveries ADD COLUMN catalog_included INTEGER NOT NULL DEFAULT 0",
+            [],
+        )?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
-    use alphaping_protocol::v1::MetricSample;
+    use alphaping_protocol::{
+        decompress_message,
+        v1::{ContainerCatalogEntry, ContainerInventory, MachineReport, MetricSample},
+    };
     use tempfile::tempdir;
 
     use super::Spool;
@@ -384,5 +495,105 @@ mod tests {
         drop(spool);
         let mut reopened = Spool::open(&path).expect("reopen spool");
         assert_eq!(reopened.next_sequence().expect("sequence"), 2);
+    }
+
+    #[test]
+    fn catalog_is_resent_until_ack_then_metrics_remain_compact() {
+        let directory = tempdir().expect("temp directory");
+        let mut spool = Spool::open(directory.path().join("spool.db")).expect("open spool");
+        for minute in [60_000_i64, 120_000_i64] {
+            for index in 0..6 {
+                spool
+                    .append_sample(&sample(minute + index * 10_000), minute + 60_000)
+                    .expect("append sample");
+            }
+            spool
+                .append_container_inventory(
+                    &ContainerInventory {
+                        observed_at_ms: minute + 5_000,
+                        catalog_digest: vec![7; 32],
+                        catalog: vec![ContainerCatalogEntry {
+                            container_key: vec![3; 16],
+                            name: "api".to_owned(),
+                            ..ContainerCatalogEntry::default()
+                        }],
+                        catalog_included: true,
+                        ..ContainerInventory::default()
+                    },
+                    minute + 60_000,
+                )
+                .expect("append inventory");
+        }
+
+        let first_id = spool
+            .create_next_delivery(7, 2, 180_000)
+            .expect("create first")
+            .expect("first delivery");
+        let first = spool
+            .due_delivery(180_000)
+            .expect("read first")
+            .expect("first due");
+        let first_report: MachineReport =
+            decompress_message(&first.payload).expect("decode first report");
+        assert_eq!(
+            first_report
+                .container_inventory
+                .as_ref()
+                .expect("first inventory")
+                .catalog
+                .len(),
+            1
+        );
+        assert!(spool.acknowledge(&first_id).expect("ack first"));
+
+        let second_id = spool
+            .create_next_delivery(7, 2, 180_000)
+            .expect("create second")
+            .expect("second delivery");
+        let second = spool
+            .due_delivery(180_000)
+            .expect("read second")
+            .expect("second due");
+        let second_report: MachineReport =
+            decompress_message(&second.payload).expect("decode second report");
+        assert!(
+            second_report
+                .container_inventory
+                .as_ref()
+                .expect("second inventory")
+                .catalog
+                .is_empty()
+        );
+        assert!(spool.acknowledge(&second_id).expect("ack second"));
+
+        for index in 0..6 {
+            spool
+                .append_sample(&sample(180_000 + index * 10_000), 240_000)
+                .expect("append third sample");
+        }
+        spool
+            .append_container_inventory(
+                &ContainerInventory {
+                    observed_at_ms: 185_000,
+                    catalog_digest: vec![8; 32],
+                    catalog_included: true,
+                    ..ContainerInventory::default()
+                },
+                240_000,
+            )
+            .expect("append empty inventory");
+        spool
+            .create_next_delivery(7, 2, 240_000)
+            .expect("create third")
+            .expect("third delivery");
+        let third = spool
+            .due_delivery(240_000)
+            .expect("read third")
+            .expect("third due");
+        let third_report: MachineReport =
+            decompress_message(&third.payload).expect("decode third report");
+        let third_inventory = third_report.container_inventory.expect("third inventory");
+        assert!(third_inventory.catalog_included);
+        assert!(third_inventory.catalog.is_empty());
     }
 }

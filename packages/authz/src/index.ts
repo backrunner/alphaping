@@ -34,3 +34,28 @@ export function canAccessResource(
       (grant.capability === capability || (capability === "view" && grant.capability === "manage")),
   );
 }
+
+export function canAccessContainer(
+  role: WorkspaceRole,
+  grants: readonly ResourceGrant[],
+  machineId: string,
+  containerId: string,
+  capability: Capability,
+): boolean {
+  if (role === "admin") return true;
+  const containerGrants = grants.filter(
+    (grant) => grant.resourceType === "container" && grant.resourceId === containerId,
+  );
+  const denied = containerGrants.some(
+    (grant) =>
+      grant.effect === "deny" &&
+      (grant.capability === capability || (capability === "view" && grant.capability === "view")),
+  );
+  if (denied) return false;
+  const allowed = containerGrants.some(
+    (grant) =>
+      grant.effect === "allow" &&
+      (grant.capability === capability || (capability === "view" && grant.capability === "manage")),
+  );
+  return allowed || canAccessResource(role, grants, "machine", machineId, capability);
+}

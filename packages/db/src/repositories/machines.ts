@@ -1,4 +1,5 @@
 import {
+  canAccessContainer,
   canAccessResource,
   type ResourceGrant,
   type ResourceType,
@@ -6,9 +7,21 @@ import {
 } from "@alphaping/authz";
 
 import type { DashboardMachine } from "./dashboard.js";
-import type { MachineCollection, MachineDetail } from "./machine-models.js";
+import type {
+  MachineCollection,
+  MachineContainer,
+  MachineContainerInventory,
+  MachineDetail,
+  MachineRuntimeStatus,
+} from "./machine-models.js";
 
-export type { MachineCollection, MachineDetail } from "./machine-models.js";
+export type {
+  MachineCollection,
+  MachineContainer,
+  MachineContainerInventory,
+  MachineDetail,
+  MachineRuntimeStatus,
+} from "./machine-models.js";
 
 interface WorkspaceRow {
   id: string;
@@ -59,6 +72,7 @@ interface MachineLatestRow {
   network_tx_bps: number;
   network_rx_total: number;
   network_tx_total: number;
+  container_inventory_json: string | null;
 }
 
 interface EventRow {
@@ -92,7 +106,8 @@ async function loadWorkspaceAccess(
   const rows = await db
     .prepare(
       `SELECT resource_type, resource_id, capability, effect FROM resource_grants
-       WHERE workspace_id = ? AND subject_user_id = ? AND resource_type = 'machine'`,
+       WHERE workspace_id = ? AND subject_user_id = ?
+         AND resource_type IN ('machine', 'container')`,
     )
     .bind(workspace.id, userId)
     .all<GrantRow>();
@@ -159,11 +174,165 @@ async function loadLatestRows(
         `SELECT machine_pk, observed_at, received_at, state, cpu_permille,
                 memory_used_bytes, memory_total_bytes, storage_used_bytes, storage_total_bytes,
                 network_rx_bps, network_tx_bps, network_rx_total, network_tx_total
+                , container_inventory_json
          FROM machine_latest WHERE machine_pk IN (${placeholders(machinePks.length)})`,
       )
       .bind(...machinePks)
       .all<MachineLatestRow>()
   ).results;
+}
+
+const runtimeKinds = new Set<MachineRuntimeStatus["kind"]>([
+  "docker",
+  "colima-docker",
+  "colima-containerd",
+  "apple-container",
+  "unknown",
+]);
+const runtimeAvailability = new Set<MachineRuntimeStatus["availability"]>([
+  "available",
+  "absent",
+  "stopped",
+  "permission-denied",
+  "incompatible",
+  "error",
+  "unknown",
+]);
+const containerStates = new Set<MachineContainer["state"]>([
+  "created",
+  "running",
+  "paused",
+  "restarting",
+  "exited",
+  "dead",
+  "unknown",
+]);
+const containerHealth = new Set<MachineContainer["health"]>([
+  "none",
+  "starting",
+  "healthy",
+  "unhealthy",
+  "unknown",
+]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function boundedString(value: unknown, maximum: number): string | null {
+  return typeof value === "string" && value.length <= maximum ? value : null;
+}
+
+function safeInteger(value: unknown, minimum = 0): number | null {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= minimum
+    ? value
+    : null;
+}
+
+export function parseContainerInventory(value: string | null): MachineContainerInventory | null {
+  if (!value || value.length > 256 * 1024) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return null;
+  }
+  if (!isRecord(parsed) || !Array.isArray(parsed.runtimes) || !Array.isArray(parsed.containers)) {
+    return null;
+  }
+  const observedAt = safeInteger(parsed.observedAt);
+  if (observedAt === null || parsed.runtimes.length > 16 || parsed.containers.length > 64)
+    return null;
+  const runtimes: MachineRuntimeStatus[] = [];
+  for (const item of parsed.runtimes) {
+    if (!isRecord(item)) return null;
+    const kind = boundedString(item.kind, 32);
+    const availability = boundedString(item.availability, 32);
+    const instance = boundedString(item.instance, 64);
+    const version = boundedString(item.version, 64);
+    const detailCode = boundedString(item.detailCode, 64);
+    if (
+      !kind ||
+      !runtimeKinds.has(kind as MachineRuntimeStatus["kind"]) ||
+      !availability ||
+      !runtimeAvailability.has(availability as MachineRuntimeStatus["availability"]) ||
+      instance === null ||
+      version === null ||
+      detailCode === null
+    ) {
+      return null;
+    }
+    runtimes.push({
+      kind: kind as MachineRuntimeStatus["kind"],
+      availability: availability as MachineRuntimeStatus["availability"],
+      instance,
+      version,
+      detailCode,
+    });
+  }
+  const containers: MachineContainer[] = [];
+  for (const item of parsed.containers) {
+    if (!isRecord(item) || !Array.isArray(item.ports) || item.ports.length > 8) return null;
+    const id = boundedString(item.id, 32);
+    const runtime = boundedString(item.runtime, 32);
+    const runtimeInstance = boundedString(item.runtimeInstance, 64);
+    const name = boundedString(item.name, 128);
+    const image = boundedString(item.image, 512);
+    const state = boundedString(item.state, 32);
+    const health = boundedString(item.health, 32);
+    if (
+      !id ||
+      !/^[a-f0-9]{32}$/.test(id) ||
+      !runtime ||
+      !runtimeKinds.has(runtime as MachineRuntimeStatus["kind"]) ||
+      runtimeInstance === null ||
+      name === null ||
+      image === null ||
+      !state ||
+      !containerStates.has(state as MachineContainer["state"]) ||
+      !health ||
+      !containerHealth.has(health as MachineContainer["health"])
+    ) {
+      return null;
+    }
+    const numbers = [
+      item.startedAt,
+      item.restartCount,
+      item.cpuPermille,
+      item.memoryUsedBytes,
+      item.memoryLimitBytes,
+      item.networkRxBps,
+      item.networkTxBps,
+    ].map((number) => safeInteger(number));
+    if (numbers.some((number) => number === null)) return null;
+    const ports = item.ports.map((port) => {
+      if (!isRecord(port)) return null;
+      const privatePort = safeInteger(port.privatePort);
+      const publicPort = safeInteger(port.publicPort);
+      const protocol = boundedString(port.protocol, 8);
+      if (privatePort === null || publicPort === null || protocol === null) return null;
+      return { privatePort, publicPort, protocol };
+    });
+    if (ports.some((port) => port === null)) return null;
+    containers.push({
+      id,
+      runtime: runtime as MachineRuntimeStatus["kind"],
+      runtimeInstance,
+      name,
+      image,
+      state: state as MachineContainer["state"],
+      health: health as MachineContainer["health"],
+      startedAt: numbers[0] ?? 0,
+      restartCount: numbers[1] ?? 0,
+      cpuPermille: numbers[2] ?? 0,
+      memoryUsedBytes: numbers[3] ?? 0,
+      memoryLimitBytes: numbers[4] ?? 0,
+      networkRxBps: numbers[5] ?? 0,
+      networkTxBps: numbers[6] ?? 0,
+      ports: ports.filter((port): port is NonNullable<typeof port> => port !== null),
+    });
+  }
+  return { observedAt, runtimes, containers };
 }
 
 function normalizeState(state: string): DashboardMachine["state"] {
@@ -295,6 +464,7 @@ export async function loadMachineDetail(
     machineId,
   );
   const latestRows = await loadLatestRows(telemetryDb, [machine.telemetry_pk]);
+  const inventory = parseContainerInventory(latestRows[0]?.container_inventory_json ?? null);
   const events = await telemetryDb
     .prepare(
       `SELECT occurred_at, previous_state, current_state, reason_code FROM state_events
@@ -341,6 +511,20 @@ export async function loadMachineDetail(
       currentState: event.current_state,
       reasonCode: event.reason_code,
     })),
+    containerInventory: inventory
+      ? {
+          ...inventory,
+          containers: inventory.containers.filter((container) =>
+            canAccessContainer(
+              access.workspace.role,
+              access.grants,
+              machine.id,
+              container.id,
+              "view",
+            ),
+          ),
+        }
+      : null,
     canManage: canAccessResource(
       access.workspace.role,
       access.grants,

@@ -194,7 +194,7 @@ Better Auth 核心表由其 schema 生成并纳入统一 migration：
 - `network_rx_total_bytes`, `network_tx_total_bytes`
 - `uptime_seconds`
 - `agent_version`, `config_revision`
-- `summary_blob`，只放非查询热点扩展字段和当前容器快照
+- `container_inventory_json`，只放经过边界校验的当前 runtime/container 投影；不含 runtime 内部 container ID、环境变量、secret、日志或挂载内容
 
 主键 `machine_id`。Dashboard 先从 `CONTROL_DB` 取得已授权 machine PK，再以主键 `IN (...)` 查询 latest 并计算总览。30 台规模不写 `workspace_status_summary`；对 500 台目标也只需分块读取 500 行，在实测证明有瓶颈前不增加高频汇总写入。
 
@@ -225,12 +225,12 @@ Better Auth 核心表由其 schema 生成并纳入统一 migration：
 
 ### `containers`
 
-- `id`, `workspace_id`, `machine_id`
-- `runtime`, `runtime_container_id`
+- `id`, `workspace_id`, `machine_id`，其中 `id` 是 Agent 根据 runtime/instance/runtime container ID 生成的稳定 16-byte key 的 hex 表示
+- `runtime`, `runtime_instance`, `runtime_container_id`
 - `name`, `image`, `first_seen_at`, `last_seen_at`
 - `deleted_at`
 
-唯一键：`machine_id,runtime,runtime_container_id`。
+唯一键：`machine_id,runtime,runtime_instance,runtime_container_id`。Agent 每分钟 report 只发送稳定 key 和动态指标；完整 catalog 仅在目录 digest 与上次认证 ACK 不同时发送。Ingest 只在 `machines.container_catalog_digest` 改变时同步本表，因此稳态不产生逐容器 CONTROL_DB 写入。
 
 ### `container_latest`
 
@@ -245,7 +245,7 @@ Better Auth 核心表由其 schema 生成并纳入统一 migration：
 
 不保存环境变量和 secret。
 
-V1 不在每次 report 逐容器 upsert 该表；当前容器快照从 `machine_latest.summary_blob` 读取。`container_latest` 仅在后续需要独立权限查询且实测证明值得额外写入时启用。
+V1 不在每次 report 逐容器 upsert 该表；当前容器快照从 `machine_latest.container_inventory_json` 读取。`container_latest` 仅在后续实测证明独立 SQL 指标查询值得额外写入时启用。
 
 ### `container_rollup_5m`
 

@@ -22,6 +22,8 @@ const MAX_CLOCK_SKEW_MS: i64 = 5 * 60_000;
 
 #[derive(Debug, Deserialize)]
 struct AgentKeyRow {
+    machine_id: String,
+    workspace_id: String,
     machine_pk: f64,
     workspace_pk: f64,
     applied_config_revision: f64,
@@ -29,6 +31,7 @@ struct AgentKeyRow {
     nonce_prefix: Vec<u8>,
     valid_from: f64,
     valid_until: f64,
+    container_catalog_digest: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -40,6 +43,11 @@ struct ReplayRow {
 struct SlotRow {
     report_id: Option<Vec<u8>>,
     payload_hash: Option<Vec<u8>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LatestContainerRow {
+    container_inventory_json: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -69,6 +77,7 @@ struct EnrollmentTokenRow {
     sample_interval_seconds: f64,
     report_interval_seconds: f64,
     config_revision: f64,
+    container_monitoring_enabled: f64,
 }
 
 #[derive(Debug)]
@@ -99,6 +108,148 @@ fn text(value: &str) -> JsValue {
 
 fn blob(value: &[u8]) -> JsValue {
     Uint8Array::from(value).into()
+}
+
+fn optional_text(value: Option<&str>) -> JsValue {
+    value.map_or(JsValue::NULL, JsValue::from_str)
+}
+
+fn container_inventory_json(
+    report: &MachineReport,
+    previous_json: Option<&str>,
+) -> Result<Option<String>, IngestError> {
+    let Some(inventory) = &report.container_inventory else {
+        return Ok(None);
+    };
+    let catalog = inventory
+        .catalog
+        .iter()
+        .map(|entry| (hex::encode(&entry.container_key), entry))
+        .collect::<std::collections::HashMap<_, _>>();
+    let previous = previous_json
+        .and_then(|value| serde_json::from_str::<serde_json::Value>(value).ok())
+        .and_then(|value| {
+            value
+                .get("containers")
+                .and_then(|containers| containers.as_array())
+                .cloned()
+        })
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|container| {
+            let id = container.get("id")?.as_str()?.to_owned();
+            Some((id, container))
+        })
+        .collect::<std::collections::HashMap<_, _>>();
+    let containers = inventory
+        .metrics
+        .iter()
+        .filter_map(|metric| {
+            let id = hex::encode(&metric.container_key);
+            let (runtime, runtime_instance, name, image) = if let Some(entry) = catalog.get(&id) {
+                (
+                    runtime_kind(entry.runtime),
+                    entry.runtime_instance.as_str(),
+                    entry.name.as_str(),
+                    entry.image.as_str(),
+                )
+            } else {
+                let entry = previous.get(&id)?;
+                (
+                    entry.get("runtime")?.as_str()?,
+                    entry.get("runtimeInstance")?.as_str()?,
+                    entry.get("name")?.as_str()?,
+                    entry.get("image")?.as_str()?,
+                )
+            };
+            Some(serde_json::json!({
+                "id": id,
+                "runtime": runtime,
+                "runtimeInstance": runtime_instance,
+                "name": name,
+                "image": image,
+                "state": container_state(metric.state),
+                "health": container_health(metric.health),
+                "startedAt": metric.started_at_ms,
+                "restartCount": metric.restart_count,
+                "cpuPermille": metric.cpu_permille,
+                "memoryUsedBytes": metric.memory_used_bytes,
+                "memoryLimitBytes": metric.memory_limit_bytes,
+                "networkRxBps": metric.network_rx_bytes_per_second,
+                "networkTxBps": metric.network_tx_bytes_per_second,
+                "ports": metric.ports.iter().map(|port| serde_json::json!({
+                    "privatePort": port.private_port,
+                    "publicPort": port.public_port,
+                    "protocol": port.protocol,
+                })).collect::<Vec<_>>(),
+            }))
+        })
+        .collect::<Vec<_>>();
+    let runtimes = inventory
+        .runtimes
+        .iter()
+        .map(|runtime| {
+            serde_json::json!({
+                "kind": runtime_kind(runtime.kind),
+                "instance": runtime.instance,
+                "availability": runtime_availability(runtime.availability),
+                "version": runtime.version,
+                "detailCode": runtime.detail_code,
+            })
+        })
+        .collect::<Vec<_>>();
+    serde_json::to_string(&serde_json::json!({
+        "observedAt": inventory.observed_at_ms,
+        "catalogDigest": hex::encode(&inventory.catalog_digest),
+        "runtimes": runtimes,
+        "containers": containers,
+    }))
+    .map(Some)
+    .map_err(|_| IngestError::BadRequest)
+}
+
+fn runtime_kind(value: i32) -> &'static str {
+    match value {
+        1 => "docker",
+        2 => "colima-docker",
+        3 => "colima-containerd",
+        4 => "apple-container",
+        _ => "unknown",
+    }
+}
+
+fn runtime_availability(value: i32) -> &'static str {
+    match value {
+        1 => "available",
+        2 => "absent",
+        3 => "stopped",
+        4 => "permission-denied",
+        5 => "incompatible",
+        6 => "error",
+        _ => "unknown",
+    }
+}
+
+fn container_state(value: i32) -> &'static str {
+    match value {
+        1 => "created",
+        2 => "running",
+        3 => "paused",
+        4 => "restarting",
+        5 => "exited",
+        6 => "dead",
+        _ => "unknown",
+    }
+}
+
+fn container_health(value: i32) -> &'static str {
+    match value {
+        1 => "none",
+        2 => "starting",
+        3 => "healthy",
+        4 => "unhealthy",
+        _ => "unknown",
+    }
 }
 
 fn now_ms() -> i64 {
@@ -183,7 +334,8 @@ async fn handle_enrollment(mut request: Request, env: Env) -> Result<Response, I
             "SELECT t.id, m.telemetry_pk AS machine_pk, w.telemetry_pk AS workspace_pk,
                     m.sampling_interval_seconds AS sample_interval_seconds,
                     m.report_interval_seconds AS report_interval_seconds,
-                    m.desired_config_revision AS config_revision
+                    m.desired_config_revision AS config_revision,
+                    m.container_monitoring_enabled
              FROM agent_enrollment_tokens t
              JOIN machines m ON m.id = t.machine_id
              JOIN workspaces w ON w.id = t.workspace_id
@@ -287,6 +439,7 @@ async fn handle_enrollment(mut request: Request, env: Env) -> Result<Response, I
         initial_client_sequence: 1,
         initial_server_sequence: 1,
         machine_claim_id: enrollment.machine_claim_id,
+        container_monitoring_enabled: token.container_monitoring_enabled != 0.0,
     };
     let headers = Headers::new();
     headers.set("content-type", "application/x-protobuf")?;
@@ -300,9 +453,10 @@ async fn load_agent_key(
     key_epoch: u32,
 ) -> Result<AgentKeyRow, IngestError> {
     db.prepare(
-        "SELECT m.telemetry_pk AS machine_pk, w.telemetry_pk AS workspace_pk,
+        "SELECT m.id AS machine_id, w.id AS workspace_id,
+                m.telemetry_pk AS machine_pk, w.telemetry_pk AS workspace_pk,
                 a.applied_config_revision, k.wrapped_data_key, k.nonce_prefix,
-                k.valid_from, k.valid_until
+                k.valid_from, k.valid_until, m.container_catalog_digest
          FROM agents a
          JOIN machines m ON m.id = a.machine_id
          JOIN workspaces w ON w.id = a.workspace_id
@@ -314,6 +468,68 @@ async fn load_agent_key(
     .first::<AgentKeyRow>(None)
     .await?
     .ok_or(IngestError::Unauthorized)
+}
+
+async fn sync_container_catalog(
+    db: &D1Database,
+    agent: &AgentKeyRow,
+    inventory: &alphaping_protocol::v1::ContainerInventory,
+    now: i64,
+) -> Result<(), IngestError> {
+    if !inventory.catalog_included
+        || agent.container_catalog_digest.as_deref() == Some(&inventory.catalog_digest)
+    {
+        return Ok(());
+    }
+    let mut statements = Vec::with_capacity(inventory.catalog.len() + 2);
+    statements.push(
+        db.prepare(
+            "UPDATE containers SET deleted_at = ?, last_seen_at = ?
+             WHERE machine_id = ? AND deleted_at IS NULL",
+        )
+        .bind(&[number(now), number(now), text(&agent.machine_id)])?,
+    );
+    for entry in &inventory.catalog {
+        let container_id = hex::encode(&entry.container_key);
+        statements.push(
+            db.prepare(
+                "INSERT INTO containers
+                  (id, workspace_id, machine_id, runtime, runtime_instance,
+                   runtime_container_id, name, image, first_seen_at, last_seen_at, deleted_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+                 ON CONFLICT(id) DO UPDATE SET
+                   runtime = excluded.runtime,
+                   runtime_instance = excluded.runtime_instance,
+                   runtime_container_id = excluded.runtime_container_id,
+                   name = excluded.name,
+                   image = excluded.image,
+                   last_seen_at = excluded.last_seen_at,
+                   deleted_at = NULL",
+            )
+            .bind(&[
+                text(&container_id),
+                text(&agent.workspace_id),
+                text(&agent.machine_id),
+                text(runtime_kind(entry.runtime)),
+                text(&entry.runtime_instance),
+                text(&entry.runtime_container_id),
+                text(&entry.name),
+                text(&entry.image),
+                number(now),
+                number(now),
+            ])?,
+        );
+    }
+    statements.push(
+        db.prepare("UPDATE machines SET container_catalog_digest = ?, updated_at = ? WHERE id = ?")
+            .bind(&[
+                blob(&inventory.catalog_digest),
+                number(now),
+                text(&agent.machine_id),
+            ])?,
+    );
+    db.batch(statements).await?;
+    Ok(())
 }
 
 async fn check_replay(
@@ -430,16 +646,18 @@ fn latest_statement(
     agent_id: &str,
     report: &MachineReport,
     now: i64,
+    previous_container_inventory: Option<&str>,
 ) -> Result<worker::D1PreparedStatement, IngestError> {
     let latest = report.samples.last().ok_or(IngestError::BadRequest)?;
+    let container_inventory = container_inventory_json(report, previous_container_inventory)?;
     Ok(db
         .prepare(
             "INSERT INTO machine_latest
               (machine_pk, workspace_pk, agent_id, observed_at, received_at, state,
                cpu_permille, memory_used_bytes, memory_total_bytes, storage_used_bytes,
                storage_total_bytes, network_rx_bps, network_tx_bps, network_rx_total,
-               network_tx_total, report_id)
-             VALUES (?, ?, ?, ?, ?, 'healthy', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               network_tx_total, report_id, container_inventory_json)
+             VALUES (?, ?, ?, ?, ?, 'healthy', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(machine_pk) DO UPDATE SET
                workspace_pk = excluded.workspace_pk,
                agent_id = excluded.agent_id,
@@ -455,7 +673,10 @@ fn latest_statement(
                network_tx_bps = excluded.network_tx_bps,
                network_rx_total = excluded.network_rx_total,
                network_tx_total = excluded.network_tx_total,
-               report_id = excluded.report_id
+               report_id = excluded.report_id,
+               container_inventory_json = COALESCE(
+                 excluded.container_inventory_json, machine_latest.container_inventory_json
+               )
              WHERE excluded.observed_at >= machine_latest.observed_at",
         )
         .bind(&[
@@ -474,6 +695,7 @@ fn latest_statement(
             unsigned(latest.network_rx_bytes_total),
             unsigned(latest.network_tx_bytes_total),
             blob(&report.report_id),
+            optional_text(container_inventory.as_deref()),
         ])?)
 }
 
@@ -626,6 +848,16 @@ async fn durable_ack(
     duplicate: bool,
 ) -> Result<Response, IngestError> {
     let now = now_ms();
+    let previous_container_inventory = if !duplicate && report.container_inventory.is_some() {
+        telemetry_db
+            .prepare("SELECT container_inventory_json FROM machine_latest WHERE machine_pk = ?")
+            .bind(&[unsigned(report.machine_pk)])?
+            .first::<LatestContainerRow>(None)
+            .await?
+            .and_then(|row| row.container_inventory_json)
+    } else {
+        None
+    };
     let mut statements = vec![replay_statement(
         telemetry_db,
         agent_id,
@@ -641,7 +873,13 @@ async fn durable_ack(
             hash.as_bytes(),
             compressed_payload,
         )?);
-        statements.push(latest_statement(telemetry_db, agent_id, report, now)?);
+        statements.push(latest_statement(
+            telemetry_db,
+            agent_id,
+            report,
+            now,
+            previous_container_inventory.as_deref(),
+        )?);
         statements.extend(closed_rollups(telemetry_db, report).await?);
     }
     telemetry_db.batch(statements).await?;
@@ -757,6 +995,9 @@ async fn handle_report(mut request: Request, env: Env) -> Result<Response, Inges
         now,
     )
     .map_err(|_| IngestError::BadRequest)?;
+    if let Some(inventory) = &report.container_inventory {
+        sync_container_catalog(&control_db, &agent_key, inventory, now).await?;
+    }
     let payload_hash = blake3::hash(&compressed_payload);
     let duplicate = classify_slot(&telemetry_db, &report, payload_hash.as_bytes()).await?;
     durable_ack(

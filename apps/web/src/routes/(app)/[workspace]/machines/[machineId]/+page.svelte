@@ -75,7 +75,7 @@
       <h2>No probe results</h2>
       <p>Probe tasks assigned to this machine will appear here.</p>
     {:else if activeTab === "containers"}
-      <MachineContainers />
+      <MachineContainers inventory={data.containerInventory} />
     {:else if activeTab === "events"}
       <MachineEvents events={data.events} />
     {:else if activeTab === "config" && data.canManage}

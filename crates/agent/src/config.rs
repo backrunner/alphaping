@@ -24,6 +24,8 @@ pub struct AgentConfig {
     pub report_interval_seconds: u64,
     #[serde(default = "default_spool_bytes")]
     pub max_spool_bytes: u64,
+    #[serde(default)]
+    pub container_monitoring_enabled: bool,
 }
 
 const fn default_sample_interval() -> u64 {

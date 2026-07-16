@@ -32,11 +32,40 @@ export const machines = sqliteTable(
       .notNull()
       .default(false),
     desiredConfigRevision: integer("desired_config_revision").notNull().default(1),
+    containerCatalogDigest: blob("container_catalog_digest", { mode: "buffer" }),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
     deletedAt: integer("deleted_at"),
   },
   (table) => [uniqueIndex("machines_telemetry_pk_uq").on(table.telemetryPk)],
+);
+
+export const containers = sqliteTable(
+  "containers",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull(),
+    machineId: text("machine_id").notNull(),
+    runtime: text("runtime", {
+      enum: ["docker", "colima-docker", "colima-containerd", "apple-container", "unknown"],
+    }).notNull(),
+    runtimeInstance: text("runtime_instance").notNull(),
+    runtimeContainerId: text("runtime_container_id").notNull(),
+    name: text("name").notNull(),
+    image: text("image").notNull(),
+    firstSeenAt: integer("first_seen_at").notNull(),
+    lastSeenAt: integer("last_seen_at").notNull(),
+    deletedAt: integer("deleted_at"),
+  },
+  (table) => [
+    uniqueIndex("containers_runtime_identity_uq").on(
+      table.machineId,
+      table.runtime,
+      table.runtimeInstance,
+      table.runtimeContainerId,
+    ),
+    index("containers_machine_idx").on(table.workspaceId, table.machineId, table.deletedAt),
+  ],
 );
 
 export const checkConfigs = sqliteTable(
