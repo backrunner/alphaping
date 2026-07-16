@@ -49,7 +49,7 @@
   <nav class="sidebar__bottom" aria-label="Administration">
     {#if shell.navigation.developer}
       <a class:active={isActive(`${rootPath}/admin`)} href={`${rootPath}/admin`} onclick={onclose}
-        ><MonitorCog size={16} />Developer</a
+        ><MonitorCog size={16} />Admin</a
       >
     {/if}
     <form method="POST" action={`${rootPath}?/logout`}>

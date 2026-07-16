@@ -16,6 +16,7 @@ export function createAuth(db: D1Database, secret: string, baseURL: string) {
     }),
     emailAndPassword: {
       enabled: true,
+      disableSignUp: true,
       minPasswordLength: 12,
     },
     advanced: {

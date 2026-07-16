@@ -123,7 +123,14 @@ Turbo 负责 JavaScript/TypeScript 任务图，并通过每个 Rust deployable �
 4. Ingest 在 PQ hybrid TLS 内返回应用层数据密钥和服务端配置。
 5. Agent 安全保存 identity、数据密钥、key epoch 和 sequence 状态。
 
-### 6.2 Agent report
+### 6.2 Workspace invitation
+
+1. Workspace admin 创建带邮箱和角色约束的高熵一次性邀请，Web 只保存域分离 HMAC digest。
+2. 邀请链接只展示掩码邮箱；已有账号必须登录同一邮箱，新账号只能通过有效邀请创建 credential。
+3. 接受邀请在一个 D1 batch 中领取邀请、创建或绑定 membership 并写审计记录；并发或重放只有一次成功。
+4. Better Auth 公共注册保持关闭，普通 `/api/auth/sign-up` 不能绕过邀请。
+
+### 6.3 Agent report
 
 1. Agent 将多个 sample 和任务结果编码为 Protobuf。
 2. Agent 压缩 payload，使用 AES-256-GCM 加密并提交到 ingest。
@@ -132,7 +139,7 @@ Turbo 负责 JavaScript/TypeScript 任务图，并通过每个 Rust deployable �
 5. TELEMETRY_DB 完成持久化后，Ingest 从 CONTROL_DB 读取 config/commands 并返回加密 durable ACK。控制面暂时不可读时仍可 ACK 已持久化的 report，并让 Agent 下次继续拉取配置。
 6. ACK 丢失时 Agent 使用稳定 report ID 重试，同一 block/slot 的 report ID/hash 校验返回 duplicate 而不重复追加。
 
-### 6.3 Live machine snapshot
+### 6.4 Live machine snapshot
 
 1. Ingest 在已认证、加密的 durable report 响应中下发短时 live credential。Agent session 按 10 分钟槽稳定派生，ticket 最长 15 分钟有效；ticket 只含 session ID/nonce prefix 等验证信息，32-byte live key 只存在加密 ACK 内，不暴露 ARS。
 2. Agent 用 ticket 连接 `live` Worker，路由到 workspace Live Hub DO。Viewer 使用 `web` 按 RBAC/公开投影签发的 5 分钟 ticket 连接同一 hub。
@@ -140,7 +147,7 @@ Turbo 负责 JavaScript/TypeScript 任务图，并通过每个 Rust deployable �
 4. Hub 只广播给 ticket 授权的 viewer。Live frame 不写 D1/DO SQLite、不产生 durable ACK、不从 Agent spool 删除 sample。
 5. Hub 被驱逐、WebSocket 中断或 20 秒没有新帧时，Dashboard 标记 live degraded，并使用带 ETag 的 30 秒 D1 latest polling；Agent 的 60 秒 durable report 不受影响。
 
-### 6.4 Dashboard read
+### 6.5 Dashboard read
 
 1. SvelteKit server loader 解析 session 和 workspace。
 2. authz service 生成允许的 resource scope。
@@ -148,7 +155,7 @@ Turbo 负责 JavaScript/TypeScript 任务图，并通过每个 Rust deployable �
 4. 默认页面只返回概览和 D1 latest。用户展开图表后才查询 TELEMETRY_DB rollup 或 bounded block rows；raw API 解码 slots 还原 10 秒 samples。
 5. 浏览器在页面可见时建立 live WebSocket，正常延迟不高于一个 10 秒 sample interval。断线后使用带 ETag 的 30 秒 D1 polling，恢复后停止 fallback polling。
 
-### 6.5 Service checks
+### 6.6 Service checks
 
 1. Cron 每分钟唤醒 checks Worker。
 2. 30 台目标规模下，Worker 读取少量 enabled task，根据稳定 interval/phase 计算 nominal slot。
@@ -158,7 +165,7 @@ Turbo 负责 JavaScript/TypeScript 任务图，并通过每个 Rust deployable �
 6. Checks Worker 或 Agent 产生统一 `CheckResult`，通过共享 domain repository 写入 TELEMETRY_DB。
 7. 同一写入流程更新 check latest、time bucket、服务状态和 incident 事件。
 
-### 6.6 Retention
+### 6.7 Retention
 
 1. Cron 加载启用的 retention policy 和上次游标。
 2. 每次只处理有界 workspace/resource/time 范围。
@@ -179,7 +186,7 @@ Turbo 负责 JavaScript/TypeScript 任务图，并通过每个 Rust deployable �
 
 共享 D1 不代表任意服务可以写任意表：
 
-- `web`/CONTROL_DB: auth、workspace、membership、dashboard、resource policy、machine/service configuration、incident content。
+- `web`/CONTROL_DB: auth、workspace、invitation、membership、dashboard、resource policy、audit、machine/service configuration、incident content。
 - `ingest`/CONTROL_DB: enrollment consumption、agent key metadata、config acknowledgement。
 - `ingest`/TELEMETRY_DB: replay cursor、machine telemetry block/latest/rollup/event。
 - `live`/DO: WebSocket 连接、非持久 snapshot broadcast 和 demand state；不写权威业务表。

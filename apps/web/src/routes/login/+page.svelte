@@ -3,7 +3,7 @@
 
   import Button from "$components/ui/button/button.svelte";
 
-  let { form } = $props();
+  let { data, form } = $props();
 </script>
 
 <svelte:head><title>Sign in · AlphaPing</title></svelte:head>
@@ -14,6 +14,7 @@
     <h1>Sign in to your monitors</h1>
     <p>Use the account created during deployment setup.</p>
     <form method="POST">
+      <input type="hidden" name="returnTo" value={data.returnTo} />
       {#if form?.message}<p class="login__error" role="alert">{form.message}</p>{/if}
       <label
         ><span>Email</span><input type="email" name="email" autocomplete="email" required /></label

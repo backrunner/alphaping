@@ -15,6 +15,9 @@ const policy: RetentionPolicyRow = {
   rollup_5m_days: 7,
   rollup_1h_days: 30,
   event_days: 30,
+  audit_log_days: 365,
+  expired_announcement_grace_days: 7,
+  soft_delete_grace_days: 7,
 };
 
 beforeEach(async () => {

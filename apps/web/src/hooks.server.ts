@@ -6,10 +6,20 @@ import { createAuth } from "$lib/server/auth";
 
 const SECURITY_HEADERS: Readonly<Record<string, string>> = {
   "cross-origin-opener-policy": "same-origin",
-  "referrer-policy": "strict-origin-when-cross-origin",
+  "referrer-policy": "no-referrer",
   "x-content-type-options": "nosniff",
   "x-frame-options": "DENY",
 };
+
+export function requiresPrivateCaching(pathname: string, authenticated: boolean): boolean {
+  return (
+    authenticated ||
+    pathname === "/login" ||
+    pathname.startsWith("/setup") ||
+    pathname.startsWith("/invite/") ||
+    pathname.startsWith("/api/auth")
+  );
+}
 
 export const handle: Handle = async ({ event, resolve }) => {
   event.locals.auth = null;
@@ -36,6 +46,9 @@ export const handle: Handle = async ({ event, resolve }) => {
   const response = await svelteKitHandler({ event, resolve, auth, building });
   for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
     response.headers.set(name, value);
+  }
+  if (requiresPrivateCaching(event.url.pathname, event.locals.session !== null)) {
+    response.headers.set("cache-control", "private, no-store");
   }
   return response;
 };

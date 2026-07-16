@@ -1,13 +1,22 @@
 import {
+  projectPublicStatusMachine,
   projectPublicStatusService,
+  type PublicContainerRow,
+  type PublicMachineLatestRow,
+  type PublicMachineRow,
+  type PublicStatusMachine,
   type PublicServiceLatestRow,
   type PublicServiceRow,
   type PublicStatusBucketRow,
   type PublicStatusService,
 } from "./public-status-projection.js";
+import { parseContainerInventory } from "./machines.js";
 
-export { projectPublicStatusService } from "./public-status-projection.js";
-export type { PublicStatusService } from "./public-status-projection.js";
+export {
+  projectPublicStatusMachine,
+  projectPublicStatusService,
+} from "./public-status-projection.js";
+export type { PublicStatusMachine, PublicStatusService } from "./public-status-projection.js";
 
 interface PublicWorkspaceRow {
   id: string;
@@ -65,6 +74,7 @@ interface AnnouncementRow {
 export interface PublicStatusPage {
   workspace: { name: string; slug: string };
   dashboard: { name: string };
+  machines: readonly PublicStatusMachine[];
   services: readonly PublicStatusService[];
   incidents: readonly {
     id: string;
@@ -111,6 +121,69 @@ export async function loadPublicStatusPage(
     .bind(workspaceSlug)
     .first<PublicWorkspaceRow>();
   if (!workspace) throw new PublicStatusNotFoundError();
+  const machines = (
+    await controlDb
+      .prepare(
+        `SELECT m.id, m.telemetry_pk, m.name, m.description, m.offline_after_seconds,
+                p.projection_profile
+         FROM dashboard_resources dr
+         JOIN machines m ON m.id = dr.resource_id AND m.workspace_id = ? AND m.deleted_at IS NULL
+         JOIN resource_public_policies p
+           ON p.workspace_id = m.workspace_id AND p.resource_type = 'machine'
+          AND p.resource_id = m.id AND p.effect = 'allow'
+         WHERE dr.dashboard_id = ? AND dr.resource_type = 'machine'
+           AND dr.public_override != 'deny'
+         ORDER BY dr.sort_order, m.name LIMIT 200`,
+      )
+      .bind(workspace.id, workspace.dashboard_id)
+      .all<PublicMachineRow>()
+  ).results;
+  const machinePks = machines.map((machine) => machine.telemetry_pk);
+  const machineIds = machines.map((machine) => machine.id);
+  const [latestMachines, publicContainers] = await Promise.all([
+    machinePks.length === 0
+      ? Promise.resolve({ results: [] as PublicMachineLatestRow[] })
+      : telemetryDb
+          .prepare(
+            `SELECT machine_pk, observed_at, received_at, state, cpu_permille,
+                    memory_used_bytes, memory_total_bytes, storage_used_bytes,
+                    storage_total_bytes, network_rx_bps, network_tx_bps,
+                    container_inventory_json
+             FROM machine_latest WHERE workspace_pk = ?
+               AND machine_pk IN (${placeholders(machinePks.length)})`,
+          )
+          .bind(workspace.telemetry_pk, ...machinePks)
+          .all<PublicMachineLatestRow>(),
+    machineIds.length === 0
+      ? Promise.resolve({ results: [] as PublicContainerRow[] })
+      : controlDb
+          .prepare(
+            `SELECT c.id, c.machine_id, p.projection_profile FROM containers c
+             JOIN resource_public_policies p
+               ON p.workspace_id = c.workspace_id AND p.resource_type = 'container'
+              AND p.resource_id = c.id AND p.effect = 'allow'
+             WHERE c.workspace_id = ? AND c.deleted_at IS NULL
+               AND c.machine_id IN (${placeholders(machineIds.length)})
+             ORDER BY c.name LIMIT 500`,
+          )
+          .bind(workspace.id, ...machineIds)
+          .all<PublicContainerRow>(),
+  ]);
+  const latestByMachine = new Map(
+    latestMachines.results.map((latest) => [latest.machine_pk, latest]),
+  );
+  const publicMachines = machines.map((machine) => {
+    const latest = latestByMachine.get(machine.telemetry_pk);
+    return projectPublicStatusMachine({
+      machine,
+      latest,
+      inventory: parseContainerInventory(latest?.container_inventory_json ?? null),
+      publicContainers: publicContainers.results.filter(
+        (container) => container.machine_id === machine.id,
+      ),
+      now,
+    });
+  });
   const services = (
     await controlDb
       .prepare(
@@ -278,13 +351,18 @@ export async function loadPublicStatusPage(
         publishedAt: update.published_at ?? update.created_at,
       })),
   }));
-  const updatedAt = latestChecks.results.reduce<number | null>(
+  const serviceUpdatedAt = latestChecks.results.reduce<number | null>(
     (latest, check) => Math.max(latest ?? 0, check.observed_at),
     null,
+  );
+  const updatedAt = latestMachines.results.reduce<number | null>(
+    (latest, machine) => Math.max(latest ?? 0, machine.observed_at),
+    serviceUpdatedAt,
   );
   return {
     workspace: { name: workspace.name, slug: workspace.slug },
     dashboard: { name: workspace.dashboard_name },
+    machines: publicMachines,
     services: publicServices,
     incidents,
     announcements: announcements.map((announcement) => ({

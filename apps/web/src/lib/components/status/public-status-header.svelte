@@ -7,14 +7,19 @@
   let {
     workspace,
     dashboard,
+    machines,
     services,
-  }: Pick<PublicStatusPage, "workspace" | "dashboard" | "services"> = $props();
+  }: Pick<PublicStatusPage, "workspace" | "dashboard" | "machines" | "services"> = $props();
 
   const overallState = $derived.by(() => {
-    if (services.some((service) => service.state === "down")) return "down" as const;
-    if (services.some((service) => service.state === "degraded")) return "degraded" as const;
-    if (services.some((service) => service.state === "maintenance")) return "maintenance" as const;
-    if (services.length > 0 && services.every((service) => service.state === "healthy")) {
+    const states = [
+      ...machines.map((machine) => machine.state),
+      ...services.map((service) => service.state),
+    ];
+    if (states.some((state) => state === "down" || state === "offline")) return "down" as const;
+    if (states.some((state) => state === "degraded")) return "degraded" as const;
+    if (states.some((state) => state === "maintenance")) return "maintenance" as const;
+    if (states.length > 0 && states.every((state) => state === "healthy")) {
       return "healthy" as const;
     }
     return "unknown" as const;
@@ -26,15 +31,15 @@
   <div class="workspace-title">
     <div>
       <h1>{workspace.name}</h1>
-      <p>{dashboard.name} service status</p>
+      <p>{dashboard.name} monitor status</p>
     </div>
     <StatusLabel status={overallState} />
   </div>
   <div class={`summary summary--${overallState}`}>
-    {#if overallState === "healthy"}<CheckCircle2 size={18} />All published services are operational
+    {#if overallState === "healthy"}<CheckCircle2 size={18} />All published monitors are operational
     {:else if overallState === "maintenance"}<Wrench size={18} />Scheduled maintenance is active
     {:else if overallState === "unknown"}<Clock3 size={18} />Status data is not available yet
-    {:else}<AlertTriangle size={18} />One or more services are impaired{/if}
+    {:else}<AlertTriangle size={18} />One or more monitors are impaired{/if}
   </div>
 </header>
 

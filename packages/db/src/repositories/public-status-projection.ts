@@ -1,4 +1,58 @@
+import type { MachineState } from "@alphaping/contracts";
+
+import type { MachineContainerInventory } from "./machine-models.js";
 import type { MonitorState, ServiceTimelineBucket } from "./service-models.js";
+
+export interface PublicMachineRow {
+  id: string;
+  telemetry_pk: number;
+  name: string;
+  description: string;
+  offline_after_seconds: number;
+  projection_profile: "summary" | "detailed";
+}
+
+export interface PublicMachineLatestRow {
+  machine_pk: number;
+  observed_at: number;
+  received_at: number;
+  state: string;
+  cpu_permille: number;
+  memory_used_bytes: number;
+  memory_total_bytes: number;
+  storage_used_bytes: number;
+  storage_total_bytes: number;
+  network_rx_bps: number;
+  network_tx_bps: number;
+  container_inventory_json: string | null;
+}
+
+export interface PublicContainerRow {
+  id: string;
+  machine_id: string;
+  projection_profile: "summary" | "detailed";
+}
+
+export interface PublicStatusMachine {
+  name: string;
+  description: string;
+  state: MachineState;
+  observedAt: number | null;
+  cpuPermille: number | null;
+  memoryUsedBytes: number | null;
+  memoryTotalBytes: number | null;
+  storageUsedBytes: number | null;
+  storageTotalBytes: number | null;
+  networkRxBps: number | null;
+  networkTxBps: number | null;
+  containers: readonly {
+    name: string;
+    state: string;
+    health: string;
+    cpuPermille: number | null;
+    memoryUsedBytes: number | null;
+  }[];
+}
 
 export interface PublicServiceRow {
   id: string;
@@ -40,6 +94,66 @@ function normalizeState(value: string): MonitorState {
     return value;
   }
   return "unknown";
+}
+
+function normalizeMachineState(value: string): MachineState {
+  if (
+    value === "healthy" ||
+    value === "degraded" ||
+    value === "down" ||
+    value === "offline" ||
+    value === "maintenance"
+  ) {
+    return value;
+  }
+  return "unknown";
+}
+
+export function projectPublicStatusMachine(input: {
+  machine: PublicMachineRow;
+  latest: PublicMachineLatestRow | undefined;
+  inventory: MachineContainerInventory | null;
+  publicContainers: readonly PublicContainerRow[];
+  now: number;
+}): PublicStatusMachine {
+  const detailed = input.machine.projection_profile === "detailed";
+  const stale = input.latest
+    ? input.now - input.latest.received_at > input.machine.offline_after_seconds * 1_000
+    : false;
+  const containerById = new Map(
+    (input.inventory?.containers ?? []).map((container) => [container.id, container]),
+  );
+  return {
+    name: input.machine.name,
+    description: detailed ? input.machine.description : "",
+    state: input.latest
+      ? stale
+        ? "offline"
+        : normalizeMachineState(input.latest.state)
+      : "unknown",
+    observedAt: input.latest?.observed_at ?? null,
+    cpuPermille: detailed ? (input.latest?.cpu_permille ?? null) : null,
+    memoryUsedBytes: detailed ? (input.latest?.memory_used_bytes ?? null) : null,
+    memoryTotalBytes: detailed ? (input.latest?.memory_total_bytes ?? null) : null,
+    storageUsedBytes: detailed ? (input.latest?.storage_used_bytes ?? null) : null,
+    storageTotalBytes: detailed ? (input.latest?.storage_total_bytes ?? null) : null,
+    networkRxBps: detailed ? (input.latest?.network_rx_bps ?? null) : null,
+    networkTxBps: detailed ? (input.latest?.network_tx_bps ?? null) : null,
+    containers: input.publicContainers.flatMap((policy) => {
+      const container = containerById.get(policy.id);
+      if (!container) return [];
+      const containerDetailed = policy.projection_profile === "detailed";
+      return [
+        {
+          name: container.name,
+          state: container.state,
+          health: container.health,
+          cpuPermille: containerDetailed ? container.cpuPermille : null,
+          memoryUsedBytes: containerDetailed ? container.memoryUsedBytes : null,
+        },
+      ];
+    }),
+  };
 }
 
 function stateRank(state: MonitorState): number {

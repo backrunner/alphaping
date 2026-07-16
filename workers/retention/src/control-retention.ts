@@ -65,6 +65,7 @@ export async function cleanExpiredAnnouncements(
   db: D1Database,
   workspaceId: string,
   now: number,
+  graceDays = 7,
   rowBatch = 200,
 ): Promise<number> {
   const result = await db
@@ -74,7 +75,26 @@ export async function cleanExpiredAnnouncements(
          ORDER BY expires_at, id LIMIT ?
        )`,
     )
-    .bind(workspaceId, now - 7 * DAY_MS, rowBatch)
+    .bind(workspaceId, now - graceDays * DAY_MS, rowBatch)
+    .run();
+  return result.meta.changes ?? 0;
+}
+
+export async function cleanAuditLogs(
+  db: D1Database,
+  workspaceId: string,
+  now: number,
+  retentionDays: number,
+  rowBatch = 200,
+): Promise<number> {
+  const result = await db
+    .prepare(
+      `DELETE FROM audit_logs WHERE id IN (
+         SELECT id FROM audit_logs WHERE workspace_id = ? AND created_at < ?
+         ORDER BY created_at, id LIMIT ?
+       )`,
+    )
+    .bind(workspaceId, now - retentionDays * DAY_MS, rowBatch)
     .run();
   return result.meta.changes ?? 0;
 }

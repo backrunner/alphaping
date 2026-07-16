@@ -1,5 +1,13 @@
 import { sql } from "drizzle-orm";
-import { blob, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import {
+  blob,
+  index,
+  integer,
+  primaryKey,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from "drizzle-orm/sqlite-core";
 
 export const workspaces = sqliteTable(
   "workspaces",
@@ -8,6 +16,7 @@ export const workspaces = sqliteTable(
     telemetryPk: integer("telemetry_pk").notNull(),
     slug: text("slug").notNull(),
     name: text("name").notNull(),
+    defaultDashboardId: text("default_dashboard_id"),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
     deletedAt: integer("deleted_at"),
@@ -16,6 +25,142 @@ export const workspaces = sqliteTable(
     uniqueIndex("workspaces_telemetry_pk_uq").on(table.telemetryPk),
     uniqueIndex("workspaces_slug_uq").on(table.slug),
   ],
+);
+
+export const memberships = sqliteTable(
+  "memberships",
+  {
+    workspaceId: text("workspace_id").notNull(),
+    userId: text("user_id").notNull(),
+    role: text("role", { enum: ["admin", "member"] }).notNull(),
+    status: text("status", { enum: ["invited", "active", "suspended"] }).notNull(),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.workspaceId, table.userId] })],
+);
+
+export const workspaceInvitations = sqliteTable(
+  "workspace_invitations",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull(),
+    email: text("email").notNull(),
+    role: text("role", { enum: ["admin", "member"] }).notNull(),
+    tokenDigest: blob("token_digest", { mode: "buffer" }).notNull(),
+    expiresAt: integer("expires_at").notNull(),
+    acceptedAt: integer("accepted_at"),
+    revokedAt: integer("revoked_at"),
+    createdBy: text("created_by").notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("workspace_invitations_token_uq").on(table.tokenDigest),
+    index("workspace_invitations_expiry_idx").on(table.workspaceId, table.expiresAt),
+  ],
+);
+
+export const dashboards = sqliteTable(
+  "dashboards",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull(),
+    slug: text("slug").notNull(),
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    visibility: text("visibility", { enum: ["private", "authenticated", "public"] }).notNull(),
+    createdBy: text("created_by").notNull(),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    deletedAt: integer("deleted_at"),
+  },
+  (table) => [uniqueIndex("dashboards_workspace_slug_uq").on(table.workspaceId, table.slug)],
+);
+
+export const dashboardResources = sqliteTable(
+  "dashboard_resources",
+  {
+    dashboardId: text("dashboard_id").notNull(),
+    resourceType: text("resource_type", { enum: ["machine", "service"] }).notNull(),
+    resourceId: text("resource_id").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    publicOverride: text("public_override", { enum: ["inherit", "allow", "deny"] })
+      .notNull()
+      .default("inherit"),
+  },
+  (table) => [primaryKey({ columns: [table.dashboardId, table.resourceType, table.resourceId] })],
+);
+
+export const resourceGrants = sqliteTable(
+  "resource_grants",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull(),
+    subjectUserId: text("subject_user_id").notNull(),
+    resourceType: text("resource_type", {
+      enum: ["dashboard", "machine", "container", "service", "incident"],
+    }).notNull(),
+    resourceId: text("resource_id").notNull(),
+    capability: text("capability", { enum: ["view", "manage"] }).notNull(),
+    effect: text("effect", { enum: ["allow", "deny"] }).notNull(),
+    createdBy: text("created_by").notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("resource_grants_subject_resource_uq").on(
+      table.subjectUserId,
+      table.resourceType,
+      table.resourceId,
+      table.capability,
+    ),
+    index("resource_grants_subject_idx").on(
+      table.workspaceId,
+      table.subjectUserId,
+      table.resourceType,
+    ),
+  ],
+);
+
+export const resourcePublicPolicies = sqliteTable(
+  "resource_public_policies",
+  {
+    workspaceId: text("workspace_id").notNull(),
+    resourceType: text("resource_type", { enum: ["machine", "container", "service"] }).notNull(),
+    resourceId: text("resource_id").notNull(),
+    effect: text("effect", { enum: ["allow", "deny"] }).notNull(),
+    projectionProfile: text("projection_profile", { enum: ["summary", "detailed"] }).notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.workspaceId, table.resourceType, table.resourceId] })],
+);
+
+export const retentionPolicies = sqliteTable("retention_policies", {
+  workspaceId: text("workspace_id").primaryKey(),
+  rawDays: integer("raw_days").notNull().default(7),
+  rollup5mDays: integer("rollup_5m_days").notNull().default(30),
+  rollup1hDays: integer("rollup_1h_days").notNull().default(365),
+  eventDays: integer("event_days").notNull().default(365),
+  auditLogDays: integer("audit_log_days").notNull().default(365),
+  expiredAnnouncementGraceDays: integer("expired_announcement_grace_days").notNull().default(7),
+  softDeleteGraceDays: integer("soft_delete_grace_days").notNull().default(7),
+  updatedAt: integer("updated_at").notNull(),
+});
+
+export const auditLogs = sqliteTable(
+  "audit_logs",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull(),
+    actorUserId: text("actor_user_id"),
+    action: text("action").notNull(),
+    resourceType: text("resource_type").notNull(),
+    resourceId: text("resource_id").notNull(),
+    beforeDigest: text("before_digest"),
+    afterDigest: text("after_digest"),
+    metadataJson: text("metadata_json").notNull().default("{}"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [index("audit_logs_workspace_time_idx").on(table.workspaceId, table.createdAt)],
 );
 
 export const machines = sqliteTable(

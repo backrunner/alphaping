@@ -1,7 +1,7 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { cleanAgentCommands } from "./control-retention";
+import { cleanAgentCommands, cleanAuditLogs, cleanExpiredAnnouncements } from "./control-retention";
 
 const DAY_MS = 86_400_000;
 
@@ -17,7 +17,54 @@ beforeEach(async () => {
         result_code TEXT
       )`,
     ),
+    env.CONTROL_DB.prepare("DROP TABLE IF EXISTS announcements"),
+    env.CONTROL_DB.prepare(
+      `CREATE TABLE announcements (
+        id TEXT PRIMARY KEY NOT NULL,
+        workspace_id TEXT NOT NULL,
+        expires_at INTEGER NOT NULL
+      )`,
+    ),
+    env.CONTROL_DB.prepare("DROP TABLE IF EXISTS audit_logs"),
+    env.CONTROL_DB.prepare(
+      `CREATE TABLE audit_logs (
+        id TEXT PRIMARY KEY NOT NULL,
+        workspace_id TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      )`,
+    ),
   ]);
+});
+
+describe("workspace control retention", () => {
+  it("uses configured announcement and audit windows in bounded batches", async () => {
+    const now = 100 * DAY_MS;
+    const announcement = env.CONTROL_DB.prepare(
+      "INSERT INTO announcements (id, workspace_id, expires_at) VALUES (?, 'workspace-1', ?)",
+    );
+    const audit = env.CONTROL_DB.prepare(
+      "INSERT INTO audit_logs (id, workspace_id, created_at) VALUES (?, 'workspace-1', ?)",
+    );
+    await env.CONTROL_DB.batch([
+      announcement.bind("old-announcement", now - 8 * DAY_MS),
+      announcement.bind("recent-announcement", now - 2 * DAY_MS),
+      audit.bind("old-audit", now - 31 * DAY_MS),
+      audit.bind("recent-audit", now - 10 * DAY_MS),
+    ]);
+
+    await expect(cleanExpiredAnnouncements(env.CONTROL_DB, "workspace-1", now, 7, 1)).resolves.toBe(
+      1,
+    );
+    await expect(cleanAuditLogs(env.CONTROL_DB, "workspace-1", now, 30, 1)).resolves.toBe(1);
+    const remainingAnnouncements = await env.CONTROL_DB.prepare(
+      "SELECT id FROM announcements ORDER BY id",
+    ).all<{ id: string }>();
+    const remainingAudit = await env.CONTROL_DB.prepare(
+      "SELECT id FROM audit_logs ORDER BY id",
+    ).all<{ id: string }>();
+    expect(remainingAnnouncements.results).toEqual([{ id: "recent-announcement" }]);
+    expect(remainingAudit.results).toEqual([{ id: "recent-audit" }]);
+  });
 });
 
 describe("Agent command retention", () => {

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ArrowLeft, Copy, Server, Terminal, AppWindow } from "lucide-svelte";
+  import { Copy, Server, Terminal, AppWindow } from "lucide-svelte";
 
   import ServiceMonitorForm from "$components/admin/service-monitor-form.svelte";
   import Button from "$components/ui/button/button.svelte";
@@ -33,14 +33,6 @@
 <svelte:head><title>Developer · AlphaPing</title></svelte:head>
 
 <main class="admin">
-  <header class="admin__header">
-    <div>
-      <a href={`/${data.workspace}`}><ArrowLeft size={14} />Overview</a>
-      <h1>Developer</h1>
-      <p>Configure resources and generate enrollment credentials.</p>
-    </div>
-  </header>
-
   {#if form?.kind === "machine" && form.machine}
     <section class="enrollment" aria-live="polite">
       <div>
@@ -118,31 +110,10 @@
 
 <style>
   .admin {
-    width: min(100% - 24px, 1040px);
-    margin: 0 auto;
-    padding: 24px 0 48px;
+    width: 100%;
+    padding-bottom: 48px;
   }
 
-  .admin__header {
-    padding-bottom: 18px;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .admin__header a {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    color: var(--text-muted);
-    font-size: 11px;
-    text-decoration: none;
-  }
-
-  h1 {
-    margin: 18px 0 4px;
-    font-size: 22px;
-  }
-
-  .admin__header p,
   section header p {
     margin: 0;
     color: var(--text-muted);
@@ -153,7 +124,7 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 28px;
-    padding-top: 28px;
+    padding-top: 8px;
   }
 
   .admin__grid > .service-monitor {

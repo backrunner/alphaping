@@ -52,6 +52,17 @@ Better Auth 核心表由其 schema 生成并纳入统一 migration：
 
 唯一键：`workspace_id,user_id`。
 
+数据库触发器保证并发更新或删除也不能移除 workspace 最后一个活动管理员；应用层的友好校验不是唯一保护。
+
+### `workspace_invitations`
+
+- `id`, `workspace_id`, `email`, `role`
+- `token_digest`，只保存带域分离的 HMAC-SHA-256，不保存邀请令牌原文
+- `expires_at`, `accepted_at`, `revoked_at`
+- `created_by`, `created_at`
+
+同一 workspace/email 只允许一个未接受且未撤销的邀请。管理员重新生成邀请时先撤销旧记录；邀请默认 7 天过期，只能成功使用一次。新邮箱可以在邀请页创建 Better Auth credential，已有邮箱必须先登录匹配账号再接受，公开 Better Auth sign-up 始终关闭。
+
 ## 3. Dashboard 与授权
 
 ### `dashboards`
@@ -414,6 +425,8 @@ Checks Worker 只在五分钟 block 闭合时写一次 service bucket。同一�
 - `metadata_json`, `created_at`
 
 禁止把 secret 或完整敏感 payload 放入审计日志。
+
+邀请、成员角色/状态、资源 grant、dashboard/resource public policy 和保留策略的每次 mutation 都必须写一条 audit row。邀请邮件地址和令牌不进入 `metadata_json`；审计只保存资源 ID、动作以及变更前后的规范化摘要。
 
 ## 11. 查询、导出与备份
 

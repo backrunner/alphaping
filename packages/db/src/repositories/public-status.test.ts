@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { projectPublicStatusService } from "./public-status.js";
+import { projectPublicStatusMachine, projectPublicStatusService } from "./public-status.js";
 
 describe("public status projection", () => {
   it("contains only public service status fields", () => {
@@ -35,6 +35,84 @@ describe("public status projection", () => {
     expect(JSON.stringify(projected)).not.toContain("service-internal-id");
     for (const sensitive of ["url", "header", "payload", "agent", "diagnostic", "secret"]) {
       expect(JSON.stringify(projected).toLowerCase()).not.toContain(sensitive);
+    }
+  });
+
+  it("projects only explicitly public machine and container fields", () => {
+    const projected = projectPublicStatusMachine({
+      machine: {
+        id: "machine-internal-id",
+        telemetry_pk: 9,
+        name: "Edge node",
+        description: "Public edge capacity",
+        offline_after_seconds: 150,
+        projection_profile: "detailed",
+      },
+      latest: {
+        machine_pk: 9,
+        observed_at: 1_000,
+        received_at: 1_000,
+        state: "healthy",
+        cpu_permille: 250,
+        memory_used_bytes: 1_024,
+        memory_total_bytes: 4_096,
+        storage_used_bytes: 8_192,
+        storage_total_bytes: 16_384,
+        network_rx_bps: 100,
+        network_tx_bps: 50,
+        container_inventory_json: null,
+      },
+      inventory: {
+        observedAt: 1_000,
+        runtimes: [],
+        containers: [
+          {
+            id: "container-internal-id",
+            runtime: "docker",
+            runtimeInstance: "default",
+            name: "web",
+            image: "private.example/internal/web:latest",
+            state: "running",
+            health: "healthy",
+            startedAt: 100,
+            restartCount: 0,
+            cpuPermille: 20,
+            memoryUsedBytes: 256,
+            memoryLimitBytes: 512,
+            networkRxBps: 10,
+            networkTxBps: 5,
+            ports: [{ privatePort: 8_080, publicPort: 443, protocol: "tcp" }],
+          },
+        ],
+      },
+      publicContainers: [
+        {
+          id: "container-internal-id",
+          machine_id: "machine-internal-id",
+          projection_profile: "summary",
+        },
+      ],
+      now: 2_000,
+    });
+
+    expect(projected.name).toBe("Edge node");
+    expect(projected.containers).toEqual([
+      {
+        name: "web",
+        state: "running",
+        health: "healthy",
+        cpuPermille: null,
+        memoryUsedBytes: null,
+      },
+    ]);
+    for (const sensitive of [
+      "machine-internal-id",
+      "container-internal-id",
+      "private.example",
+      "8080",
+      "agent",
+    ]) {
+      expect(JSON.stringify(projected).toLowerCase()).not.toContain(sensitive.toLowerCase());
     }
   });
 });

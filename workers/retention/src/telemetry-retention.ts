@@ -5,6 +5,9 @@ export interface RetentionPolicyRow {
   rollup_5m_days: number;
   rollup_1h_days: number;
   event_days: number;
+  audit_log_days: number;
+  expired_announcement_grace_days: number;
+  soft_delete_grace_days: number;
 }
 
 interface ResourceRow {

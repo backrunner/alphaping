@@ -3,6 +3,7 @@ import { error } from "@sveltejs/kit";
 interface MembershipRow {
   workspace_id: string;
   workspace_pk: number;
+  default_dashboard_id: string;
   role: "admin" | "member";
 }
 
@@ -46,7 +47,8 @@ async function requireAdmin(
 ): Promise<MembershipRow> {
   const membership = await db
     .prepare(
-      `SELECT w.id AS workspace_id, w.telemetry_pk AS workspace_pk, m.role
+      `SELECT w.id AS workspace_id, w.telemetry_pk AS workspace_pk,
+              w.default_dashboard_id, m.role
        FROM workspaces w JOIN memberships m ON m.workspace_id = w.id
        WHERE w.slug = ? AND m.user_id = ? AND m.status = 'active' AND w.deleted_at IS NULL`,
     )
@@ -118,6 +120,20 @@ export async function createMachine(
         userId,
         now,
       ),
+    db
+      .prepare(
+        `INSERT INTO dashboard_resources
+          (dashboard_id, resource_type, resource_id, sort_order, public_override)
+         VALUES (?, 'machine', ?, ?, 'inherit')`,
+      )
+      .bind(membership.default_dashboard_id, machineId, telemetryPk),
+    db
+      .prepare(
+        `INSERT INTO resource_public_policies
+          (workspace_id, resource_type, resource_id, effect, projection_profile, updated_at)
+         VALUES (?, 'machine', ?, 'deny', 'summary', ?)`,
+      )
+      .bind(membership.workspace_id, machineId, now),
   ]);
   return { token, machineId, expiresAt };
 }

@@ -18,9 +18,11 @@
       <h1>Overview</h1>
       <p>Updated from durable telemetry and live connections</p>
     </div>
-    <Button onclick={() => (window.location.href = `/${data.workspace.slug}/admin`)}
-      ><Plus size={14} />Add monitor</Button
-    >
+    {#if data.workspace.role === "admin"}
+      <Button onclick={() => (window.location.href = `/${data.workspace.slug}/admin`)}
+        ><Plus size={14} />Add monitor</Button
+      >
+    {/if}
   </header>
 
   <section class="summary" aria-label="Monitoring summary">
@@ -92,11 +94,16 @@
   {#if data.machines.length === 0 && data.services.length === 0}
     <section class="empty">
       <Boxes size={28} />
-      <h2>No monitors configured</h2>
-      <p>Create a machine or service monitor to begin collecting status.</p>
-      <Button onclick={() => (window.location.href = `/${data.workspace.slug}/admin`)}
-        ><Plus size={14} />Add first monitor</Button
-      >
+      {#if data.workspace.role === "admin"}
+        <h2>No monitors configured</h2>
+        <p>Create a machine or service monitor to begin collecting status.</p>
+        <Button onclick={() => (window.location.href = `/${data.workspace.slug}/admin`)}
+          ><Plus size={14} />Add first monitor</Button
+        >
+      {:else}
+        <h2>No monitors available</h2>
+        <p>Your account does not currently have access to a machine or service.</p>
+      {/if}
     </section>
   {/if}
 </main>

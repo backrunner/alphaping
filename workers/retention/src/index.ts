@@ -1,4 +1,4 @@
-import { cleanAgentCommands, cleanExpiredAnnouncements } from "./control-retention";
+import { cleanAgentCommands, cleanAuditLogs, cleanExpiredAnnouncements } from "./control-retention";
 import { acquireWorkspaceRetentionLease, releaseWorkspaceRetentionLease } from "./cursor";
 import {
   cleanStateEvents,
@@ -18,9 +18,20 @@ async function cleanWorkspace(env: Env, policy: RetentionPolicyRow, now: number)
 
   const telemetry = await cleanTelemetryHistory(env, policy, now);
   const events = await cleanStateEvents(env.TELEMETRY_DB, policy, lease.eventTimeCursor, now);
-  const announcements = await cleanExpiredAnnouncements(env.CONTROL_DB, policy.workspace_id, now);
+  const announcements = await cleanExpiredAnnouncements(
+    env.CONTROL_DB,
+    policy.workspace_id,
+    now,
+    policy.expired_announcement_grace_days,
+  );
+  const auditLogs = await cleanAuditLogs(
+    env.CONTROL_DB,
+    policy.workspace_id,
+    now,
+    policy.audit_log_days,
+  );
   await releaseWorkspaceRetentionLease(env.TELEMETRY_DB, lease, events.timeCursor, Date.now());
-  return telemetry + events.deleted + announcements;
+  return telemetry + events.deleted + announcements + auditLogs;
 }
 
 export async function runRetention(env: Env, scheduledTime: number): Promise<void> {
@@ -35,7 +46,9 @@ export async function runRetention(env: Env, scheduledTime: number): Promise<voi
   try {
     const policies = await env.CONTROL_DB.prepare(
       `SELECT w.id AS workspace_id, w.telemetry_pk AS workspace_pk,
-              p.raw_days, p.rollup_5m_days, p.rollup_1h_days, p.event_days
+              p.raw_days, p.rollup_5m_days, p.rollup_1h_days, p.event_days,
+              p.audit_log_days, p.expired_announcement_grace_days,
+              p.soft_delete_grace_days
        FROM retention_policies p JOIN workspaces w ON w.id = p.workspace_id
        WHERE w.deleted_at IS NULL ORDER BY w.telemetry_pk LIMIT ?`,
     )
