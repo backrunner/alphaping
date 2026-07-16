@@ -15,14 +15,12 @@ describe("HTTP check execution", () => {
   it("evaluates bounded JSON assertions", async () => {
     vi.stubGlobal(
       "fetch",
-      vi
-        .fn()
-        .mockResolvedValue(
-          new Response(JSON.stringify({ data: { ready: true } }), {
-            status: 200,
-            headers: { "content-type": "application/json" },
-          }),
-        ),
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ data: { ready: true } }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      ),
     );
     const config = parseHttpRequest(
       JSON.stringify({
