@@ -157,7 +157,7 @@ Better Auth 核心表由其 schema 生成并纳入统一 migration：
 - `result_code`, `result_json`
 - `created_by`, `created_at`, `delivered_at`, `completed_at`
 
-命令类型只允许配置刷新、立即检查更新、更新到允许版本、重新探测 runtime 等固定动作。`result_json` 只允许 bounded schema，不保存 stdout/stderr。Ingest 每次 report 通过 `(agent_id,state,not_before)` 索引读取至多 8 个命令；空队列不写 CONTROL_DB。
+命令类型只允许配置刷新、立即检查更新、更新到允许版本、重新探测 runtime 等固定动作。`result_json` 只允许 bounded schema，不保存 stdout/stderr。Ingest 每次 report 通过 `(agent_id,state,not_before)` 索引读取至多 8 个命令；空队列不写 CONTROL_DB。Retention Worker 通过 partial expiry/completion indexes 将到期的 `pending|delivered` 命令标记为 `expired`，并在 30 天审计窗口后分批物理删除 terminal 或从未送达的旧命令。
 
 ## 5. 最新机器状态
 

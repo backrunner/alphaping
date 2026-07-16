@@ -134,11 +134,11 @@ Turbo 负责 JavaScript/TypeScript 任务图，并通过每个 Rust deployable �
 
 ### 6.3 Live machine snapshot
 
-1. Ingest 在 durable report 响应中下发短时、加密的 live session ticket；其中使用独立 live key，不暴露 ARS。
+1. Ingest 在已认证、加密的 durable report 响应中下发短时 live credential。Agent session 按 10 分钟槽稳定派生，ticket 最长 15 分钟有效；ticket 只含 session ID/nonce prefix 等验证信息，32-byte live key 只存在加密 ACK 内，不暴露 ARS。
 2. Agent 用 ticket 连接 `live` Worker，路由到 workspace Live Hub DO。Viewer 使用 `web` 按 RBAC/公开投影签发的 5 分钟 ticket 连接同一 hub。
-3. 没有 viewer 时 Agent 不发应用 live frame；有 viewer 时 hub 下发带 TTL 的 demand，Agent 每 10 秒发送一个 AES-GCM live snapshot。
+3. 没有 viewer 时 Agent 不发应用 live frame；有 viewer 时 hub 下发 30 秒 TTL demand，viewer 每 15 秒刷新，Agent 每 10 秒发送一个 AES-GCM live snapshot。
 4. Hub 只广播给 ticket 授权的 viewer。Live frame 不写 D1/DO SQLite、不产生 durable ACK、不从 Agent spool 删除 sample。
-5. Hub 被驱逐、WebSocket 中断或没有新帧时，Dashboard 立即使用 D1 latest；Agent 的 60 秒 durable report 不受影响。
+5. Hub 被驱逐、WebSocket 中断或 20 秒没有新帧时，Dashboard 标记 live degraded，并使用带 ETag 的 30 秒 D1 latest polling；Agent 的 60 秒 durable report 不受影响。
 
 ### 6.4 Dashboard read
 
@@ -185,7 +185,8 @@ Turbo 负责 JavaScript/TypeScript 任务图，并通过每个 Rust deployable �
 - `live`/DO: WebSocket 连接、非持久 snapshot broadcast 和 demand state；不写权威业务表。
 - `checks`/CONTROL_DB: stable schedule config 和 `last_claimed_slot` execution claim。
 - `checks`/TELEMETRY_DB: centralized check result/latest/rollup/event。
-- `retention`/TELEMETRY_DB: retention cursor、raw/rollup/event cleanup。
+- `retention`/TELEMETRY_DB: workspace lease、retention cursor、raw/rollup/event cleanup。
+- `retention`/CONTROL_DB: 过期公告和 Agent command 状态/审计期清理。
 
 跨所有权写入必须通过共享 domain package 中的命令函数或 service/queue contract，不允许复制 SQL。
 

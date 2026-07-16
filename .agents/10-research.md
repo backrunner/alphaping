@@ -95,7 +95,7 @@
 - Paid 含 400,000 GB-s duration/月，超出 12.50 USD/million GB-s；Hibernation 期间不计 duration。
 - Duration 按每个实例 128 MB 计算，不按实际小内存使用计算。
 
-影响：100 Agent 全月每 10 秒发帧为 25.92m messages，折算 1.296m requests，仅超额 0.0444 USD。一个整月不 hibernate 的 workspace hub 约 331,776 GB-s，在 included 内；因此必须按需发帧，避免多个空闲 workspace 持续活跃。
+影响：不能只计算 Agent frame。100 个 topic 整月可见时，25.92m Agent frames、17.28m periodic demand 和每次连接的 immediate demand 合计折算约 2.20469m requests，再加 0.432m Agent session upgrades 和 0.893794m viewer upgrades，共 3.530484m DO requests，overage 约 0.3796 USD。一个整月不 hibernate 的 workspace hub 约 331,776 GB-s，在 included 内；因此必须按需发帧，避免多个空闲 workspace 持续活跃。
 
 ### Analytics Engine
 

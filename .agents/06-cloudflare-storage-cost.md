@@ -147,16 +147,20 @@ Paid included                        25,000.000m/month
 
 Agent command delivery 在每个 report 增加一次 `(agent_id,state,not_before)` 有界索引读取，空队列不产生写入。100 台 Agent 按每分钟一个 report 约增加 4.32m rows read/月，仍只占 Paid 25bn included reads 的 0.0173%。Agent 版本合并进既有 `last_seen_at` 更新，不增加稳态 D1 write；只有创建、实际投递和完成命令时才新增低频 writes。
 
+Retention 每个 workspace 每小时最多写 7 个 resource cursor、1 次 workspace lease claim 和 1 次 lease release，即 `9 * 720 = 6,480` cursor rows written/月。一个常见单 workspace 部署只占 30 台模型 2.484m margin 的 0.261%。Agent command expiry/completion partial indexes 只随低频管理命令变化，不进入稳态遥测账本。
+
 ## 6. Workers request 和 CPU
 
 主路径 request：
 
 ```text
 Agent report requests                1,296,000
+Agent live session upgrades            129,600
 Cron invocations                        43,200
 5 dashboard sessions, 30s polling,
 8 hours/day                            144,000
-total                                1,483,200/month
+Viewer ticket + socket refresh          29,794
+total                                1,642,594/month
 Paid included                       10,000,000/month
 request overage                           0.00 USD
 ```
@@ -185,15 +189,21 @@ CPU overage                             0.00 USD
 - Agent socket attachment 只保存连接身份、短时 session 和角色，不每帧调用 `serializeAttachment()`。Live snapshot 在内存丢失后等待下一个 10 秒帧或回退 D1。
 - Hub 以 workspace 为 coordination atom；单 workspace 超过 500 Agent/viewer connections 或实测达到 CPU 门槛时，再按 workspace + stable shard 拆分。
 
-Cloudflare 对 DO 入站 WebSocket 消息按 20:1 折算 request，出站消息和协议 ping/pong 不计 request。假设一个 workspace 始终有 viewer 的最坏情况：
+Cloudflare 对 DO 入站 WebSocket 消息按 20:1 折算 request；WebSocket upgrade 本身按一次 request 计，出站消息和协议 ping/pong 不计。当前 Agent session 每 10 分钟轮换；viewer ticket 为 5 分钟，浏览器提前 10 秒刷新并在每次连接时立即发送一次 demand，随后每 15 秒刷新。这些请求必须计入。
+
+默认 5 个可见 machine detail session、每天 8 小时的模型：
 
 ```text
-30 Agents: 7.776m live frames / 20 = 0.3888m DO requests
-100 Agents: 25.92m live frames / 20 = 1.296m DO requests
-100-Agent request overage = 0.296 * 0.15 = 0.0444 USD
+30 Agent session upgrades              129,600
+100 Agent session upgrades             432,000
+5 viewer upgrades                       14,897
+5 topics: 0.432m live frames / 20       21,600
+5 viewers: 0.303m demand / 20           15,145
+30-machine total DO requests            181,242
+100-machine total DO requests           483,642
 ```
 
-按需实时的默认假设是 8 小时/天有 viewer。100 Agent 只产生 8.64m live frames，折算 0.432m DO requests，低于 1 million included。
+因此默认 30/100 规模都低于 1 million DO requests included。更保守地假设 100 台的每个 topic 每天同时可见 8 小时，DO requests 为 1.464829m，overage 约 0.0697 USD/月；若 100 个 topic 整月持续可见，则为 3.530484m，overage 约 0.3796 USD/月。10 秒 frame 仍不写 D1。
 
 一个 128 MB workspace DO 即使因持续消息整月不能 hibernate，月 duration 也约为 `2,592,000s * 0.128 = 331,776 GB-s`，低于 400,000 GB-s included。两个整月活跃 hub 共 663,552 GB-s，超额费用约 `(663,552 - 400,000) * 12.50 / 1,000,000 = 3.2944 USD`；从第三个起，每多一个整月不休眠的 hub 再增加约 4.1472 USD/月。按需帧和 Hibernation 是多 workspace 部署的必要成本约束。
 
@@ -249,7 +259,7 @@ Cloudflare 对 DO 入站 WebSocket 消息按 20:1 折算 request，出站消息�
 | Live Durable Object | 0.00 USD |
 | **预计总额** | **5.00 USD/month** |
 
-这是不影响在线查询、Agent 可靠补报、服务检查和一年历史图表的最低可持续方案。Free 计划每日只有 100,000 D1 rows written，与本项目约 313,920 known rows written/day 不兼容，不能作为 30 台生产方案。
+这是不影响在线查询、Agent 可靠补报、服务检查和一年历史图表的最低可持续方案。Free 计划每日只有 100,000 D1 rows written，与本项目约 331,200 known rows written/day 不兼容，不能作为 30 台生产方案。
 
 ## 9. 其他方案的同规模价格
 
@@ -311,8 +321,10 @@ Workers requests：
 
 ```text
 Agent reports                         4,320,000
+Agent live session upgrades             432,000
 Cron + same dashboard assumption        187,200
-total                                 4,507,200
+Viewer ticket + socket refresh           29,794
+total                                 4,968,994
 Paid included                        10,000,000
 ```
 
@@ -335,7 +347,7 @@ total target                           4.284 GB
 storage overage                         0.00 USD
 ```
 
-结论：按上述 payload/rollup 预算、CPU 目标和每天 8 小时有 live viewer 的默认，**100 台机器 + 100 个每分钟服务检查仍可完整覆盖在 5 USD Workers Paid included usage 内**。如果全月始终有 live viewer，DO request overage 约 0.0444 USD；如果 CPU 只达到保守基准，再增加约 0.4512 USD/月。这些结论必须由实际 Worker/DO 基准和 D1 page size fixture 验证。
+结论：按上述 payload/rollup 预算、CPU 目标和 5 个 machine detail session 每天可见 8 小时的默认，**100 台机器 + 100 个每分钟服务检查仍可完整覆盖在 5 USD Workers Paid included usage 内**。即使 100 个 topic 每天都持续可见 8 小时，DO request overage 也约为 0.0697 USD；若 CPU 只达到保守基准，再增加约 0.4512 USD/月。这些结论必须由实际 Worker/DO 基准和 D1 page size fixture 验证。
 
 ### 容器密度的存储拐点
 
@@ -363,11 +375,11 @@ D1 storage overage at 0.75 USD/GB       4.1048 USD/month
 
 | Machines + checks | D1 known writes | Requests | Target storage | 估算总费 |
 | --- | ---: | ---: | ---: | ---: |
-| 30 + 30 | 9.94m | 1.48m | 约 1.63 GB | 5.00 USD |
-| 100 + 100 | 33.12m | 4.51m | 约 4.28 GB | 5.00-5.45 USD |
-| 150 + 150 | 49.68m | 6.67m | 约 6.17 GB | 约 18.96 USD，含 25% write margin 与保守 CPU |
-| 200 + 200 | 66.24m | 8.83m | 约 8.06 GB | 约 41.59 USD，含 25% write margin 与保守 CPU |
-| 300 + 300 | 99.36m | 13.15m | 约 11.84 GB | 约 87.83 USD，含 25% write margin 与保守 CPU |
+| 30 + 30 | 9.94m | 1.64m | 约 1.63 GB | 5.00 USD |
+| 100 + 100 | 33.12m | 4.97m | 约 4.28 GB | 5.00-5.45 USD |
+| 150 + 150 | 49.68m | 7.34m | 约 6.17 GB | 约 18.96 USD，含 25% write margin 与保守 CPU |
+| 200 + 200 | 66.24m | 9.72m | 约 8.06 GB | 约 41.59 USD，含 25% write margin 与保守 CPU |
+| 300 + 300 | 99.36m | 14.47m | 约 11.84 GB | 约 88.28 USD，含 25% write margin、请求与保守 CPU |
 
 增长最终由 D1 rows written 主导，大约在 100+100 之后开始逼近 included 边界。每台 60 秒 machine report 将已知月写入增加 156,960；每个 60 秒 centralized check 因增加可直接查询的 5 分钟 service status bucket，将已知月写入增加 174,240。将 interval 从 60 秒改为 300 秒时，该 check 的执行、CPU 和主要写入约降为五分之一。
 

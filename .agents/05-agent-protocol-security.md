@@ -197,13 +197,14 @@ HTTP 状态码只表达 transport/auth 大类。详细错误码必须避免泄�
 
 Live channel 是独立、非权威的实时加速层，不复用 durable report key/sequence：
 
-1. Rust Ingest 在已认证 durable response 中签发 Agent live ticket。Ticket 包含 workspace/agent PK、随机 live session key、session ID、not-before/expiry 和 protocol version，用独立 `AGENT_LIVE_TICKET_KEY` 加密认证。
-2. `AGENT_LIVE_TICKET_KEY` 只存在 Ingest/Live Worker secret 中，ticket 不包含 ARS、MWK 或 durable directional key。Agent ticket 默认 15 分钟有效，通过正常 report response滚动刷新。
-3. Web 在服务端完成 RBAC/公开投影后，使用另一个 `VIEWER_LIVE_TICKET_KEY` 签发 viewer ticket，最长 5 分钟，显式列出 resource PK/topic、projection profile 和 expiry。Web 不持有 Agent ticket key。
-4. Live frame 使用 live session key 的 AES-256-GCM，AAD 包含 session ID、sequence、agent PK 和 observed time，明文最大 16 KiB。
-5. Hub 在当前 isolate 内维护 highest sequence，并严格拒绝超过 20 秒 freshness window 的帧。Hibernation 后 sequence memory 可丢失，但旧帧会因 session/freshness 失效；Live 帧不能触发持久、告警或命令副作用。
-6. Hub 只能下发 `LIVE_DEMAND_ON/OFF` 和协议级错误，不传送管理命令、更新指令或 config secret。
-7. Viewer 只收到 ticket projection 允许的字段；公开 viewer 不得获得 IP、Agent ID、容器内部 ID 或详细错误。
+1. Rust Ingest 在已认证 durable response 中签发 Agent live credential。Session ID/key/nonce prefix 由至少 32-byte `LIVE_TICKET_SECRET`、Agent/machine scope 和 10 分钟 slot 使用域分离 HMAC-SHA-256 派生；同一 slot 稳定、跨 slot 不复用，expiry 为 slot 起点加 15 分钟。
+2. Credential 的 32-byte session key 只存在 durable AEAD 明文中；HMAC-signed ticket 只含 workspace、Agent、topic、session ID、4-byte nonce prefix、not-before/expiry 和 projection，不包含 ARS、MWK、durable directional key 或 live session key。
+3. Web 必须先完成 machine-level RBAC，再签发最长 5 分钟的 viewer ticket；ticket 只允许一个 `machine:<pk>` topic 和 `machine-summary` projection。Ticket 通过 `Sec-WebSocket-Protocol` 传递，不进入 URL、访问日志或浏览器持久存储。
+4. Agent frame 固定为：`APL1` magic 4 bytes、session ID 16 bytes、machine PK big-endian u64、sequence big-endian u64、observed-at big-endian u64、ciphertext length big-endian u32、AES-256-GCM ciphertext/tag。前 44 bytes 是 AAD；nonce 为 4-byte session prefix + 8-byte sequence；明文是最多 2 KiB 的 protobuf `MetricSample`，整帧最多 16 KiB。
+5. Agent 在 SQLite transaction 中先持久化 session ID 和下一个 sequence，再构造 frame；同一 session 重启后继续单调递增，新 session 才从 1 开始，单 session 上限 1,000,000，避免崩溃后 nonce reuse。
+6. Hub 对 session/machine scope、sequence replay/jump、20 秒 freshness 和 5 秒 future skew fail closed。Hibernation 后内存 highest sequence 可以丢失，但持久 Agent sequence、短 session 和 freshness 共同限制重放；Live 帧不能触发持久、告警或命令副作用。
+7. Hub 只下发 30 秒 TTL demand 和协议错误，不传送管理命令、更新指令或 config secret。Viewer 每 15 秒刷新 demand；没有有效 demand 时 Agent 不生成应用 frame。
+8. Viewer 只收到经过固定字段投影的 JSON summary；公开 viewer 不得获得 IP、Agent ID、容器内部 ID 或详细错误。
 
 WebSocket 连接仍使用 TLS 1.3 `X25519MLKEM768`。Live channel 失败不改变 Agent 的采集、SQLite spool、durable report 或退避状态。
 

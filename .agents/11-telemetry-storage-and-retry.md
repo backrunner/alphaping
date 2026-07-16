@@ -130,9 +130,12 @@ GET /api/workspaces/:wid/services/:sid/status-buckets
 ### 4.5 Live snapshot
 
 - Dashboard SSR/初次进入始终从 D1 latest 起步。
-- 页面可见后建立 Live Hub WebSocket，有 viewer demand 时 Agent 每 10 秒发当前 snapshot。
+- 只有机器详情 Overview tab 可见时才建立 Live Hub WebSocket；viewer ticket 最长 5 分钟，在 expiry 前 10 秒重连刷新。
+- Viewer 每 15 秒刷新 30 秒 demand TTL；有有效 demand 时 Agent 每 10 秒发当前 snapshot。
 - 浏览器只接受 observed time 比当前画面新且不超过 20 秒的帧。
 - WebSocket 断开或超过 20 秒无帧时，标记 live degraded 并切换到 30 秒 D1 polling；不因 live 断开将机器标记为 offline。
+
+Agent credential 使用 10 分钟稳定 session、最长 15 分钟 ticket。二进制 frame 是 `APL1 | session_id[16] | machine_pk[u64be] | sequence[u64be] | observed_at[u64be] | ciphertext_len[u32be] | AES-GCM ciphertext+tag`；前 44 bytes 为 AAD，nonce 为 4-byte session prefix 加 8-byte sequence，明文为最多 2 KiB 的 protobuf `MetricSample`，整帧最多 16 KiB。
 
 ## 5. 写入和确认
 
@@ -230,7 +233,7 @@ delivery 一旦尝试发送：
 
 ### 6.4 `spool_meta`
 
-保存 transport sequence、endpoint backoff、last success、compaction cursor、dropped/compacted counters 和 last ACK。
+保存 transport sequence、endpoint backoff、last success、compaction cursor、dropped/compacted counters 和 last ACK。另在 `meta_blobs/meta` transaction 中保存当前 16-byte live session ID 和已预占 live sequence；同 session 重启后继续递增，新 session 才重置为 1，保证 AES-GCM nonce 不复用。
 
 ### 6.5 Agent probe outbox
 
@@ -343,9 +346,11 @@ delay = cap(attempt)/2 + random(0, cap(attempt)/2)
 ## 11. Retention Worker
 
 - 按 workspace policy 分批删除 D1 raw、rollup、event 和 soft-deleted records。
-- 使用 resource/time 主键和 cursor，每次处理有界 rows。
+- 每个 scheduled time 使用确定性 run ID；每个 workspace 先取得 15 分钟 D1 lease，重叠 Cron 不会并行清理同一 workspace。
+- 使用 resource/time 主键和 cursor，每次处理有界 rows。某资源 DELETE 命中完整 batch 时 cursor 不越过该资源；只有少于 batch limit、确认本轮旧行耗尽后才前进，因此 crash 或大积压不会跳过数据。
 - DELETE 也计入 D1 rows written，成本估算必须同时计算 INSERT 和过期 DELETE。
 - Cron 至少一次，所有 batch 幂等可续跑。
+- CONTROL_DB 中超过 30 天审计窗口的 terminal/未送达 Agent command 直接删除；近期到期的 `pending|delivered` 命令更新为 `expired`。公告失效 7 天后再物理删除。
 - R2 retention 只处理 export/backup artifact。
 
 ## 12. 成本与扩展摘要
@@ -356,18 +361,18 @@ delay = cap(attempt)/2 + random(0, cap(attempt)/2)
 
 ```text
 30 machines + 30 one-minute checks
-known D1 writes                 9.4176m/month
-with 25% margin                11.7720m/month
+known D1 writes                 9.9360m/month
+with 25% margin                12.4200m/month
 Paid included                 50.0000m/month
 expected total                     5.00 USD/month
 
 100 machines + 100 one-minute checks
-known D1 writes                31.392m/month
-with 25% margin                39.240m/month
+known D1 writes                33.120m/month
+with 25% margin                41.400m/month
 Paid included                 50.000m/month
 ```
 
-100+100 在 payload/CPU 门禁达标时仍可位于 5 USD included usage 内。保守 CPU 模型约增加 0.4512 USD/月；如果一个 workspace 全月持续有 live viewer，100 Agent 的 DO WebSocket request overage 约 0.0444 USD。
+100+100 在 payload/CPU 门禁达标时仍可位于 5 USD included usage 内。保守 CPU 模型约增加 0.4512 USD/月；默认 5 个 machine detail session 每天可见 8 小时时 DO requests 仍在 included 内，100 个 topic 每天全部可见 8 小时的 overage 约 0.0697 USD/月。
 
 Live frame 不写 D1，因此 10 秒 UI 实时性不会将 D1 rows written 扩大 6 倍。系统没有 viewer 时停止应用 live frame，但仍每 10 秒采集并每 60 秒生成 durable delivery。
 

@@ -185,12 +185,12 @@ src/
 
 - TypeScript Worker + SQLite-class Durable Object，使用 Hibernation WebSocket API。SQLite class 只是 DO 创建要求，不把 live snapshot 写入 storage。
 - 入口 Worker 在进入 DO 前验证 Upgrade、ticket envelope、body/query 上限和基本路由。
-- Agent ticket 由 Rust Ingest 签发，包含独立 live session key、agent/workspace PK、expiry 和 protocol version；不包含 ARS。
+- Agent credential 由 Rust Ingest 放入加密 durable ACK：10 分钟槽内 session ID/key/nonce prefix 保持稳定，ticket 最长 15 分钟有效且不包含 session key 或 ARS。
 - Viewer ticket 由 Web 按 RBAC/公开投影签发，最长 5 分钟，包含允许的 resource PK/topic 和 projection profile。
 - Socket attachment 仅保存身份、角色、ticket expiry 和必要 session metadata，严格低于 16,384 bytes。
 - 不使用 `setInterval`/周期 alarm，不阻止 hibernation。Protocol ping/pong 由 runtime 自动处理。
 - 第一个 viewer 进入时发 `LIVE_DEMAND_ON`，最后一个 viewer 离开时发 `LIVE_DEMAND_OFF`；demand 自带 TTL，Agent 不依赖 close event 才停止。
-- Live frame 最多 16 KiB，使用 live-specific AES-256-GCM 和 20 秒 freshness window，只广播不写 D1/DO storage。
+- Live frame 最多 16 KiB，使用 live-specific AES-256-GCM 和 20 秒 freshness window；Agent 在 SQLite transaction 中按 session 持久化并预占 sequence 后才加密，只广播不写 D1/DO storage。
 - 当前快照可在内存丢失；viewer 连接后最多等一个 10 秒帧，期间使用 D1 latest。这是对“persist first”的明确非权威例外。
 - DO 按 workspace 命名；超过 500 connections 后才按 stable shard 拆分，不使用全局单例。
 
@@ -232,7 +232,7 @@ src/
 - `compactor`
 - `run-recorder`
 
-每个动作接收 batch limit、deadline 和 cursor。运行接近 wall/CPU budget 时主动保存游标退出。
+每个动作接收 batch limit、deadline 和 cursor。Cron 使用确定性 scheduled run ID；workspace 先取得 15 分钟 lease，防止重叠执行。资源 DELETE 删满一批时 cursor 停在当前资源之前，只有确认该资源没有剩余过期行才前进。CONTROL_DB 中近期到期 Agent command 转为 `expired`，超过 30 天审计窗口的 terminal/未送达命令直接分批删除，公告在失效 7 天后物理删除。运行接近 wall/CPU budget 时主动保存游标退出。
 
 ## 11. `crates/agent`
 
