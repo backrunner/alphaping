@@ -1,11 +1,11 @@
 <script lang="ts">
   import { ArrowDown, ArrowUp, Cpu, HardDrive, MemoryStick, Radio } from "lucide-svelte";
-  import type { MachineDetail } from "@alphaping/db";
+  import type { DashboardMachine, MachineDetail } from "@alphaping/db";
 
   import HistoryPanel from "$components/machines/history-panel.svelte";
   import { formatBytes, formatPercent, formatRate } from "$lib/utils/format";
 
-  let { detail }: { detail: MachineDetail } = $props();
+  let { detail, latest }: { detail: MachineDetail; latest: DashboardMachine } = $props();
 
   function formatTimestamp(value: number | null) {
     if (value === null) return "Never";
@@ -18,27 +18,27 @@
 
 <div class="metric-strip" aria-label="Current machine metrics">
   <div>
-    <span><Cpu size={13} />CPU</span><strong>{formatPercent(detail.latest.cpuPermille)}</strong>
+    <span><Cpu size={13} />CPU</span><strong>{formatPercent(latest.cpuPermille)}</strong>
   </div>
   <div>
     <span><MemoryStick size={13} />Memory</span>
-    <strong>{formatBytes(detail.latest.memoryUsedBytes)}</strong>
-    <small>of {formatBytes(detail.latest.memoryTotalBytes)}</small>
+    <strong>{formatBytes(latest.memoryUsedBytes)}</strong>
+    <small>of {formatBytes(latest.memoryTotalBytes)}</small>
   </div>
   <div>
     <span><HardDrive size={13} />Storage</span>
-    <strong>{formatBytes(detail.latest.storageUsedBytes)}</strong>
-    <small>of {formatBytes(detail.latest.storageTotalBytes)}</small>
+    <strong>{formatBytes(latest.storageUsedBytes)}</strong>
+    <small>of {formatBytes(latest.storageTotalBytes)}</small>
   </div>
   <div>
     <span><ArrowDown size={13} />Download</span>
-    <strong>{formatRate(detail.latest.networkRxBps)}</strong>
-    <small>{formatBytes(detail.latest.networkRxTotal)} total</small>
+    <strong>{formatRate(latest.networkRxBps)}</strong>
+    <small>{formatBytes(latest.networkRxTotal)} total</small>
   </div>
   <div>
     <span><ArrowUp size={13} />Upload</span>
-    <strong>{formatRate(detail.latest.networkTxBps)}</strong>
-    <small>{formatBytes(detail.latest.networkTxTotal)} total</small>
+    <strong>{formatRate(latest.networkTxBps)}</strong>
+    <small>{formatBytes(latest.networkTxTotal)} total</small>
   </div>
 </div>
 

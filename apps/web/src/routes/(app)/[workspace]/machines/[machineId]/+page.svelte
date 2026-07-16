@@ -1,10 +1,13 @@
 <script lang="ts">
   import { ArrowLeft } from "lucide-svelte";
+  import type { LiveViewerSnapshot } from "@alphaping/contracts";
+  import type { DashboardMachine } from "@alphaping/db";
 
   import AgentUpdateControls from "$components/machines/agent-update-controls.svelte";
   import MachineConfig from "$components/machines/machine-config.svelte";
   import MachineContainers from "$components/machines/machine-containers.svelte";
   import MachineEvents from "$components/machines/machine-events.svelte";
+  import MachineLive from "$components/machines/machine-live.svelte";
   import MachineOverview from "$components/machines/machine-overview.svelte";
   import MachineProbes from "$components/machines/machine-probes.svelte";
   import StatusLabel from "$components/status/status-label.svelte";
@@ -12,6 +15,11 @@
 
   let { data, form } = $props();
   let activeTab = $state<"overview" | "probes" | "containers" | "events" | "config">("overview");
+  function initialLatest(): DashboardMachine {
+    return data.latest;
+  }
+
+  let currentLatest = $state<DashboardMachine>(initialLatest());
 
   const tabs = $derived([
     { id: "overview" as const, label: "Overview" },
@@ -31,6 +39,28 @@
     activeTab = next.id;
     requestAnimationFrame(() => document.getElementById(`machine-tab-${next.id}`)?.focus());
   }
+
+  function applyLiveSnapshot(snapshot: LiveViewerSnapshot) {
+    if (snapshot.observedAt <= (currentLatest.observedAt ?? 0)) return;
+    currentLatest = {
+      ...currentLatest,
+      observedAt: snapshot.observedAt,
+      cpuPermille: snapshot.cpuPermille,
+      memoryUsedBytes: snapshot.memoryUsedBytes,
+      memoryTotalBytes: snapshot.memoryTotalBytes,
+      storageUsedBytes: snapshot.storageUsedBytes,
+      storageTotalBytes: snapshot.storageTotalBytes,
+      networkRxBps: snapshot.networkRxBps,
+      networkTxBps: snapshot.networkTxBps,
+      networkRxTotal: snapshot.networkRxTotal,
+      networkTxTotal: snapshot.networkTxTotal,
+    };
+  }
+
+  function applyDurableFallback(latest: DashboardMachine) {
+    if ((latest.observedAt ?? 0) < (currentLatest.observedAt ?? 0)) return;
+    currentLatest = latest;
+  }
 </script>
 
 <svelte:head><title>{data.machine.name} · {data.workspace.name}</title></svelte:head>
@@ -40,12 +70,20 @@
     <a href={`/${data.workspace.slug}/machines`}><ArrowLeft size={14} />Machines</a>
     <div class="title-row">
       <h1>{data.machine.name}</h1>
-      <StatusLabel status={data.latest.state} />
+      <StatusLabel status={currentLatest.state} />
     </div>
     <p>
       {data.agent ? `${data.agent.platform} · ${data.agent.arch}` : "Agent not enrolled"}
       <span>Last report {formatRelativeTime(data.latest.observedAt)}</span>
     </p>
+    <MachineLive
+      active={activeTab === "overview" && data.agent !== null}
+      ticketEndpoint={`/${data.workspace.slug}/machines/${data.machine.id}/live-ticket`}
+      fallbackEndpoint={`/${data.workspace.slug}/machines/${data.machine.id}/latest`}
+      initialObservedAt={data.latest.observedAt}
+      onSnapshot={applyLiveSnapshot}
+      onFallback={applyDurableFallback}
+    />
   </header>
 
   <div class="tabs" role="tablist" aria-label="Machine details">
@@ -70,7 +108,7 @@
     aria-labelledby={`machine-tab-${activeTab}`}
   >
     {#if activeTab === "overview"}
-      <MachineOverview detail={data} />
+      <MachineOverview detail={data} latest={currentLatest} />
     {:else if activeTab === "probes"}
       <MachineProbes tasks={data.probeTasks} />
     {:else if activeTab === "containers"}

@@ -13,6 +13,7 @@ head_sampling_rate = 0.1
 
 [vars]
 INGEST_ORIGIN = "https://ingest.example.com"
+LIVE_ORIGIN = "wss://live.example.com"
 AGENT_RELEASE_MANIFEST_JSON = '{"linux-x86_64":{"version":"0.1.0","length":0,"sha256":"0000000000000000000000000000000000000000000000000000000000000000"}}'
 
 [[d1_databases]]
@@ -30,6 +31,7 @@ name = "alphaping-web-production"
 
 [env.production.vars]
 INGEST_ORIGIN = "https://ingest.example.com"
+LIVE_ORIGIN = "wss://live.example.com"
 AGENT_RELEASE_MANIFEST_JSON = '{"linux-x86_64":{"version":"0.1.0","length":0,"sha256":"0000000000000000000000000000000000000000000000000000000000000000"}}'
 
 [env.production.assets]

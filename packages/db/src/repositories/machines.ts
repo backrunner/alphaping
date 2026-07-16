@@ -453,14 +453,34 @@ export async function loadAuthorizedMachineScope(
   workspaceSlug: string,
   userId: string,
   machineId: string,
-): Promise<{ workspacePk: number; machinePk: number }> {
+): Promise<{ workspaceId: string; workspacePk: number; machinePk: number }> {
   const { access, machine } = await loadAuthorizedMachine(
     controlDb,
     workspaceSlug,
     userId,
     machineId,
   );
-  return { workspacePk: access.workspace.telemetry_pk, machinePk: machine.telemetry_pk };
+  return {
+    workspaceId: access.workspace.id,
+    workspacePk: access.workspace.telemetry_pk,
+    machinePk: machine.telemetry_pk,
+  };
+}
+
+export async function loadMachineCurrent(
+  controlDb: D1Database,
+  telemetryDb: D1Database,
+  workspaceSlug: string,
+  userId: string,
+  machineId: string,
+  now = Date.now(),
+): Promise<{ latest: DashboardMachine; latestReceivedAt: number | null }> {
+  const { machine } = await loadAuthorizedMachine(controlDb, workspaceSlug, userId, machineId);
+  const latestRows = await loadLatestRows(telemetryDb, [machine.telemetry_pk]);
+  return {
+    latest: toDashboardMachine(machine, latestRows[0], now),
+    latestReceivedAt: latestRows[0]?.received_at ?? null,
+  };
 }
 
 export async function loadMachineDetail(
