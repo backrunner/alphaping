@@ -2,8 +2,8 @@ use alphaping_crypto::{DirectionalKeys, open, seal, unwrap_key, wrap_key};
 use alphaping_protocol::{
     MAX_ENVELOPE_BYTES, PROTOCOL_VERSION, decode_message, decompress_message, encode_message,
     v1::{
-        AckStatus, AgentConfigSnapshot, DurableAck, EncryptedEnvelope, EnrollmentRequest,
-        EnrollmentResponse, EnvelopeHeader, MachineReport,
+        AckStatus, AgentCommand, AgentConfigSnapshot, DurableAck, EncryptedEnvelope,
+        EnrollmentRequest, EnrollmentResponse, EnvelopeHeader, MachineReport,
     },
 };
 use prost::Message;
@@ -15,6 +15,7 @@ use worker::{
 
 use crate::{
     MAX_SAFE_SEQUENCE, MachineRollup,
+    agent_commands::{load_commands, persist_command_results},
     agent_config::build_config_snapshot,
     check_results::{ProbePersistenceError, persist_probe_results},
     enrollment_token_digest, validate_enrollment_request, validate_report,
@@ -862,6 +863,7 @@ async fn durable_ack(
     compressed_payload: &[u8],
     duplicate: bool,
     config: Option<AgentConfigSnapshot>,
+    commands: Vec<AgentCommand>,
 ) -> Result<Response, IngestError> {
     let now = now_ms();
     let previous_container_inventory = if !duplicate && report.container_inventory.is_some() {
@@ -902,12 +904,15 @@ async fn durable_ack(
     if report.applied_config_revision > agent_key.applied_config_revision as u64 {
         control_db
             .prepare(
-                "UPDATE agents SET applied_config_revision = ?, last_seen_at = ?
+                "UPDATE agents SET applied_config_revision = ?, last_seen_at = ?,
+                   agent_version = CASE WHEN ? <> '' THEN ? ELSE agent_version END
                  WHERE id = ? AND status = 'active' AND applied_config_revision < ?",
             )
             .bind(&[
                 unsigned(report.applied_config_revision),
                 number(now),
+                text(&report.agent_version),
+                text(&report.agent_version),
                 text(agent_id),
                 unsigned(report.applied_config_revision),
             ])?
@@ -915,8 +920,17 @@ async fn durable_ack(
             .await?;
     } else {
         control_db
-            .prepare("UPDATE agents SET last_seen_at = ? WHERE id = ? AND status = 'active'")
-            .bind(&[number(now), text(agent_id)])?
+            .prepare(
+                "UPDATE agents SET last_seen_at = ?,
+                   agent_version = CASE WHEN ? <> '' THEN ? ELSE agent_version END
+                 WHERE id = ? AND status = 'active'",
+            )
+            .bind(&[
+                number(now),
+                text(&report.agent_version),
+                text(&report.agent_version),
+                text(agent_id),
+            ])?
             .run()
             .await?;
     }
@@ -930,6 +944,7 @@ async fn durable_ack(
         committed_at_ms: now,
         config_revision: agent_key.desired_config_revision as u64,
         config,
+        commands,
     };
     let response_header = EnvelopeHeader {
         protocol_version: PROTOCOL_VERSION,
@@ -1045,6 +1060,7 @@ async fn handle_report(mut request: Request, env: Env) -> Result<Response, Inges
     let payload_hash = blake3::hash(&compressed_payload);
     let duplicate = classify_slot(&telemetry_db, &report, payload_hash.as_bytes()).await?;
     persist_probe_results(&control_db, &telemetry_db, agent_id, &report).await?;
+    persist_command_results(&control_db, agent_id, &report).await?;
     let config = if report.applied_config_revision < agent_key.desired_config_revision as u64 {
         Some(
             build_config_snapshot(
@@ -1058,6 +1074,7 @@ async fn handle_report(mut request: Request, env: Env) -> Result<Response, Inges
     } else {
         None
     };
+    let commands = load_commands(&control_db, agent_id, now).await?;
     durable_ack(
         &control_db,
         &telemetry_db,
@@ -1070,6 +1087,7 @@ async fn handle_report(mut request: Request, env: Env) -> Result<Response, Inges
         &compressed_payload,
         duplicate,
         config,
+        commands,
     )
     .await
 }

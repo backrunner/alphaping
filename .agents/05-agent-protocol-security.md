@@ -242,8 +242,10 @@ WebSocket 连接仍使用 TLS 1.3 `X25519MLKEM768`。Live channel 失败不改�
 
 - 默认 6 小时加 0-30 分钟抖动。
 - 使用 GitHub API/静态 metadata 的 ETag 和 `If-None-Match`。
-- 面板强制检查只绕过时间间隔，不绕过签名、版本、平台和 rollout policy。
+- 面板强制检查可显式绕过时间间隔与 rollout 百分比，不绕过签名、expiry、版本存在性、平台或 hash。
 - 支持 stable channel 和显式 pinned version。
+- Release origin 固定为 `alkinum/alphaping` 的 versioned assets，Agent command 不包含 URL；`bypass_rollout` 只绕过灰度百分比，不能绕过 metadata expiry、threshold signature、长度或 hash。
+- Production build 必须通过 `ALPHAPING_UPDATE_ROOT_JSON` 编译期嵌入 public root；缺少 root 时监控继续运行，但所有更新 fail closed。
 
 ### 10.3 安装和回滚
 
@@ -255,6 +257,8 @@ WebSocket 连接仍使用 TLS 1.3 `X25519MLKEM768`。Live channel 失败不改�
 6. 超时或崩溃则恢复上一版本并记录 command result。
 
 Windows 使用独立 updater helper 完成正在运行 executable 的替换。
+
+命令通过加密 `DurableAck.commands` 下发，Agent 在删除 report 前写入 SQLite。结果通过后续 `MachineReport.command_results` 回报并得到 durable ACK 后才清除本地 command ID。服务端和 Agent 都只接受固定 protobuf 字段，不接受 shell、任意 URL、stdout/stderr 或自由文件路径。
 
 ## 11. 中央 HTTP/TCP 检查安全
 

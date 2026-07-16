@@ -85,6 +85,15 @@ interface EventRow {
   reason_code: string;
 }
 
+interface AgentCommandRow {
+  id: string;
+  type: "check_update" | "install_version" | "redetect_runtimes" | "refresh_config";
+  state: "pending" | "delivered" | "succeeded" | "failed" | "expired";
+  result_code: string | null;
+  created_at: number;
+  completed_at: number | null;
+}
+
 interface WorkspaceAccess {
   workspace: WorkspaceRow;
   grants: readonly ResourceGrant[];
@@ -470,6 +479,13 @@ export async function loadMachineDetail(
   );
   const latestRows = await loadLatestRows(telemetryDb, [machine.telemetry_pk]);
   const inventory = parseContainerInventory(latestRows[0]?.container_inventory_json ?? null);
+  const canManage = canAccessResource(
+    access.workspace.role,
+    access.grants,
+    "machine",
+    machine.id,
+    "manage",
+  );
   const events = await telemetryDb
     .prepare(
       `SELECT occurred_at, previous_state, current_state, reason_code FROM state_events
@@ -489,6 +505,17 @@ export async function loadMachineDetail(
     machine.agent_id,
     now,
   );
+  const commandRows =
+    machine.agent_id && canManage
+      ? await controlDb
+          .prepare(
+            `SELECT id, type, state, result_code, created_at, completed_at
+             FROM agent_commands WHERE agent_id = ?
+             ORDER BY created_at DESC LIMIT 8`,
+          )
+          .bind(machine.agent_id)
+          .all<AgentCommandRow>()
+      : { results: [] as AgentCommandRow[] };
   return {
     workspace: {
       id: access.workspace.id,
@@ -515,12 +542,21 @@ export async function loadMachineDetail(
     agent:
       machine.agent_version && machine.platform && machine.arch
         ? {
+            id: machine.agent_id ?? "",
             version: machine.agent_version,
             platform: machine.platform,
             arch: machine.arch,
             appliedConfigRevision: machine.applied_config_revision ?? 0,
           }
         : null,
+    agentCommands: commandRows.results.map((command) => ({
+      id: command.id,
+      type: command.type,
+      state: command.state,
+      resultCode: command.result_code,
+      createdAt: command.created_at,
+      completedAt: command.completed_at,
+    })),
     events: events.results.map((event) => ({
       occurredAt: event.occurred_at,
       previousState: event.previous_state,
@@ -542,12 +578,6 @@ export async function loadMachineDetail(
         }
       : null,
     probeTasks,
-    canManage: canAccessResource(
-      access.workspace.role,
-      access.grants,
-      "machine",
-      machine.id,
-      "manage",
-    ),
+    canManage,
   };
 }

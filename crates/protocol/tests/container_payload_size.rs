@@ -83,6 +83,8 @@ fn report(container_count: usize, include_catalog: bool) -> MachineReport {
         }),
         probe_results: Vec::new(),
         applied_config_revision: 0,
+        command_results: Vec::new(),
+        agent_version: "0.1.0".to_owned(),
     }
 }
 

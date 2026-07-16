@@ -1,21 +1,8 @@
-use std::{
-    path::{Path, PathBuf},
-    time::{Duration, SystemTime, UNIX_EPOCH},
-};
+use std::path::{Path, PathBuf};
 
-use alphaping_agent::{
-    backoff::equal_jitter_delay, config::AgentConfig, containers::ContainerMonitor,
-    enrollment::enroll, probes::ProbeMonitor, sampler::Sampler, spool::Spool, uploader::Uploader,
-};
+use alphaping_agent::{config::AgentConfig, enrollment::enroll, runtime, spool::Spool};
 use anyhow::{Context, Result, bail};
-use rand::Rng;
-use tokio::time::{MissedTickBehavior, interval};
-use tracing::{error, info, warn};
-
-fn unix_time_ms() -> Result<i64> {
-    let millis = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis();
-    i64::try_from(millis).context("system time is outside the protocol range")
-}
+use tracing::info;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
@@ -24,6 +11,39 @@ async fn main() -> Result<()> {
         .compact()
         .init();
     let arguments = std::env::args_os().skip(1).collect::<Vec<_>>();
+    if arguments.len() == 1 && arguments[0] == "--version" {
+        println!("alphaping-agent {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+    if arguments
+        .first()
+        .is_some_and(|argument| argument == "self-test")
+    {
+        return run_self_test(&arguments[1..]);
+    }
+    if arguments
+        .first()
+        .is_some_and(|argument| argument == "service")
+    {
+        #[cfg(windows)]
+        {
+            if arguments.len() != 3 || arguments[1] != "--config" {
+                bail!("usage: alphaping-agent service --config PATH");
+            }
+            return alphaping_agent::service::dispatch(PathBuf::from(&arguments[2]));
+        }
+        #[cfg(not(windows))]
+        bail!("the service subcommand is only available on Windows");
+    }
+    if arguments
+        .first()
+        .is_some_and(|argument| argument == "apply-update")
+    {
+        #[cfg(windows)]
+        return alphaping_agent::updater::apply_windows_update(&arguments[1..]).await;
+        #[cfg(not(windows))]
+        bail!("the apply-update subcommand is only available on Windows");
+    }
     if arguments
         .first()
         .is_some_and(|argument| argument == "enroll")
@@ -34,7 +54,18 @@ async fn main() -> Result<()> {
         .first()
         .map(PathBuf::from)
         .context("usage: alphaping-agent <config.toml> | alphaping-agent enroll --endpoint URL --token TOKEN --config PATH")?;
-    run_agent(&config_path).await
+    runtime::run(&config_path, None).await
+}
+
+fn run_self_test(arguments: &[std::ffi::OsString]) -> Result<()> {
+    if arguments.len() != 2 || arguments[0] != "--config" {
+        bail!("usage: alphaping-agent self-test --config PATH");
+    }
+    let config = AgentConfig::load(Path::new(&arguments[1]))?;
+    let _spool = Spool::open(&config.spool_path)?;
+    let _client = alphaping_agent::uploader::pq_client()?;
+    info!("Agent self-test passed");
+    Ok(())
 }
 
 async fn run_enrollment(arguments: &[std::ffi::OsString]) -> Result<()> {
@@ -77,6 +108,9 @@ async fn run_enrollment(arguments: &[std::ffi::OsString]) -> Result<()> {
         report_interval_seconds: u64::from(response.report_interval_seconds),
         max_spool_bytes: 512 * 1024 * 1024,
         container_monitoring_enabled: response.container_monitoring_enabled,
+        auto_update: true,
+        update_channel: "stable".to_owned(),
+        pinned_version: None,
     };
     config.save(&config_path)?;
     info!(path = %config_path.display(), "agent enrollment completed");
@@ -96,127 +130,5 @@ fn default_spool_path() -> String {
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
         "/var/lib/alphaping/spool.db".to_owned()
-    }
-}
-
-async fn run_agent(config_path: &Path) -> Result<()> {
-    let config = AgentConfig::load(config_path)?;
-    let mut spool = Spool::open(&config.spool_path)?;
-    let mut sampler = Sampler::new();
-    let initial_probe_config = spool.load_probe_config()?;
-    let (probe_monitor, mut probe_results) =
-        ProbeMonitor::start(config.agent_id.clone(), initial_probe_config)?;
-    let container_monitor = config
-        .container_monitoring_enabled
-        .then(ContainerMonitor::start);
-    let uploader = Uploader::new(
-        config.endpoint.clone(),
-        config.agent_id.as_bytes().to_vec(),
-        config.key_epoch,
-        config.data_key()?,
-        config.nonce_prefix()?,
-    )?;
-
-    let mut sample_tick = interval(Duration::from_secs(config.sample_interval_seconds));
-    sample_tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
-    let mut report_tick = interval(Duration::from_secs(config.report_interval_seconds));
-    report_tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
-    let mut upload_tick = interval(Duration::from_secs(1));
-    upload_tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
-    info!("agent started");
-
-    loop {
-        tokio::select! {
-            _ = sample_tick.tick() => {
-                let now = unix_time_ms()?;
-                let sample = sampler.sample(now);
-                spool.append_sample(&sample, now)?;
-                let dropped = spool.enforce_capacity(config.max_spool_bytes, now)?;
-                if dropped > 0 {
-                    warn!(dropped_samples = dropped, "spool pressure compacted unassigned samples");
-                }
-            }
-            _ = report_tick.tick() => {
-                let now = unix_time_ms()?;
-                if let Some(inventory) = container_monitor.as_ref().and_then(ContainerMonitor::snapshot)
-                    && let Err(error) = spool.append_container_inventory(&inventory, now)
-                {
-                    error!(error = %error, "failed to persist container inventory");
-                }
-                if let Err(error) = spool.create_next_delivery(config.machine_pk, config.workspace_pk, now) {
-                    error!(error = %error, "failed to create durable report");
-                }
-            }
-            _ = upload_tick.tick() => {
-                let now = unix_time_ms()?;
-                if let Some(delivery) = spool.due_delivery(now)? {
-                    match uploader.upload(&mut spool, &delivery, now).await {
-                        Ok(acknowledgement) => {
-                            let local_result = (|| -> Result<()> {
-                                let current_revision = spool.applied_config_revision()?;
-                                if acknowledgement.config_revision > current_revision {
-                                    let next = acknowledgement.config.as_ref()
-                                        .context("server omitted the newer Agent configuration")?;
-                                    if next.revision != acknowledgement.config_revision {
-                                        bail!("Agent configuration revision does not match ACK");
-                                    }
-                                    alphaping_agent::probes::validate_config(next)?;
-                                    if spool.apply_probe_config(next, now)? {
-                                        probe_monitor.apply_config(next.clone())?;
-                                    }
-                                }
-                                if !spool.acknowledge(&delivery.report_id)? {
-                                    bail!("durable ACK did not match a local delivery");
-                                }
-                                Ok(())
-                            })();
-                            if let Err(error) = local_result {
-                                spool.mark_failure(
-                                    &delivery.report_id,
-                                    now.saturating_add(300_000),
-                                    "local_config",
-                                )?;
-                                error!(error = %error, "failed to apply authenticated Agent response");
-                            } else {
-                                let recovery_jitter_ms = rand::rng().random_range(0_i64..=5_000);
-                                spool.wake_backlog(now.saturating_add(recovery_jitter_ms))?;
-                            }
-                        }
-                        Err(error) => {
-                            let random = rand::rng().random_range(0.0..=1.0);
-                            let delay = equal_jitter_delay(delivery.attempt_count, random);
-                            let next = now.saturating_add(i64::try_from(delay.as_millis()).unwrap_or(300_000));
-                            spool.mark_failure(&delivery.report_id, next, error_code(&error))?;
-                            warn!(error = %error, retry_seconds = delay.as_secs(), "durable report upload failed");
-                        }
-                    }
-                }
-            }
-            Some(result) = probe_results.recv() => {
-                let now = unix_time_ms()?;
-                if let Err(error) = spool.append_probe_result(&result, now) {
-                    error!(error = %error, check_id = %result.check_id, "failed to persist probe result");
-                }
-            }
-            result = tokio::signal::ctrl_c() => {
-                result?;
-                info!("shutdown requested");
-                break;
-            }
-        }
-    }
-    Ok(())
-}
-
-fn error_code(error: &alphaping_agent::uploader::UploadError) -> &'static str {
-    use alphaping_agent::uploader::UploadError;
-    match error {
-        UploadError::Transport(_) => "network",
-        UploadError::Revoked => "revoked",
-        UploadError::ServerStatus => "server_status",
-        UploadError::ResponseTooLarge => "response_too_large",
-        UploadError::Protocol => "protocol",
-        UploadError::Authentication => "authentication",
-        UploadError::Sequence => "sequence",
     }
 }

@@ -16,7 +16,16 @@ pub const MAX_CONTAINER_COUNT: usize = 64;
 pub const MAX_CONTAINER_PORTS: usize = 8;
 pub const MAX_RUNTIME_COUNT: usize = 16;
 pub const MAX_PROBE_RESULTS: usize = 512;
+pub const MAX_COMMAND_RESULTS: usize = 16;
 pub const MAX_SAFE_SEQUENCE: u64 = 9_007_199_254_740_991;
+
+fn looks_like_uuid(value: &str) -> bool {
+    value.len() == 36
+        && value.bytes().enumerate().all(|(index, byte)| match index {
+            8 | 13 | 18 | 23 => byte == b'-',
+            _ => byte.is_ascii_hexdigit(),
+        })
+}
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum EnrollmentValidationError {
@@ -178,6 +187,31 @@ pub fn validate_report(
     }) {
         return Err(ValidationError::ReportTime);
     }
+    if report.agent_version.len() > 32
+        || !report
+            .agent_version
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'+'))
+        || report.command_results.len() > MAX_COMMAND_RESULTS
+    {
+        return Err(ValidationError::ReportTime);
+    }
+    let mut command_ids = std::collections::HashSet::with_capacity(report.command_results.len());
+    if report.command_results.iter().any(|result| {
+        !looks_like_uuid(&result.command_id)
+            || !command_ids.insert(result.command_id.as_str())
+            || !(1..=2).contains(&result.status)
+            || result.completed_at_ms > now_ms.saturating_add(120_000)
+            || result.result_code.is_empty()
+            || result.result_code.len() > 64
+            || result.installed_version.len() > 64
+            || !result
+                .installed_version
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'+'))
+    }) {
+        return Err(ValidationError::ReportTime);
+    }
     Ok(())
 }
 
@@ -224,6 +258,8 @@ impl MachineRollup {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
+mod agent_commands;
 #[cfg(target_arch = "wasm32")]
 mod agent_config;
 #[cfg(target_arch = "wasm32")]
@@ -297,6 +333,8 @@ mod tests {
             container_inventory: None,
             probe_results: Vec::new(),
             applied_config_revision: 0,
+            command_results: Vec::new(),
+            agent_version: "0.1.0".to_owned(),
         };
         assert_eq!(
             validate_report(&report, &[1; 16], 7, 2, "agent-1", 180_000),

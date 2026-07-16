@@ -145,6 +145,8 @@ Paid included                        25,000.000m/month
 
 预算只占 D1 included reads 约 0.086%。因此在这个规模下，用主键读取代替频繁更新的汇总/调度索引是明确的成本和性能优化。
 
+Agent command delivery 在每个 report 增加一次 `(agent_id,state,not_before)` 有界索引读取，空队列不产生写入。100 台 Agent 按每分钟一个 report 约增加 4.32m rows read/月，仍只占 Paid 25bn included reads 的 0.0173%。Agent 版本合并进既有 `last_seen_at` 更新，不增加稳态 D1 write；只有创建、实际投递和完成命令时才新增低频 writes。
+
 ## 6. Workers request 和 CPU
 
 主路径 request：

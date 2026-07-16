@@ -1,6 +1,7 @@
 <script lang="ts">
   import { ArrowLeft } from "lucide-svelte";
 
+  import AgentUpdateControls from "$components/machines/agent-update-controls.svelte";
   import MachineConfig from "$components/machines/machine-config.svelte";
   import MachineContainers from "$components/machines/machine-containers.svelte";
   import MachineEvents from "$components/machines/machine-events.svelte";
@@ -9,7 +10,7 @@
   import StatusLabel from "$components/status/status-label.svelte";
   import { formatRelativeTime } from "$lib/utils/format";
 
-  let { data } = $props();
+  let { data, form } = $props();
   let activeTab = $state<"overview" | "probes" | "containers" | "events" | "config">("overview");
 
   const tabs = $derived([
@@ -78,6 +79,9 @@
       <MachineEvents events={data.events} />
     {:else if activeTab === "config" && data.canManage}
       <MachineConfig machine={data.machine} />
+      {#if data.agent}
+        <AgentUpdateControls agent={data.agent} commands={data.agentCommands} result={form} />
+      {/if}
     {/if}
   </div>
 </main>

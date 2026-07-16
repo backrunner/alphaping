@@ -26,6 +26,12 @@ pub struct AgentConfig {
     pub max_spool_bytes: u64,
     #[serde(default)]
     pub container_monitoring_enabled: bool,
+    #[serde(default = "default_auto_update")]
+    pub auto_update: bool,
+    #[serde(default = "default_update_channel")]
+    pub update_channel: String,
+    #[serde(default)]
+    pub pinned_version: Option<String>,
 }
 
 const fn default_sample_interval() -> u64 {
@@ -38,6 +44,14 @@ const fn default_report_interval() -> u64 {
 
 const fn default_spool_bytes() -> u64 {
     512 * 1024 * 1024
+}
+
+const fn default_auto_update() -> bool {
+    true
+}
+
+fn default_update_channel() -> String {
+    "stable".to_owned()
 }
 
 impl AgentConfig {
@@ -70,6 +84,16 @@ impl AgentConfig {
         }
         if hex::decode(&self.identity_private_key_hex)?.len() != 32 {
             bail!("identity private key must be 32 bytes");
+        }
+        if self.update_channel != "stable" {
+            bail!("only the stable update channel is currently supported");
+        }
+        if self
+            .pinned_version
+            .as_deref()
+            .is_some_and(|version| semver::Version::parse(version).is_err())
+        {
+            bail!("pinned Agent version is invalid");
         }
         Ok(())
     }

@@ -5,13 +5,16 @@ use std::{
 
 use alphaping_protocol::{
     compress_message, decode_message, encode_message,
-    v1::{AgentConfigSnapshot, ContainerInventory, MachineReport, MetricSample, ProbeResult},
+    v1::{AgentCommandResult, ContainerInventory, MachineReport, MetricSample, ProbeResult},
 };
 use anyhow::{Context, Result, bail};
 use rusqlite::{Connection, OptionalExtension, params};
 use uuid::Uuid;
 
-const MIN_FREE_BYTES: u64 = 256 * 1024 * 1024;
+mod capacity;
+mod commands;
+mod probes;
+pub use commands::PendingCommand;
 
 #[derive(Debug, Clone)]
 pub struct PendingDelivery {
@@ -91,6 +94,28 @@ impl Spool {
              ) WITHOUT ROWID;
              CREATE INDEX IF NOT EXISTS probe_results_minute_idx
                ON probe_results (nominal_minute, observed_at);
+             CREATE TABLE IF NOT EXISTS agent_commands (
+               command_id TEXT PRIMARY KEY NOT NULL,
+               payload BLOB NOT NULL,
+               state TEXT NOT NULL CHECK (state IN ('pending', 'running', 'completed')),
+               attempt_count INTEGER NOT NULL DEFAULT 0,
+               attempt_limit INTEGER NOT NULL,
+               next_attempt_at INTEGER NOT NULL,
+               created_at INTEGER NOT NULL,
+               updated_at INTEGER NOT NULL
+             ) WITHOUT ROWID;
+             CREATE INDEX IF NOT EXISTS agent_commands_due_idx
+               ON agent_commands (state, next_attempt_at);
+             CREATE TABLE IF NOT EXISTS agent_command_results (
+               command_id TEXT PRIMARY KEY NOT NULL,
+               payload BLOB NOT NULL,
+               completed_at INTEGER NOT NULL
+             ) WITHOUT ROWID;
+             CREATE TABLE IF NOT EXISTS delivery_command_results (
+               report_id BLOB NOT NULL REFERENCES deliveries(report_id) ON DELETE CASCADE,
+               command_id TEXT NOT NULL REFERENCES agent_command_results(command_id) ON DELETE RESTRICT,
+               PRIMARY KEY (report_id, command_id)
+             ) WITHOUT ROWID;
              CREATE TABLE IF NOT EXISTS data_gaps (
                hour_start INTEGER PRIMARY KEY NOT NULL,
                dropped_samples INTEGER NOT NULL,
@@ -108,73 +133,6 @@ impl Spool {
             [],
         )?;
         Ok(Self { connection, path })
-    }
-
-    pub fn load_probe_config(&self) -> Result<AgentConfigSnapshot> {
-        self.connection
-            .query_row(
-                "SELECT payload FROM probe_config WHERE singleton = 1",
-                [],
-                |row| row.get::<_, Vec<u8>>(0),
-            )
-            .optional()?
-            .map(|payload| decode_message(&payload).map_err(anyhow::Error::from))
-            .transpose()
-            .map(|config| config.unwrap_or_default())
-    }
-
-    pub fn apply_probe_config(
-        &mut self,
-        config: &AgentConfigSnapshot,
-        now_ms: i64,
-    ) -> Result<bool> {
-        let current = self.applied_config_revision()?;
-        if config.revision < current {
-            bail!("probe configuration revision rolled back");
-        }
-        if config.revision == current {
-            return Ok(false);
-        }
-        let transaction = self.connection.transaction()?;
-        transaction.execute(
-            "INSERT INTO probe_config (singleton, revision, payload, updated_at)
-             VALUES (1, ?, ?, ?)
-             ON CONFLICT(singleton) DO UPDATE SET
-               revision = excluded.revision, payload = excluded.payload, updated_at = excluded.updated_at",
-            params![config.revision, encode_message(config), now_ms],
-        )?;
-        transaction.execute(
-            "UPDATE meta SET value = ? WHERE key = 'applied_config_revision'",
-            [config.revision],
-        )?;
-        transaction.commit()?;
-        Ok(true)
-    }
-
-    pub fn append_probe_result(&self, result: &ProbeResult, now_ms: i64) -> Result<bool> {
-        let nominal_minute = result.nominal_slot_ms.div_euclid(60_000) * 60_000;
-        let inserted = self.connection.execute(
-            "INSERT OR IGNORE INTO probe_results
-             (execution_id, nominal_minute, observed_at, payload, created_at)
-             VALUES (?, ?, ?, ?, ?)",
-            params![
-                result.execution_id,
-                nominal_minute,
-                result.observed_at_ms,
-                encode_message(result),
-                now_ms
-            ],
-        )?;
-        Ok(inserted == 1)
-    }
-
-    pub fn applied_config_revision(&self) -> Result<u64> {
-        let revision: i64 = self.connection.query_row(
-            "SELECT value FROM meta WHERE key = 'applied_config_revision'",
-            [],
-            |row| row.get(0),
-        )?;
-        u64::try_from(revision).context("configuration revision is invalid")
     }
 
     pub fn append_sample(&mut self, sample: &MetricSample, now_ms: i64) -> Result<bool> {
@@ -311,6 +269,23 @@ impl Spool {
         }
         drop(probe_statement);
 
+        let mut command_statement = self.connection.prepare(
+            "SELECT r.command_id, r.payload FROM agent_command_results r
+             LEFT JOIN delivery_command_results d ON d.command_id = r.command_id
+             WHERE d.command_id IS NULL ORDER BY r.completed_at LIMIT 16",
+        )?;
+        let command_rows = command_statement.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
+        })?;
+        let mut command_result_ids = Vec::new();
+        let mut command_results = Vec::new();
+        for row in command_rows {
+            let (command_id, payload) = row?;
+            command_result_ids.push(command_id);
+            command_results.push(decode_message::<AgentCommandResult>(&payload)?);
+        }
+        drop(command_statement);
+
         let report_id = Uuid::now_v7().into_bytes().to_vec();
         let report = MachineReport {
             report_id: report_id.clone(),
@@ -322,6 +297,8 @@ impl Spool {
             container_inventory,
             probe_results,
             applied_config_revision: self.applied_config_revision()?,
+            command_results,
+            agent_version: env!("CARGO_PKG_VERSION").to_owned(),
         };
         let payload = compress_message(&report)?;
         let payload_hash = blake3::hash(&payload);
@@ -353,6 +330,12 @@ impl Spool {
             transaction.execute(
                 "DELETE FROM probe_results WHERE execution_id = ?",
                 [execution_id],
+            )?;
+        }
+        for command_id in command_result_ids {
+            transaction.execute(
+                "INSERT INTO delivery_command_results (report_id, command_id) VALUES (?, ?)",
+                params![report_id, command_id],
             )?;
         }
         transaction.execute(
@@ -440,6 +423,13 @@ impl Spool {
                 .query_map([report_id], |row| row.get::<_, i64>(0))?
                 .collect::<rusqlite::Result<Vec<_>>>()?
         };
+        let command_ids = {
+            let mut statement = transaction
+                .prepare("SELECT command_id FROM delivery_command_results WHERE report_id = ?")?;
+            statement
+                .query_map([report_id], |row| row.get::<_, String>(0))?
+                .collect::<rusqlite::Result<Vec<_>>>()?
+        };
         transaction.execute(
             "DELETE FROM delivery_samples WHERE report_id = ?",
             [report_id],
@@ -458,6 +448,16 @@ impl Spool {
             deleted_samples +=
                 transaction.execute("DELETE FROM samples WHERE id = ?", [sample_id])?;
         }
+        for command_id in command_ids {
+            transaction.execute(
+                "DELETE FROM agent_command_results WHERE command_id = ?",
+                [&command_id],
+            )?;
+            transaction.execute(
+                "DELETE FROM agent_commands WHERE command_id = ? AND state = 'completed'",
+                [&command_id],
+            )?;
+        }
         transaction.commit()?;
         Ok(deleted_delivery == 1 && deleted_samples > 0)
     }
@@ -466,75 +466,6 @@ impl Spool {
         self.connection
             .query_row("SELECT COUNT(*) FROM deliveries", [], |row| row.get(0))
             .context("failed to count deliveries")
-    }
-
-    pub fn enforce_capacity(&mut self, max_bytes: u64, now_ms: i64) -> Result<usize> {
-        let used = self.allocated_bytes()?;
-        let parent = self.path.parent();
-        let free = parent
-            .map(fs2::available_space)
-            .transpose()?
-            .unwrap_or(u64::MAX);
-        let total = parent
-            .map(fs2::total_space)
-            .transpose()?
-            .unwrap_or(u64::MAX);
-        let reserve = MIN_FREE_BYTES.max(total / 20);
-        let ratio = used as f64 / max_bytes.max(1) as f64;
-        if ratio < 0.70 && free >= reserve {
-            return Ok(0);
-        }
-        let mut dropped = self.connection.execute(
-            "DELETE FROM samples WHERE id IN (
-               SELECT id FROM (
-                 SELECT s.id,
-                   ROW_NUMBER() OVER (PARTITION BY s.observed_at / 60000 ORDER BY s.observed_at DESC) AS rank
-                 FROM samples s LEFT JOIN delivery_samples ds ON ds.sample_id = s.id
-                 WHERE ds.sample_id IS NULL
-               ) WHERE rank > 1 LIMIT 1000
-             )",
-            [],
-        )?;
-        if ratio >= 0.85 || free < reserve {
-            dropped += self.connection.execute(
-                "DELETE FROM samples WHERE id IN (
-                   SELECT s.id FROM samples s LEFT JOIN delivery_samples ds ON ds.sample_id = s.id
-                   WHERE ds.sample_id IS NULL ORDER BY s.observed_at LIMIT 1000
-                 )",
-                [],
-            )?;
-        }
-        if ratio >= 0.95 {
-            dropped += self.connection.execute(
-                "DELETE FROM samples WHERE id IN (
-                   SELECT s.id FROM samples s LEFT JOIN delivery_samples ds ON ds.sample_id = s.id
-                   WHERE ds.sample_id IS NULL ORDER BY s.observed_at LIMIT 5000
-                 )",
-                [],
-            )?;
-        }
-        if dropped > 0 {
-            let hour = now_ms.div_euclid(3_600_000) * 3_600_000;
-            self.connection.execute(
-                "INSERT INTO data_gaps (hour_start, dropped_samples, reason, updated_at)
-                 VALUES (?, ?, 'spool_pressure', ?)
-                 ON CONFLICT(hour_start) DO UPDATE SET
-                   dropped_samples = data_gaps.dropped_samples + excluded.dropped_samples,
-                   updated_at = excluded.updated_at",
-                params![hour, dropped, now_ms],
-            )?;
-        }
-        Ok(dropped)
-    }
-
-    fn allocated_bytes(&self) -> Result<u64> {
-        let page_count: u64 = self
-            .connection
-            .query_row("PRAGMA page_count", [], |row| row.get(0))?;
-        let page_size: u64 = self
-            .connection
-            .query_row("PRAGMA page_size", [], |row| row.get(0))?;
-        Ok(page_count.saturating_mul(page_size))
     }
 }
 
@@ -558,217 +489,4 @@ fn ensure_delivery_catalog_columns(connection: &Connection) -> Result<()> {
 }
 
 #[cfg(test)]
-mod tests {
-    use alphaping_protocol::{
-        decompress_message, encode_message,
-        v1::{
-            AgentConfigSnapshot, ContainerCatalogEntry, ContainerInventory, MachineReport,
-            MetricSample, ProbeResult, ProbeState,
-        },
-    };
-    use tempfile::tempdir;
-
-    use super::Spool;
-
-    fn sample(observed_at_ms: i64) -> MetricSample {
-        MetricSample {
-            observed_at_ms,
-            cpu_permille: 100,
-            ..MetricSample::default()
-        }
-    }
-
-    #[test]
-    fn ack_is_the_only_path_that_removes_a_delivery() {
-        let directory = tempdir().expect("temp directory");
-        let mut spool = Spool::open(directory.path().join("spool.db")).expect("open spool");
-        for index in 0..6 {
-            spool
-                .append_sample(&sample(60_000 + index * 10_000), 120_000)
-                .expect("append sample");
-        }
-        let report_id = spool
-            .create_next_delivery(7, 2, 120_000)
-            .expect("create delivery")
-            .expect("delivery exists");
-        assert_eq!(spool.delivery_count().expect("count"), 1);
-        spool
-            .mark_failure(&report_id, 130_000, "network")
-            .expect("mark failure");
-        assert_eq!(spool.delivery_count().expect("count"), 1);
-        assert!(spool.acknowledge(&report_id).expect("ack"));
-        assert_eq!(spool.delivery_count().expect("count"), 0);
-    }
-
-    #[test]
-    fn sequence_is_persisted_before_use() {
-        let directory = tempdir().expect("temp directory");
-        let path = directory.path().join("spool.db");
-        let mut spool = Spool::open(&path).expect("open spool");
-        assert_eq!(spool.next_sequence().expect("sequence"), 1);
-        drop(spool);
-        let mut reopened = Spool::open(&path).expect("reopen spool");
-        assert_eq!(reopened.next_sequence().expect("sequence"), 2);
-    }
-
-    #[test]
-    fn catalog_is_resent_until_ack_then_metrics_remain_compact() {
-        let directory = tempdir().expect("temp directory");
-        let mut spool = Spool::open(directory.path().join("spool.db")).expect("open spool");
-        for minute in [60_000_i64, 120_000_i64] {
-            for index in 0..6 {
-                spool
-                    .append_sample(&sample(minute + index * 10_000), minute + 60_000)
-                    .expect("append sample");
-            }
-            spool
-                .append_container_inventory(
-                    &ContainerInventory {
-                        observed_at_ms: minute + 5_000,
-                        catalog_digest: vec![7; 32],
-                        catalog: vec![ContainerCatalogEntry {
-                            container_key: vec![3; 16],
-                            name: "api".to_owned(),
-                            ..ContainerCatalogEntry::default()
-                        }],
-                        catalog_included: true,
-                        ..ContainerInventory::default()
-                    },
-                    minute + 60_000,
-                )
-                .expect("append inventory");
-        }
-
-        let first_id = spool
-            .create_next_delivery(7, 2, 180_000)
-            .expect("create first")
-            .expect("first delivery");
-        let first = spool
-            .due_delivery(180_000)
-            .expect("read first")
-            .expect("first due");
-        let first_report: MachineReport =
-            decompress_message(&first.payload).expect("decode first report");
-        assert_eq!(
-            first_report
-                .container_inventory
-                .as_ref()
-                .expect("first inventory")
-                .catalog
-                .len(),
-            1
-        );
-        assert!(spool.acknowledge(&first_id).expect("ack first"));
-
-        let second_id = spool
-            .create_next_delivery(7, 2, 180_000)
-            .expect("create second")
-            .expect("second delivery");
-        let second = spool
-            .due_delivery(180_000)
-            .expect("read second")
-            .expect("second due");
-        let second_report: MachineReport =
-            decompress_message(&second.payload).expect("decode second report");
-        assert!(
-            second_report
-                .container_inventory
-                .as_ref()
-                .expect("second inventory")
-                .catalog
-                .is_empty()
-        );
-        assert!(spool.acknowledge(&second_id).expect("ack second"));
-
-        for index in 0..6 {
-            spool
-                .append_sample(&sample(180_000 + index * 10_000), 240_000)
-                .expect("append third sample");
-        }
-        spool
-            .append_container_inventory(
-                &ContainerInventory {
-                    observed_at_ms: 185_000,
-                    catalog_digest: vec![8; 32],
-                    catalog_included: true,
-                    ..ContainerInventory::default()
-                },
-                240_000,
-            )
-            .expect("append empty inventory");
-        spool
-            .create_next_delivery(7, 2, 240_000)
-            .expect("create third")
-            .expect("third delivery");
-        let third = spool
-            .due_delivery(240_000)
-            .expect("read third")
-            .expect("third due");
-        let third_report: MachineReport =
-            decompress_message(&third.payload).expect("decode third report");
-        let third_inventory = third_report.container_inventory.expect("third inventory");
-        assert!(third_inventory.catalog_included);
-        assert!(third_inventory.catalog.is_empty());
-    }
-
-    #[test]
-    fn probe_config_and_results_are_durable_until_report_ack() {
-        let directory = tempdir().expect("temp directory");
-        let path = directory.path().join("spool.db");
-        let mut spool = Spool::open(&path).expect("open spool");
-        let mut config = AgentConfigSnapshot {
-            revision: 4,
-            probe_tasks: Vec::new(),
-            created_at_ms: 120_000,
-            digest: Vec::new(),
-        };
-        config.digest = blake3::hash(&encode_message(&config)).as_bytes().to_vec();
-        assert!(
-            spool
-                .apply_probe_config(&config, 120_000)
-                .expect("apply config")
-        );
-        assert_eq!(spool.load_probe_config().expect("load config").revision, 4);
-        let result = ProbeResult {
-            execution_id: vec![8; 32],
-            check_id: "018f5f7e-7d28-7e12-a521-23456789abcd".to_owned(),
-            check_pk: 11,
-            service_pk: 12,
-            workspace_pk: 2,
-            executor_agent_id: "agent-1".to_owned(),
-            config_revision: 4,
-            nominal_slot_ms: 60_000,
-            observed_at_ms: 61_000,
-            state: ProbeState::Healthy as i32,
-            latency_ms: Some(10),
-            ..ProbeResult::default()
-        };
-        assert!(
-            spool
-                .append_probe_result(&result, 120_000)
-                .expect("append result")
-        );
-        for index in 0..6 {
-            spool
-                .append_sample(&sample(60_000 + index * 10_000), 120_000)
-                .expect("append sample");
-        }
-        let report_id = spool
-            .create_next_delivery(7, 2, 120_000)
-            .expect("create delivery")
-            .expect("delivery");
-        let delivery = spool
-            .due_delivery(120_000)
-            .expect("read delivery")
-            .expect("due delivery");
-        let report: MachineReport = decompress_message(&delivery.payload).expect("decode report");
-        assert_eq!(report.applied_config_revision, 4);
-        assert_eq!(report.probe_results, vec![result]);
-        drop(spool);
-
-        let mut reopened = Spool::open(&path).expect("reopen spool");
-        assert_eq!(reopened.delivery_count().expect("count"), 1);
-        assert!(reopened.acknowledge(&report_id).expect("ack"));
-        assert_eq!(reopened.delivery_count().expect("count"), 0);
-    }
-}
+mod tests;

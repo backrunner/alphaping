@@ -127,6 +127,8 @@ message MachineReport {
   ContainerInventory container_inventory = 7;
   repeated ProbeResult probe_results = 8;
   uint64 applied_config_revision = 9;
+  repeated AgentCommandResult command_results = 10;
+  string agent_version = 11;
 }
 
 enum ProbeKind {
@@ -208,6 +210,39 @@ message AgentConfigSnapshot {
   bytes digest = 4;
 }
 
+enum AgentCommandType {
+  AGENT_COMMAND_TYPE_UNSPECIFIED = 0;
+  AGENT_COMMAND_TYPE_REFRESH_CONFIG = 1;
+  AGENT_COMMAND_TYPE_CHECK_UPDATE = 2;
+  AGENT_COMMAND_TYPE_INSTALL_VERSION = 3;
+  AGENT_COMMAND_TYPE_REDETECT_RUNTIMES = 4;
+}
+
+message AgentCommand {
+  string id = 1;
+  AgentCommandType type = 2;
+  int64 not_before_ms = 3;
+  int64 expires_at_ms = 4;
+  uint32 attempt_limit = 5;
+  uint32 payload_schema_version = 6;
+  string requested_version = 7;
+  bool bypass_rollout = 8;
+}
+
+enum AgentCommandResultStatus {
+  AGENT_COMMAND_RESULT_STATUS_UNSPECIFIED = 0;
+  AGENT_COMMAND_RESULT_STATUS_SUCCEEDED = 1;
+  AGENT_COMMAND_RESULT_STATUS_FAILED = 2;
+}
+
+message AgentCommandResult {
+  string command_id = 1;
+  AgentCommandResultStatus status = 2;
+  int64 completed_at_ms = 3;
+  string result_code = 4;
+  string installed_version = 5;
+}
+
 message ProbeResult {
   bytes execution_id = 1;
   string check_id = 2;
@@ -269,4 +304,5 @@ message DurableAck {
   int64 committed_at_ms = 3;
   uint64 config_revision = 4;
   AgentConfigSnapshot config = 5;
+  repeated AgentCommand commands = 6;
 }

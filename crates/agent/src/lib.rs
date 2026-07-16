@@ -1,8 +1,13 @@
 pub mod backoff;
+pub mod commands;
 pub mod config;
 pub mod containers;
 pub mod enrollment;
 pub mod probes;
+pub mod runtime;
 pub mod sampler;
+#[cfg(windows)]
+pub mod service;
 pub mod spool;
+pub mod updater;
 pub mod uploader;

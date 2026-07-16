@@ -90,11 +90,20 @@ export interface MachineDetail {
   latest: DashboardMachine;
   latestReceivedAt: number | null;
   agent: {
+    id: string;
     version: string;
     platform: string;
     arch: string;
     appliedConfigRevision: number;
   } | null;
+  agentCommands: readonly {
+    id: string;
+    type: "check_update" | "install_version" | "redetect_runtimes" | "refresh_config";
+    state: "pending" | "delivered" | "succeeded" | "failed" | "expired";
+    resultCode: string | null;
+    createdAt: number;
+    completedAt: number | null;
+  }[];
   events: readonly {
     occurredAt: number;
     previousState: string;

@@ -77,6 +77,8 @@ fn one_minute_of_five_second_probe_results_fits_the_report_budget() {
         container_inventory: None,
         probe_results: results,
         applied_config_revision: 9,
+        command_results: Vec::new(),
+        agent_version: "0.1.0".to_owned(),
     };
     let payload = compress_message(&report).expect("probe report should compress");
     assert!(payload.len() <= MAX_ENVELOPE_BYTES - 1_024);

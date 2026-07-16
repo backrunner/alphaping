@@ -40,6 +40,56 @@ export const machines = sqliteTable(
   (table) => [uniqueIndex("machines_telemetry_pk_uq").on(table.telemetryPk)],
 );
 
+export const agents = sqliteTable(
+  "agents",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull(),
+    machineId: text("machine_id").notNull(),
+    identityPublicKey: blob("identity_public_key", { mode: "buffer" }).notNull(),
+    platform: text("platform").notNull(),
+    arch: text("arch").notNull(),
+    agentVersion: text("agent_version").notNull(),
+    protocolVersion: integer("protocol_version").notNull(),
+    status: text("status", { enum: ["active", "revoked"] }).notNull(),
+    appliedConfigRevision: integer("applied_config_revision").notNull().default(0),
+    createdAt: integer("created_at").notNull(),
+    lastSeenAt: integer("last_seen_at"),
+    revokedAt: integer("revoked_at"),
+  },
+  (table) => [index("agents_workspace_idx").on(table.workspaceId, table.status)],
+);
+
+export const agentCommands = sqliteTable(
+  "agent_commands",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull(),
+    agentId: text("agent_id").notNull(),
+    type: text("type", {
+      enum: ["refresh_config", "check_update", "install_version", "redetect_runtimes"],
+    }).notNull(),
+    payloadJson: text("payload_json").notNull().default("{}"),
+    state: text("state", {
+      enum: ["pending", "delivered", "succeeded", "failed", "expired"],
+    }).notNull(),
+    notBefore: integer("not_before").notNull(),
+    expiresAt: integer("expires_at").notNull(),
+    attemptLimit: integer("attempt_limit").notNull().default(3),
+    payloadSchemaVersion: integer("payload_schema_version").notNull().default(1),
+    deliveryCount: integer("delivery_count").notNull().default(0),
+    resultCode: text("result_code"),
+    resultJson: text("result_json"),
+    createdBy: text("created_by").notNull(),
+    createdAt: integer("created_at").notNull(),
+    deliveredAt: integer("delivered_at"),
+    completedAt: integer("completed_at"),
+  },
+  (table) => [
+    index("agent_commands_agent_state_idx").on(table.agentId, table.state, table.notBefore),
+  ],
+);
+
 export const containers = sqliteTable(
   "containers",
   {

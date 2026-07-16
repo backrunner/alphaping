@@ -153,9 +153,11 @@ Better Auth 核心表由其 schema 生成并纳入统一 migration：
 - `payload_json`
 - `state`: `pending|delivered|succeeded|failed|expired`
 - `not_before`, `expires_at`
+- `attempt_limit`, `payload_schema_version`, `delivery_count`
+- `result_code`, `result_json`
 - `created_by`, `created_at`, `delivered_at`, `completed_at`
 
-命令类型只允许配置刷新、立即检查更新、更新到允许版本、重新探测 runtime 等固定动作。
+命令类型只允许配置刷新、立即检查更新、更新到允许版本、重新探测 runtime 等固定动作。`result_json` 只允许 bounded schema，不保存 stdout/stderr。Ingest 每次 report 通过 `(agent_id,state,not_before)` 索引读取至多 8 个命令；空队列不写 CONTROL_DB。
 
 ## 5. 最新机器状态
 
