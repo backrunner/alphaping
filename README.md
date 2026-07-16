@@ -67,6 +67,12 @@ Start from the committed `wrangler.*.template.toml` and `.dev.vars.example`
 files, then provision D1 databases and secrets for your own environment. Never
 commit database IDs, enrollment tokens, update signing keys, or Worker secrets.
 
+D1 Paid Time Travel is the primary 30-day recovery mechanism. Explicit
+long-term SQL backups and non-destructive local restore drills are available as
+`pnpm db:backup` and `pnpm db:restore:verify`; follow
+[`.agents/13-d1-backup-and-recovery.md`](.agents/13-d1-backup-and-recovery.md)
+before using either command with production data.
+
 The canonical repository is <https://github.com/alkinum/alphaping>.
 
 ## Documentation

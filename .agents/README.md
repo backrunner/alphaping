@@ -18,6 +18,7 @@
 | [10-research.md](./10-research.md) | 官方资料、调研结论和关键取舍 |
 | [11-telemetry-storage-and-retry.md](./11-telemetry-storage-and-retry.md) | 可查询遥测主存储、Agent 本地缓冲、补报与退避 |
 | [12-release-and-agent-updates.md](./12-release-and-agent-updates.md) | 发布密钥仪式、签名元数据、首次安装信任、更新命令与回滚 |
+| [13-d1-backup-and-recovery.md](./13-d1-backup-and-recovery.md) | D1 Time Travel、可验证 SQL 备份、恢复演练与生产切换顺序 |
 | [skills](./skills) | 项目内 Codex skills，约束后续实现和评审 |
 
 ## 已确定的核心决策
