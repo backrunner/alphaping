@@ -1,4 +1,5 @@
 import { executeHttp, executeTcp } from "./executor.js";
+import { reconcileMachineLiveness } from "./machine-liveness.js";
 import { persistCheckResult } from "./persistence.js";
 import { dueSlot, isDue } from "./schedule.js";
 import { applyHttpSecrets, applyTcpSecrets, resolveCheckSecrets } from "./secrets.js";
@@ -71,7 +72,7 @@ async function processCheck(env: Env, row: CheckConfigRow, nowMs: number): Promi
   }
 }
 
-async function runScheduled(env: Env, scheduledAt: number): Promise<void> {
+async function runChecks(env: Env, scheduledAt: number): Promise<void> {
   const candidates = await env.CONTROL_DB.prepare(
     `SELECT c.id, c.telemetry_pk, c.workspace_id,
             w.telemetry_pk AS workspace_telemetry_pk, s.telemetry_pk AS service_telemetry_pk,
@@ -110,6 +111,24 @@ async function runScheduled(env: Env, scheduledAt: number): Promise<void> {
   if (failedGroups > 0) {
     throw new Error(`check_persistence_failed:${failedGroups}`);
   }
+}
+
+export async function runScheduled(env: Env, scheduledAt: number): Promise<void> {
+  const [liveness, checks] = await Promise.allSettled([
+    reconcileMachineLiveness(env.CONTROL_DB, env.TELEMETRY_DB, scheduledAt),
+    runChecks(env, scheduledAt),
+  ]);
+  if (liveness.status === "fulfilled" && liveness.value.transitioned > 0) {
+    console.log(
+      JSON.stringify({
+        event: "machine_liveness_reconciled",
+        scanned: liveness.value.scanned,
+        transitioned: liveness.value.transitioned,
+      }),
+    );
+  }
+  const failedTasks = Number(liveness.status === "rejected") + Number(checks.status === "rejected");
+  if (failedTasks > 0) throw new Error(`scheduled_tasks_failed:${failedTasks}`);
 }
 
 export default {

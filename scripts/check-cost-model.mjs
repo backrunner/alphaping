@@ -3,6 +3,8 @@ const FIVE_MINUTE_BUCKETS = MONTH_MINUTES / 5;
 const HOUR_BUCKETS = MONTH_MINUTES / 60;
 const D1_INCLUDED_WRITES = 50_000_000;
 const D1_WRITE_PRICE_PER_MILLION = 1;
+const D1_INCLUDED_READS = 25_000_000_000;
+const D1_READ_PRICE_PER_MILLION = 0.001;
 const D1_INCLUDED_STORAGE_GB = 5;
 const D1_STORAGE_PRICE_PER_GB = 0.75;
 const WORKERS_INCLUDED_REQUESTS = 10_000_000;
@@ -73,6 +75,12 @@ export function estimateScale(
     (Math.min(MAX_CONTAINER_COUNT, containersPerMachine) * 2 + 1);
   const knownWrites = machines * writesPerMachine() + checks * writesPerCheck() + catalogWrites;
   const budgetedWrites = knownWrites * IMPLEMENTATION_MARGIN;
+  const modeledReads =
+    DASHBOARD_REQUESTS * (machines + checks) +
+    checks * MONTH_MINUTES +
+    machines * MONTH_MINUTES * 5 +
+    machines * MONTH_MINUTES * 2 +
+    5_000_000;
   const machineStorageGb =
     MACHINE_NON_RAW_STORAGE_GB +
     (REPORTS_PER_MACHINE_7D * reportBytesForContainers(containersPerMachine)) / 1_000_000_000;
@@ -82,6 +90,8 @@ export function estimateScale(
     machines * MONTH_MINUTES + MONTH_MINUTES + DASHBOARD_REQUESTS + live.workerRequests;
   const d1WriteOverage =
     (Math.max(0, budgetedWrites - D1_INCLUDED_WRITES) / 1_000_000) * D1_WRITE_PRICE_PER_MILLION;
+  const d1ReadOverage =
+    (Math.max(0, modeledReads - D1_INCLUDED_READS) / 1_000_000) * D1_READ_PRICE_PER_MILLION;
   const storageOverage = Math.max(0, storageGb - D1_INCLUDED_STORAGE_GB) * D1_STORAGE_PRICE_PER_GB;
   const requestOverage =
     (Math.max(0, workersRequests - WORKERS_INCLUDED_REQUESTS) / 1_000_000) *
@@ -96,10 +106,12 @@ export function estimateScale(
     catalogWrites,
     knownWrites,
     budgetedWrites,
+    modeledReads,
     storageGb,
     workersRequests,
     durableObjectRequests: live.durableObjectRequests,
-    platformOverage: d1WriteOverage + storageOverage + requestOverage + durableObjectOverage,
+    platformOverage:
+      d1WriteOverage + d1ReadOverage + storageOverage + requestOverage + durableObjectOverage,
   };
 }
 
@@ -122,6 +134,7 @@ console.table(
     scale: `${scale.machines}+${scale.checks} / ${scale.containersPerMachine}c`,
     knownWrites: millions(scale.knownWrites),
     budgetedWrites: millions(scale.budgetedWrites),
+    modeledReads: millions(scale.modeledReads),
     storage: `${scale.storageGb.toFixed(3)} GB`,
     requests: millions(scale.workersRequests),
     liveDoRequests: millions(scale.durableObjectRequests),
@@ -137,6 +150,9 @@ if (baseline.workersRequests !== 4_968_994 || baseline.durableObjectRequests !==
   throw new Error(
     `live request ledger drifted: ${baseline.workersRequests} Worker / ${baseline.durableObjectRequests} DO requests`,
   );
+}
+if (baseline.modeledReads !== 68_360_000) {
+  throw new Error(`D1 read ledger drifted: ${baseline.modeledReads}`);
 }
 const maximumContainerDensity = estimateScale(100, 100, {
   containersPerMachine: 64,

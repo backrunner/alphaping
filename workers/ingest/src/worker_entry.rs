@@ -716,6 +716,30 @@ fn latest_statement(
         ])?)
 }
 
+fn recovery_event_statement(
+    db: &D1Database,
+    report: &MachineReport,
+    now: i64,
+) -> Result<worker::D1PreparedStatement, IngestError> {
+    let latest = report.samples.last().ok_or(IngestError::BadRequest)?;
+    Ok(db
+        .prepare(
+            "INSERT OR IGNORE INTO state_events
+              (workspace_pk, resource_type, resource_pk, occurred_at, event_id,
+               previous_state, current_state, reason_code)
+             SELECT workspace_pk, 1, machine_pk, ?, ?, 'offline', 'healthy',
+                    'agent_report_received'
+             FROM machine_latest
+             WHERE machine_pk = ? AND state = 'offline' AND observed_at <= ?",
+        )
+        .bind(&[
+            number(now),
+            blob(&report.report_id),
+            unsigned(report.machine_pk),
+            number(latest.observed_at_ms),
+        ])?)
+}
+
 fn rollup_statement(
     db: &D1Database,
     table: &str,
@@ -894,6 +918,7 @@ async fn durable_ack(
             hash.as_bytes(),
             compressed_payload,
         )?);
+        statements.push(recovery_event_statement(telemetry_db, report, now)?);
         statements.push(latest_statement(
             telemetry_db,
             agent_id,

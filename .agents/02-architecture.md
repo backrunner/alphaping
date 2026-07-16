@@ -83,7 +83,7 @@ Turbo 负责 JavaScript/TypeScript 任务图，并通过每个 Rust deployable �
 | `web` | TypeScript/Svelte | `apps/web` | HTTP | CONTROL_DB 配置/权限，TELEMETRY_DB 查询 |
 | `ingest` | Rust/Wasm | `workers/ingest` | Agent HTTP | TELEMETRY_DB replay/raw/latest/rollup，CONTROL_DB config read |
 | `live` | TypeScript | `workers/live` | Agent/browser WebSocket | 无权威存储；DO socket attachment 只保存连接身份/session |
-| `checks` | TypeScript | `workers/checks` | Cron 每分钟 | CONTROL_DB `last_claimed_slot`，TELEMETRY_DB result/latest/rollup |
+| `checks` | TypeScript | `workers/checks` | Cron 每分钟 | CONTROL_DB `last_claimed_slot`，TELEMETRY_DB check result/rollup 与机器离线事件 |
 | `retention` | TypeScript | `workers/retention` | Cron | TELEMETRY_DB 分批删除、cursor、run log |
 
 Ingest 暴露不访问 D1 的 `GET|HEAD /healthz` liveness。数据库读写健康由独立的合成 enrollment/report smoke test 判断，避免健康检查增加 D1 请求或因依赖抖动触发级联重启。
@@ -166,6 +166,7 @@ Ingest 暴露不访问 D1 的 `GET|HEAD /healthz` liveness。数据库读写健�
 5. Agent 任务写入对应 machine 的 config revision，由 Agent 下次 report 拉取。
 6. Checks Worker 或 Agent 产生统一 `CheckResult`，通过共享 domain repository 写入 TELEMETRY_DB。
 7. 同一写入流程更新 check latest、time bucket、服务状态和 incident 事件。
+8. 同一 Cron 以有界主键批次比较机器 `received_at` 和离线阈值；只在状态转换时条件更新 latest 并写确定性离线事件，不新增调度请求。
 
 ### 6.7 Retention
 
@@ -190,10 +191,10 @@ Ingest 暴露不访问 D1 的 `GET|HEAD /healthz` liveness。数据库读写健�
 
 - `web`/CONTROL_DB: auth、workspace、invitation、membership、dashboard、resource policy、audit、machine/service configuration、incident content。
 - `ingest`/CONTROL_DB: enrollment consumption、agent key metadata、config acknowledgement。
-- `ingest`/TELEMETRY_DB: replay cursor、machine telemetry block/latest/rollup/event。
+- `ingest`/TELEMETRY_DB: replay cursor、machine telemetry block/latest/rollup，以及新报告触发的恢复事件。
 - `live`/DO: WebSocket 连接、非持久 snapshot broadcast 和 demand state；不写权威业务表。
 - `checks`/CONTROL_DB: stable schedule config 和 `last_claimed_slot` execution claim。
-- `checks`/TELEMETRY_DB: centralized check result/latest/rollup/event。
+- `checks`/TELEMETRY_DB: centralized check result/latest/rollup/event，以及由缺少报告触发的机器离线转换。
 - `retention`/TELEMETRY_DB: workspace lease、retention cursor、raw/rollup/event cleanup。
 - `retention`/CONTROL_DB: 过期公告和 Agent command 状态/审计期清理。
 
