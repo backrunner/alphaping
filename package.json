@@ -2,28 +2,41 @@
   "name": "alphaping",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "license": "Apache-2.0",
   "packageManager": "pnpm@11.10.0",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
+    "agent:build": "node scripts/run-cargo.mjs build -p alphaping-agent --release",
+    "agent:test": "node scripts/run-cargo.mjs test -p alphaping-agent",
     "build": "turbo run build",
     "check": "turbo run check",
     "cost:check": "node scripts/check-cost-model.mjs",
+    "db:migrate:local": "node scripts/run-d1-migrations.mjs local",
+    "db:validate": "node scripts/run-d1-migrations.mjs validate",
     "dev": "turbo run dev --parallel",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "lint": "eslint . --max-warnings=0",
     "test": "turbo run test",
+    "typecheck": "turbo run check",
+    "verify": "node scripts/verify.mjs",
     "workers:list": "node scripts/deploy-workers.mjs --list",
     "workers:deploy": "node scripts/deploy-workers.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20260715.1",
+    "@eslint/js": "10.0.1",
+    "eslint": "10.7.0",
+    "eslint-plugin-svelte": "3.20.0",
+    "globals": "17.7.0",
     "prettier": "3.6.2",
     "prettier-plugin-svelte": "3.4.0",
     "turbo": "2.5.6",
     "typescript": "5.9.2",
+    "typescript-eslint": "8.64.0",
     "vitest": "3.2.4",
     "wrangler": "4.111.0"
   }

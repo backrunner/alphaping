@@ -36,6 +36,8 @@ pnpm verify
 
 `pnpm verify` 汇总提交前必须通过的静态检查和测试，不执行真实部署。
 
+`pnpm db:validate` 通过 Wrangler 在临时本地 D1 上顺序应用 CONTROL_DB 与 TELEMETRY_DB 全部 migration；`pnpm db:migrate:local` 将同一 migration 链应用到 Web 本地开发状态。
+
 ## 3. TypeScript/Svelte
 
 - `strict: true`，启用 `noUncheckedIndexedAccess`、`exactOptionalPropertyTypes` 和 `noImplicitOverride` 等可用严格选项。

@@ -153,7 +153,7 @@ await writeFile(
   resolve(outputDirectory, "agent-release-manifest.json"),
   `${JSON.stringify(
     Object.fromEntries(
-      targetNames.map(([target, _platform, _arch, suffix]) => {
+      targetNames.map(([target, , , suffix]) => {
         const description = targets[`alphaping-agent-${target}${suffix}`];
         return [target, { version, length: description.length, sha256: description.sha256 }];
       }),

@@ -57,7 +57,7 @@ function validateProductionConfig(worker, configPath) {
   if (
     config.includes("-template") ||
     config.includes("00000000-0000-0000-0000-000000000000") ||
-    !config.includes(`name = \"alphaping-${worker.name}-production\"`)
+    !config.includes(`name = "alphaping-${worker.name}-production"`)
   ) {
     throw new Error(
       `${basename(configPath)} still contains placeholders or an unsafe production name`,

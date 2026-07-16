@@ -1,0 +1,14 @@
+name = "alphaping-d1-migrations-template"
+compatibility_date = "2026-07-17"
+
+[[d1_databases]]
+binding = "CONTROL_DB"
+database_name = "alphaping-control-template"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations/control"
+
+[[d1_databases]]
+binding = "TELEMETRY_DB"
+database_name = "alphaping-telemetry-template"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations/telemetry"

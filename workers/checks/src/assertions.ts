@@ -116,15 +116,15 @@ export function evaluateAssertions(
       assertion.source === "header"
         ? [assertion.selector === null ? undefined : (headers.get(assertion.selector) ?? undefined)]
         : bodyCandidates(assertion, body, parsedJson);
-    let passed = false;
-    try {
-      passed =
-        assertion.operator === "exists"
+    const passed = (() => {
+      try {
+        return assertion.operator === "exists"
           ? candidates.length > 0 && candidates.some((candidate) => candidate !== undefined)
           : candidates.some((candidate) => compare(candidate, assertion));
-    } catch {
-      passed = false;
-    }
+      } catch {
+        return false;
+      }
+    })();
     if (!passed) {
       failures.push({
         severity: assertion.severity,
