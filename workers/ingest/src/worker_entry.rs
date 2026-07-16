@@ -1121,10 +1121,31 @@ fn error_response(error: IngestError) -> WorkerResult<Response> {
     }
 }
 
+fn health_response(method: Method) -> WorkerResult<Response> {
+    let mut response = match method {
+        Method::Get => Response::from_json(&serde_json::json!({
+            "service": "ingest",
+            "status": "ok"
+        }))?,
+        Method::Head => Response::empty()?,
+        _ => {
+            let mut response = Response::error("Method not allowed", 405)?;
+            response.headers_mut().set("allow", "GET, HEAD")?;
+            response
+        }
+    };
+    response.headers_mut().set("cache-control", "no-store")?;
+    response
+        .headers_mut()
+        .set("x-content-type-options", "nosniff")?;
+    Ok(response)
+}
+
 #[event(fetch)]
 pub async fn main(request: Request, env: Env, _context: Context) -> WorkerResult<Response> {
     let path = request.path();
     let result = match path.as_str() {
+        "/healthz" => return health_response(request.method()),
         "/v1/enroll" => handle_enrollment(request, env).await,
         "/v1/reports" => handle_report(request, env).await,
         _ => return Response::error("Not found", 404),

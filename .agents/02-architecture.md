@@ -86,6 +86,8 @@ Turbo 负责 JavaScript/TypeScript 任务图，并通过每个 Rust deployable �
 | `checks` | TypeScript | `workers/checks` | Cron 每分钟 | CONTROL_DB `last_claimed_slot`，TELEMETRY_DB result/latest/rollup |
 | `retention` | TypeScript | `workers/retention` | Cron | TELEMETRY_DB 分批删除、cursor、run log |
 
+Ingest 暴露不访问 D1 的 `GET|HEAD /healthz` liveness。数据库读写健康由独立的合成 enrollment/report smoke test 判断，避免健康检查增加 D1 请求或因依赖抖动触发级联重启。
+
 可选的 notification Worker 延后到 V1.x，不在 V1 提前创建空服务。
 
 ## 5. Cloudflare 绑定
