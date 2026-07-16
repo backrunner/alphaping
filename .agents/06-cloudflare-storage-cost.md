@@ -113,6 +113,8 @@ last_claimed_slot UPDATE             1,296,000
 subtotal                             5,227,200
 ```
 
+Agent executor 即使配置 5/10 秒周期，也把同一 check/minute 的 observation 合并到一个 `check_result_blocks_5m` slot，因此 raw/latest/rollup 写入与 60 秒中央检查相同。Agent path 不写 `last_claimed_slot`，上表把所有检查都按更贵的 central path 计算，属于保守上界；任务创建、重指派和 config revision 写入是低频管理写，不随 probe 周期增长。
+
 ```text
 combined known rows written          9,936,000/month
 25% implementation/retry margin      2,484,000/month
@@ -170,7 +172,7 @@ Paid included                         30.000m CPU-ms
 CPU overage                             0.00 USD
 ```
 
-`fetch` 等待时间不等于 CPU time。在这个 dashboard 假设下，Ingest 平均 CPU 即使上升到 20 ms，总量也约为 29.232m CPU-ms，仍在 included 内。Rust/Wasm 的 AES-GCM、zstd 和 protobuf 基准门禁设为正常 report 平均低于 18 ms，为管理操作和峰值留余量。
+`fetch` 等待时间不等于 CPU time。在这个 dashboard 假设下，Ingest 平均 CPU 即使上升到 20 ms，总量也约为 29.232m CPU-ms，仍在 included 内。Rust/Wasm 的 AES-GCM、zlib、protobuf 和 probe minute batch 基准门禁设为正常 report 平均低于 18 ms，为管理操作和峰值留余量。
 
 ### 10 秒实时层
 
@@ -383,6 +385,6 @@ D1 storage overage at 0.75 USD/GB       4.1048 USD/month
 2. 生成 30 与 100 台、7 天 raw、30 天 5m、365 天 1h 的最坏大小 fixture。
 3. 记录每条热查询的 `meta.rows_read`/`meta.rows_written`。
 4. 用 `PRAGMA page_count * page_size` 记录实际 storage，包含索引。
-5. 对 Rust Ingest 执行 AES-GCM/zstd/protobuf/D1 基准：30 台门禁低于 18 ms，100+100 要留在 CPU included 内则目标低于 5 ms/report 且 1 ms/check result。
+5. 对 Rust Ingest 执行 AES-GCM/zlib/protobuf/D1 基准：30 台门禁低于 18 ms，100+100 要留在 CPU included 内则目标低于 5 ms/report 且 1 ms/check minute batch。
 6. 对 24 小时离线后的补报进行压测，确认 D1 不 overloaded 且 live data 优先。
 7. 在发布门禁中重算 30/100/200/1000 台和对应 check 档位，实测值与本基线偏差超过 20% 时阻止发布。

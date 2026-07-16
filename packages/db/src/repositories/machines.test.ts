@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { MachineHistoryRangeError, validateMachineHistoryRange } from "./machine-history.js";
+import { parseProbeTarget } from "./machine-probes.js";
 import { parseContainerInventory } from "./machines.js";
 
 describe("machine history range", () => {
@@ -70,5 +71,19 @@ describe("container inventory projection", () => {
         }),
       ),
     ).toBeNull();
+  });
+});
+
+describe("probe target projection", () => {
+  it("omits query credentials while keeping an operational target", () => {
+    expect(
+      parseProbeTarget(
+        "http",
+        JSON.stringify({ url: "https://api.example.com/health?token=private" }),
+      ),
+    ).toBe("https://api.example.com/health");
+    expect(parseProbeTarget("tcp", JSON.stringify({ hostname: "db.internal", port: 5432 }))).toBe(
+      "db.internal:5432",
+    );
   });
 });

@@ -14,12 +14,14 @@ import type {
   MachineDetail,
   MachineRuntimeStatus,
 } from "./machine-models.js";
+import { loadMachineProbeTasks } from "./machine-probes.js";
 
 export type {
   MachineCollection,
   MachineContainer,
   MachineContainerInventory,
   MachineDetail,
+  MachineProbeTask,
   MachineRuntimeStatus,
 } from "./machine-models.js";
 
@@ -56,6 +58,7 @@ interface MachineRow {
   platform: string | null;
   arch: string | null;
   applied_config_revision: number | null;
+  agent_id: string | null;
 }
 
 interface MachineLatestRow {
@@ -107,7 +110,7 @@ async function loadWorkspaceAccess(
     .prepare(
       `SELECT resource_type, resource_id, capability, effect FROM resource_grants
        WHERE workspace_id = ? AND subject_user_id = ?
-         AND resource_type IN ('machine', 'container')`,
+         AND resource_type IN ('machine', 'container', 'service')`,
     )
     .bind(workspace.id, userId)
     .all<GrantRow>();
@@ -132,7 +135,8 @@ async function loadMachineRows(
         `SELECT m.id, m.telemetry_pk, m.name, m.description, m.expected_host, m.labels_json,
                 m.sampling_interval_seconds, m.report_interval_seconds, m.offline_after_seconds,
                 m.container_monitoring_enabled, m.maintenance_until, m.desired_config_revision,
-                m.created_at, a.agent_version, a.platform, a.arch, a.applied_config_revision
+                m.created_at, a.agent_version, a.platform, a.arch, a.applied_config_revision,
+                a.id AS agent_id
          FROM machines m LEFT JOIN agents a ON a.machine_id = m.id AND a.status = 'active'
          WHERE m.workspace_id = ? AND m.deleted_at IS NULL ORDER BY m.name LIMIT 500`,
       )
@@ -151,7 +155,8 @@ async function loadMachineRow(
       `SELECT m.id, m.telemetry_pk, m.name, m.description, m.expected_host, m.labels_json,
               m.sampling_interval_seconds, m.report_interval_seconds, m.offline_after_seconds,
               m.container_monitoring_enabled, m.maintenance_until, m.desired_config_revision,
-              m.created_at, a.agent_version, a.platform, a.arch, a.applied_config_revision
+              m.created_at, a.agent_version, a.platform, a.arch, a.applied_config_revision,
+              a.id AS agent_id
        FROM machines m LEFT JOIN agents a ON a.machine_id = m.id AND a.status = 'active'
        WHERE m.workspace_id = ? AND m.id = ? AND m.deleted_at IS NULL`,
     )
@@ -473,6 +478,17 @@ export async function loadMachineDetail(
     )
     .bind(access.workspace.telemetry_pk, machine.telemetry_pk)
     .all<EventRow>();
+  const probeTasks = await loadMachineProbeTasks(
+    controlDb,
+    telemetryDb,
+    {
+      workspaceId: access.workspace.id,
+      role: access.workspace.role,
+      grants: access.grants,
+    },
+    machine.agent_id,
+    now,
+  );
   return {
     workspace: {
       id: access.workspace.id,
@@ -525,6 +541,7 @@ export async function loadMachineDetail(
           ),
         }
       : null,
+    probeTasks,
     canManage: canAccessResource(
       access.workspace.role,
       access.grants,

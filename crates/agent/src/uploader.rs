@@ -87,7 +87,7 @@ impl Uploader {
         spool: &mut Spool,
         delivery: &PendingDelivery,
         now_ms: i64,
-    ) -> Result<(), UploadError> {
+    ) -> Result<DurableAck, UploadError> {
         let sequence = spool.next_sequence().map_err(|_| UploadError::Sequence)?;
         let header = EnvelopeHeader {
             protocol_version: PROTOCOL_VERSION,
@@ -166,12 +166,6 @@ impl Uploader {
         {
             return Err(UploadError::Protocol);
         }
-        if !spool
-            .acknowledge(&delivery.report_id)
-            .map_err(|_| UploadError::Sequence)?
-        {
-            return Err(UploadError::Protocol);
-        }
-        Ok(())
+        Ok(acknowledgement)
     }
 }

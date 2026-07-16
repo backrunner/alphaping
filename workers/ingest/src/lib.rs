@@ -7,10 +7,15 @@ use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use thiserror::Error;
 
+#[cfg(any(target_arch = "wasm32", test))]
+#[path = "check_results/model.rs"]
+mod check_result_model;
+
 pub const MAX_REPORT_SAMPLES: usize = 6;
 pub const MAX_CONTAINER_COUNT: usize = 64;
 pub const MAX_CONTAINER_PORTS: usize = 8;
 pub const MAX_RUNTIME_COUNT: usize = 16;
+pub const MAX_PROBE_RESULTS: usize = 512;
 pub const MAX_SAFE_SEQUENCE: u64 = 9_007_199_254_740_991;
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -105,6 +110,7 @@ pub fn validate_report(
     authenticated_report_id: &[u8],
     machine_pk: u64,
     workspace_pk: u64,
+    authenticated_agent_id: &str,
     now_ms: i64,
 ) -> Result<(), ValidationError> {
     if report.report_id != authenticated_report_id {
@@ -146,6 +152,30 @@ pub fn validate_report(
                 metric.container_key.len() != 16 || metric.ports.len() > MAX_CONTAINER_PORTS
             }))
     {
+        return Err(ValidationError::ReportTime);
+    }
+    if report.probe_results.len() > MAX_PROBE_RESULTS {
+        return Err(ValidationError::SampleCount);
+    }
+    let mut execution_ids = std::collections::HashSet::with_capacity(report.probe_results.len());
+    if report.probe_results.iter().any(|result| {
+        result.execution_id.len() != 32
+            || !execution_ids.insert(result.execution_id.as_slice())
+            || result.check_id.len() != 36
+            || result.check_pk == 0
+            || result.service_pk == 0
+            || result.workspace_pk != workspace_pk
+            || result.executor_agent_id != authenticated_agent_id
+            || result.config_revision == 0
+            || result.config_revision > report.applied_config_revision
+            || result.nominal_slot_ms.rem_euclid(1_000) != 0
+            || result.nominal_slot_ms > now_ms.saturating_add(120_000)
+            || result.observed_at_ms < result.nominal_slot_ms
+            || result.observed_at_ms > result.nominal_slot_ms.saturating_add(60_000)
+            || !(1..=3).contains(&result.state)
+            || result.failure_code.len() > 64
+            || result.failure_summary.len() > 160
+    }) {
         return Err(ValidationError::ReportTime);
     }
     Ok(())
@@ -194,6 +224,10 @@ impl MachineRollup {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
+mod agent_config;
+#[cfg(target_arch = "wasm32")]
+mod check_results;
 #[cfg(target_arch = "wasm32")]
 mod worker_entry;
 
@@ -261,10 +295,15 @@ mod tests {
             }],
             schema_version: 1,
             container_inventory: None,
+            probe_results: Vec::new(),
+            applied_config_revision: 0,
         };
-        assert_eq!(validate_report(&report, &[1; 16], 7, 2, 180_000), Ok(()));
         assert_eq!(
-            validate_report(&report, &[2; 16], 7, 2, 180_000),
+            validate_report(&report, &[1; 16], 7, 2, "agent-1", 180_000),
+            Ok(())
+        );
+        assert_eq!(
+            validate_report(&report, &[2; 16], 7, 2, "agent-1", 180_000),
             Err(ValidationError::ReportIdentity)
         );
     }

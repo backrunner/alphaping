@@ -200,7 +200,8 @@ src/
 - 30 台规模直接读取 enabled task，按 interval/phase 计算当前 nominal slot；读取额度远大于写入额度。
 - 使用 `UPDATE ... WHERE last_claimed_slot < ?` 原子领取 due task 并生成 deterministic execution ID。
 - 不维护高频变化的 `next_run_at` 索引；超过 500 个 central check 后才评估稳定 schedule bucket/shard。
-- Agent 任务写入 assignment/config revision。
+- Agent 任务写入 `assignment_revision`；机器 `desired_config_revision` 在创建或重指派时单调递增。
+- Rust Ingest 仅在 desired 高于 Agent 回报的 applied revision 时构建最多 32 个任务的完整 protobuf snapshot，展开 secret 后放入已认证的 s2c ACK。Agent 验证 revision、created time、完整内容 digest 和字段上限，SQLite commit 后才切换 scheduler。
 - Cloudflare HTTP/TCP 任务在同一 Cron invocation 内以最多 5 并发有界执行，30 台目标规模不使用 Queue。
 - 结果以 D1 batch 写入 `check_result_blocks_5m` slot、`check_latest`、已闭合 rollup 和状态事件。
 - 以固定 epoch、interval 和 phase 计算 nominal slot，避免执行延迟累积漂移。
@@ -263,6 +264,8 @@ src/
 - 采样、probe 和 upload 使用独立有界 channel，防止慢网络阻塞采样。
 - 所有周期加入随机抖动，避免大量 Agent 同时请求。
 - 动态配置通过 revision 原子替换，失败时继续使用 last-known-good。
+- Agent probe 按 epoch/interval/phase 对齐，最多 32 个任务、4 个并发；HTTP/TCP/ICMP 均有绝对 timeout 和 payload/response 上限。
+- 5/10 秒 probe observation 逐条先写本地 SQLite；durable report 按 check/minute 批量携带，D1 仍只写一个固定 minute slot，不能为了秒级周期把写入放大 6-12 倍。
 
 ### 11.2 本地 spool
 

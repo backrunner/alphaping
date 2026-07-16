@@ -17,6 +17,12 @@ interface SequenceRow {
 }
 interface AgentRow {
   id: string;
+  machine_id: string;
+  probe_count: number;
+  config_bytes: number;
+}
+interface RevisionRow {
+  revision: number;
 }
 
 async function nextSequence(db: D1Database, kind: "service" | "check"): Promise<number> {
@@ -65,14 +71,35 @@ export async function createServiceMonitor(
 ): Promise<{ serviceId: string }> {
   const access = await loadMonitoringAccess(db, workspaceSlug, userId);
   requireAdmin(access);
-  if (input.executorKind === "agent") {
-    const agent = await db
-      .prepare(`SELECT id FROM agents WHERE id = ? AND workspace_id = ? AND status = 'active'`)
-      .bind(input.executorAgentId, access.workspaceId)
-      .first<AgentRow>();
-    if (!agent) throw error(400, "A valid Agent executor is required");
+  const agent =
+    input.executorKind === "agent"
+      ? await db
+          .prepare(
+            `SELECT a.id, a.machine_id,
+                    (SELECT COUNT(*) FROM check_configs c
+                     WHERE c.executor_agent_id = a.id AND c.enabled = 1) AS probe_count,
+                    (SELECT COALESCE(SUM(c.config_bytes), 0) FROM check_configs c
+                     WHERE c.executor_agent_id = a.id AND c.enabled = 1) AS config_bytes
+             FROM agents a
+             WHERE a.id = ? AND a.workspace_id = ? AND a.status = 'active'`,
+          )
+          .bind(input.executorAgentId, access.workspaceId)
+          .first<AgentRow>()
+      : null;
+  if (input.executorKind === "agent" && !agent) {
+    throw error(400, "A valid Agent executor is required");
+  }
+  if (agent && agent.probe_count >= 32) {
+    throw error(409, "An Agent can run at most 32 enabled checks");
   }
   const compiled = await compileServiceConfig(input, access.workspaceId, wrappingKey);
+  const configBytes =
+    new TextEncoder().encode(JSON.stringify(compiled.request)).byteLength +
+    compiled.secrets.reduce((total, secret) => total + secret.wrappedValue.byteLength, 0) +
+    512;
+  if (agent && agent.config_bytes + configBytes > 44 * 1024) {
+    throw error(409, "The Agent configuration has reached its encrypted snapshot size limit");
+  }
   const [servicePk, checkPk, slug] = await Promise.all([
     nextSequence(db, "service"),
     nextSequence(db, "check"),
@@ -81,6 +108,20 @@ export async function createServiceMonitor(
   const serviceId = crypto.randomUUID();
   const checkId = crypto.randomUUID();
   const now = Date.now();
+  const assignmentRevision = agent
+    ? await db
+        .prepare(
+          `UPDATE machines
+           SET desired_config_revision = desired_config_revision + 1, updated_at = ?
+           WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL
+           RETURNING desired_config_revision AS revision`,
+        )
+        .bind(now, agent.machine_id, access.workspaceId)
+        .first<RevisionRow>()
+    : { revision: 0 };
+  if (!assignmentRevision) {
+    throw error(409, "The Agent machine configuration could not be advanced");
+  }
   const statements: D1PreparedStatement[] = [
     db
       .prepare(
@@ -107,10 +148,10 @@ export async function createServiceMonitor(
       .prepare(
         `INSERT INTO check_configs
         (id, telemetry_pk, workspace_id, service_id, name, kind, executor_kind,
-         executor_agent_id, enabled, interval_seconds, phase_seconds, timeout_ms,
+         executor_agent_id, assignment_revision, enabled, interval_seconds, phase_seconds, timeout_ms,
          request_json, secret_refs_json, failure_confirmations, recovery_confirmations,
-         last_claimed_slot, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+         config_bytes, last_claimed_slot, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
       )
       .bind(
         checkId,
@@ -121,6 +162,7 @@ export async function createServiceMonitor(
         input.kind,
         input.executorKind,
         input.executorKind === "agent" ? input.executorAgentId : null,
+        assignmentRevision.revision,
         input.intervalSeconds,
         checkPk % input.intervalSeconds,
         input.timeoutMs,
@@ -128,6 +170,7 @@ export async function createServiceMonitor(
         JSON.stringify(compiled.secretRefs),
         input.failureConfirmations,
         input.recoveryConfirmations,
+        configBytes,
         now,
         now,
       ),

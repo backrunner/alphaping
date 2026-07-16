@@ -5,7 +5,7 @@ use std::{
 
 use alphaping_agent::{
     backoff::equal_jitter_delay, config::AgentConfig, containers::ContainerMonitor,
-    enrollment::enroll, sampler::Sampler, spool::Spool, uploader::Uploader,
+    enrollment::enroll, probes::ProbeMonitor, sampler::Sampler, spool::Spool, uploader::Uploader,
 };
 use anyhow::{Context, Result, bail};
 use rand::Rng;
@@ -103,6 +103,9 @@ async fn run_agent(config_path: &Path) -> Result<()> {
     let config = AgentConfig::load(config_path)?;
     let mut spool = Spool::open(&config.spool_path)?;
     let mut sampler = Sampler::new();
+    let initial_probe_config = spool.load_probe_config()?;
+    let (probe_monitor, mut probe_results) =
+        ProbeMonitor::start(config.agent_id.clone(), initial_probe_config)?;
     let container_monitor = config
         .container_monitoring_enabled
         .then(ContainerMonitor::start);
@@ -148,9 +151,36 @@ async fn run_agent(config_path: &Path) -> Result<()> {
                 let now = unix_time_ms()?;
                 if let Some(delivery) = spool.due_delivery(now)? {
                     match uploader.upload(&mut spool, &delivery, now).await {
-                        Ok(()) => {
-                            let recovery_jitter_ms = rand::rng().random_range(0_i64..=5_000);
-                            spool.wake_backlog(now.saturating_add(recovery_jitter_ms))?;
+                        Ok(acknowledgement) => {
+                            let local_result = (|| -> Result<()> {
+                                let current_revision = spool.applied_config_revision()?;
+                                if acknowledgement.config_revision > current_revision {
+                                    let next = acknowledgement.config.as_ref()
+                                        .context("server omitted the newer Agent configuration")?;
+                                    if next.revision != acknowledgement.config_revision {
+                                        bail!("Agent configuration revision does not match ACK");
+                                    }
+                                    alphaping_agent::probes::validate_config(next)?;
+                                    if spool.apply_probe_config(next, now)? {
+                                        probe_monitor.apply_config(next.clone())?;
+                                    }
+                                }
+                                if !spool.acknowledge(&delivery.report_id)? {
+                                    bail!("durable ACK did not match a local delivery");
+                                }
+                                Ok(())
+                            })();
+                            if let Err(error) = local_result {
+                                spool.mark_failure(
+                                    &delivery.report_id,
+                                    now.saturating_add(300_000),
+                                    "local_config",
+                                )?;
+                                error!(error = %error, "failed to apply authenticated Agent response");
+                            } else {
+                                let recovery_jitter_ms = rand::rng().random_range(0_i64..=5_000);
+                                spool.wake_backlog(now.saturating_add(recovery_jitter_ms))?;
+                            }
                         }
                         Err(error) => {
                             let random = rand::rng().random_range(0.0..=1.0);
@@ -160,6 +190,12 @@ async fn run_agent(config_path: &Path) -> Result<()> {
                             warn!(error = %error, retry_seconds = delay.as_secs(), "durable report upload failed");
                         }
                     }
+                }
+            }
+            Some(result) = probe_results.recv() => {
+                let now = unix_time_ms()?;
+                if let Err(error) = spool.append_probe_result(&result, now) {
+                    error!(error = %error, check_id = %result.check_id, "failed to persist probe result");
                 }
             }
             result = tokio::signal::ctrl_c() => {

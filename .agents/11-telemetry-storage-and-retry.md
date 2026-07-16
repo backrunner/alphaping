@@ -57,7 +57,7 @@ CREATE TABLE telemetry_blocks_5m (
 
 - 内部关联使用 integer PK，外部 API 继续使用 UUIDv7/ULID。
 - 复合主键支持 machine/time range，不创建额外时间索引。
-- 每个 slot 是 canonical `ReportSlot` protobuf，包含 report ID/hash、observed/received time、minute summary 和 zstd `ReportBatch`。
+- 每个 slot 是 canonical `ReportSlot` protobuf，包含 report ID/hash、observed/received time、minute summary 和 bounded zlib `ReportBatch`。
 - 单 report hard limit 64 KiB，整行最大 320 KiB，低于 D1 2 MB row limit。
 - 同一 slot 重试只能使用相同 report ID/hash；冲突进入 protocol error，不静默覆盖。
 
@@ -231,6 +231,13 @@ delivery 一旦尝试发送：
 ### 6.4 `spool_meta`
 
 保存 transport sequence、endpoint backoff、last success、compaction cursor、dropped/compacted counters 和 last ACK。
+
+### 6.5 Agent probe outbox
+
+- `probe_config` 保存最后一个通过 digest/字段预检的完整 snapshot 和 applied revision，重启后直接恢复 scheduler。
+- `probe_results` 以确定性 execution ID 为主键，单次 observation 完成后立即 SQLite commit。构建 report 时在同一个 transaction 内插入不可变 delivery payload 并删除已迁入的 observation row；这只是从 frame 表迁移到 outbox，不是确认或丢弃数据。
+- durable ACK 前不删除 delivery。断网时 probe 与机器采样继续收集，后续 report 可携带较早 nominal minute 的结果；Ingest 对迟到结果补 raw/rollup，但不允许其倒退 `check_latest/service_latest`。
+- 每个 Agent 最多 32 个 enabled task、4 个并发；一分钟最多 512 个 result，协议尺寸测试覆盖 32 task × 5 秒周期的上界。
 
 ## 7. 重试分类
 

@@ -79,6 +79,8 @@ export const checkConfigs = sqliteTable(
     kind: text("kind", { enum: ["http", "tcp", "icmp"] }).notNull(),
     executorKind: text("executor_kind", { enum: ["cloudflare", "agent"] }).notNull(),
     executorAgentId: text("executor_agent_id"),
+    assignmentRevision: integer("assignment_revision").notNull().default(0),
+    configBytes: integer("config_bytes").notNull().default(0),
     enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
     intervalSeconds: integer("interval_seconds").notNull().default(60),
     phaseSeconds: integer("phase_seconds").notNull().default(0),

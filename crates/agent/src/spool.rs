@@ -5,7 +5,7 @@ use std::{
 
 use alphaping_protocol::{
     compress_message, decode_message, encode_message,
-    v1::{ContainerInventory, MachineReport, MetricSample},
+    v1::{AgentConfigSnapshot, ContainerInventory, MachineReport, MetricSample, ProbeResult},
 };
 use anyhow::{Context, Result, bail};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -76,6 +76,21 @@ impl Spool {
                sample_id INTEGER NOT NULL REFERENCES samples(id) ON DELETE RESTRICT,
                PRIMARY KEY (report_id, sample_id)
              ) WITHOUT ROWID;
+             CREATE TABLE IF NOT EXISTS probe_config (
+               singleton INTEGER PRIMARY KEY NOT NULL CHECK (singleton = 1),
+               revision INTEGER NOT NULL,
+               payload BLOB NOT NULL,
+               updated_at INTEGER NOT NULL
+             ) WITHOUT ROWID;
+             CREATE TABLE IF NOT EXISTS probe_results (
+               execution_id BLOB PRIMARY KEY NOT NULL,
+               nominal_minute INTEGER NOT NULL,
+               observed_at INTEGER NOT NULL,
+               payload BLOB NOT NULL,
+               created_at INTEGER NOT NULL
+             ) WITHOUT ROWID;
+             CREATE INDEX IF NOT EXISTS probe_results_minute_idx
+               ON probe_results (nominal_minute, observed_at);
              CREATE TABLE IF NOT EXISTS data_gaps (
                hour_start INTEGER PRIMARY KEY NOT NULL,
                dropped_samples INTEGER NOT NULL,
@@ -88,7 +103,78 @@ impl Spool {
             "INSERT OR IGNORE INTO meta (key, value) VALUES ('transport_sequence', 0)",
             [],
         )?;
+        connection.execute(
+            "INSERT OR IGNORE INTO meta (key, value) VALUES ('applied_config_revision', 0)",
+            [],
+        )?;
         Ok(Self { connection, path })
+    }
+
+    pub fn load_probe_config(&self) -> Result<AgentConfigSnapshot> {
+        self.connection
+            .query_row(
+                "SELECT payload FROM probe_config WHERE singleton = 1",
+                [],
+                |row| row.get::<_, Vec<u8>>(0),
+            )
+            .optional()?
+            .map(|payload| decode_message(&payload).map_err(anyhow::Error::from))
+            .transpose()
+            .map(|config| config.unwrap_or_default())
+    }
+
+    pub fn apply_probe_config(
+        &mut self,
+        config: &AgentConfigSnapshot,
+        now_ms: i64,
+    ) -> Result<bool> {
+        let current = self.applied_config_revision()?;
+        if config.revision < current {
+            bail!("probe configuration revision rolled back");
+        }
+        if config.revision == current {
+            return Ok(false);
+        }
+        let transaction = self.connection.transaction()?;
+        transaction.execute(
+            "INSERT INTO probe_config (singleton, revision, payload, updated_at)
+             VALUES (1, ?, ?, ?)
+             ON CONFLICT(singleton) DO UPDATE SET
+               revision = excluded.revision, payload = excluded.payload, updated_at = excluded.updated_at",
+            params![config.revision, encode_message(config), now_ms],
+        )?;
+        transaction.execute(
+            "UPDATE meta SET value = ? WHERE key = 'applied_config_revision'",
+            [config.revision],
+        )?;
+        transaction.commit()?;
+        Ok(true)
+    }
+
+    pub fn append_probe_result(&self, result: &ProbeResult, now_ms: i64) -> Result<bool> {
+        let nominal_minute = result.nominal_slot_ms.div_euclid(60_000) * 60_000;
+        let inserted = self.connection.execute(
+            "INSERT OR IGNORE INTO probe_results
+             (execution_id, nominal_minute, observed_at, payload, created_at)
+             VALUES (?, ?, ?, ?, ?)",
+            params![
+                result.execution_id,
+                nominal_minute,
+                result.observed_at_ms,
+                encode_message(result),
+                now_ms
+            ],
+        )?;
+        Ok(inserted == 1)
+    }
+
+    pub fn applied_config_revision(&self) -> Result<u64> {
+        let revision: i64 = self.connection.query_row(
+            "SELECT value FROM meta WHERE key = 'applied_config_revision'",
+            [],
+            |row| row.get(0),
+        )?;
+        u64::try_from(revision).context("configuration revision is invalid")
     }
 
     pub fn append_sample(&mut self, sample: &MetricSample, now_ms: i64) -> Result<bool> {
@@ -140,8 +226,9 @@ impl Spool {
             .query_row(
                 "SELECT (s.observed_at / 60000) * 60000
                  FROM samples s LEFT JOIN delivery_samples ds ON ds.sample_id = s.id
-                 WHERE ds.sample_id IS NULL ORDER BY s.observed_at LIMIT 1",
-                [],
+                 WHERE ds.sample_id IS NULL AND s.observed_at < ?
+                 ORDER BY s.observed_at LIMIT 1",
+                [now_ms.div_euclid(60_000) * 60_000],
                 |row| row.get::<_, i64>(0),
             )
             .optional()?;
@@ -207,6 +294,22 @@ impl Spool {
                 inventory.catalog.clear();
             }
         }
+        let mut probe_statement = self.connection.prepare(
+            "SELECT p.execution_id, p.payload FROM probe_results p
+             WHERE p.nominal_minute <= ?
+             ORDER BY p.nominal_minute, p.observed_at LIMIT 512",
+        )?;
+        let probe_rows = probe_statement.query_map([nominal_minute], |row| {
+            Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, Vec<u8>>(1)?))
+        })?;
+        let mut probe_result_ids = Vec::new();
+        let mut probe_results = Vec::new();
+        for row in probe_rows {
+            let (execution_id, payload) = row?;
+            probe_result_ids.push(execution_id);
+            probe_results.push(decode_message::<ProbeResult>(&payload)?);
+        }
+        drop(probe_statement);
 
         let report_id = Uuid::now_v7().into_bytes().to_vec();
         let report = MachineReport {
@@ -215,8 +318,10 @@ impl Spool {
             workspace_pk,
             nominal_minute_ms: nominal_minute,
             samples,
-            schema_version: 2,
+            schema_version: 3,
             container_inventory,
+            probe_results,
+            applied_config_revision: self.applied_config_revision()?,
         };
         let payload = compress_message(&report)?;
         let payload_hash = blake3::hash(&payload);
@@ -242,6 +347,12 @@ impl Spool {
             transaction.execute(
                 "INSERT INTO delivery_samples (report_id, sample_id) VALUES (?, ?)",
                 params![report_id, sample_id],
+            )?;
+        }
+        for execution_id in probe_result_ids {
+            transaction.execute(
+                "DELETE FROM probe_results WHERE execution_id = ?",
+                [execution_id],
             )?;
         }
         transaction.execute(
@@ -449,8 +560,11 @@ fn ensure_delivery_catalog_columns(connection: &Connection) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use alphaping_protocol::{
-        decompress_message,
-        v1::{ContainerCatalogEntry, ContainerInventory, MachineReport, MetricSample},
+        decompress_message, encode_message,
+        v1::{
+            AgentConfigSnapshot, ContainerCatalogEntry, ContainerInventory, MachineReport,
+            MetricSample, ProbeResult, ProbeState,
+        },
     };
     use tempfile::tempdir;
 
@@ -595,5 +709,66 @@ mod tests {
         let third_inventory = third_report.container_inventory.expect("third inventory");
         assert!(third_inventory.catalog_included);
         assert!(third_inventory.catalog.is_empty());
+    }
+
+    #[test]
+    fn probe_config_and_results_are_durable_until_report_ack() {
+        let directory = tempdir().expect("temp directory");
+        let path = directory.path().join("spool.db");
+        let mut spool = Spool::open(&path).expect("open spool");
+        let mut config = AgentConfigSnapshot {
+            revision: 4,
+            probe_tasks: Vec::new(),
+            created_at_ms: 120_000,
+            digest: Vec::new(),
+        };
+        config.digest = blake3::hash(&encode_message(&config)).as_bytes().to_vec();
+        assert!(
+            spool
+                .apply_probe_config(&config, 120_000)
+                .expect("apply config")
+        );
+        assert_eq!(spool.load_probe_config().expect("load config").revision, 4);
+        let result = ProbeResult {
+            execution_id: vec![8; 32],
+            check_id: "018f5f7e-7d28-7e12-a521-23456789abcd".to_owned(),
+            check_pk: 11,
+            service_pk: 12,
+            workspace_pk: 2,
+            executor_agent_id: "agent-1".to_owned(),
+            config_revision: 4,
+            nominal_slot_ms: 60_000,
+            observed_at_ms: 61_000,
+            state: ProbeState::Healthy as i32,
+            latency_ms: Some(10),
+            ..ProbeResult::default()
+        };
+        assert!(
+            spool
+                .append_probe_result(&result, 120_000)
+                .expect("append result")
+        );
+        for index in 0..6 {
+            spool
+                .append_sample(&sample(60_000 + index * 10_000), 120_000)
+                .expect("append sample");
+        }
+        let report_id = spool
+            .create_next_delivery(7, 2, 120_000)
+            .expect("create delivery")
+            .expect("delivery");
+        let delivery = spool
+            .due_delivery(120_000)
+            .expect("read delivery")
+            .expect("due delivery");
+        let report: MachineReport = decompress_message(&delivery.payload).expect("decode report");
+        assert_eq!(report.applied_config_revision, 4);
+        assert_eq!(report.probe_results, vec![result]);
+        drop(spool);
+
+        let mut reopened = Spool::open(&path).expect("reopen spool");
+        assert_eq!(reopened.delivery_count().expect("count"), 1);
+        assert!(reopened.acknowledge(&report_id).expect("ack"));
+        assert_eq!(reopened.delivery_count().expect("count"), 0);
     }
 }

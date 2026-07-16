@@ -125,6 +125,103 @@ message MachineReport {
   repeated MetricSample samples = 5;
   uint32 schema_version = 6;
   ContainerInventory container_inventory = 7;
+  repeated ProbeResult probe_results = 8;
+  uint64 applied_config_revision = 9;
+}
+
+enum ProbeKind {
+  PROBE_KIND_UNSPECIFIED = 0;
+  PROBE_KIND_HTTP = 1;
+  PROBE_KIND_TCP = 2;
+  PROBE_KIND_ICMP = 3;
+}
+
+enum ProbeState {
+  PROBE_STATE_UNSPECIFIED = 0;
+  PROBE_STATE_HEALTHY = 1;
+  PROBE_STATE_DEGRADED = 2;
+  PROBE_STATE_DOWN = 3;
+}
+
+message ProbeHeader {
+  string name = 1;
+  string value = 2;
+  bool sensitive = 3;
+}
+
+message ProbeAssertion {
+  string source = 1;
+  string operator = 2;
+  string selector = 3;
+  bytes expected_json = 4;
+  string severity = 5;
+}
+
+message HttpProbeRequest {
+  string url = 1;
+  string method = 2;
+  repeated ProbeHeader headers = 3;
+  bytes body = 4;
+  repeated uint32 expected_status = 5;
+  uint32 degraded_after_ms = 6;
+  uint32 down_after_ms = 7;
+  uint32 max_redirects = 8;
+  uint32 max_response_bytes = 9;
+  repeated ProbeAssertion assertions = 10;
+}
+
+message TcpProbeRequest {
+  string hostname = 1;
+  uint32 port = 2;
+  bool use_tls = 3;
+  bytes payload = 4;
+  bytes response_prefix = 5;
+}
+
+message IcmpProbeRequest {
+  string hostname = 1;
+  uint32 degraded_after_ms = 2;
+  uint32 down_after_ms = 3;
+}
+
+message ProbeTask {
+  string check_id = 1;
+  uint64 check_pk = 2;
+  uint64 service_pk = 3;
+  uint64 workspace_pk = 4;
+  uint64 config_revision = 5;
+  ProbeKind kind = 6;
+  uint32 interval_seconds = 7;
+  uint32 phase_seconds = 8;
+  uint32 timeout_ms = 9;
+  oneof request {
+    HttpProbeRequest http = 10;
+    TcpProbeRequest tcp = 11;
+    IcmpProbeRequest icmp = 12;
+  }
+}
+
+message AgentConfigSnapshot {
+  uint64 revision = 1;
+  repeated ProbeTask probe_tasks = 2;
+  int64 created_at_ms = 3;
+  bytes digest = 4;
+}
+
+message ProbeResult {
+  bytes execution_id = 1;
+  string check_id = 2;
+  uint64 check_pk = 3;
+  uint64 service_pk = 4;
+  uint64 workspace_pk = 5;
+  string executor_agent_id = 6;
+  uint64 config_revision = 7;
+  int64 nominal_slot_ms = 8;
+  int64 observed_at_ms = 9;
+  ProbeState state = 10;
+  optional uint32 latency_ms = 11;
+  string failure_code = 12;
+  string failure_summary = 13;
 }
 
 message EnrollmentRequest {
@@ -171,4 +268,5 @@ message DurableAck {
   AckStatus status = 2;
   int64 committed_at_ms = 3;
   uint64 config_revision = 4;
+  AgentConfigSnapshot config = 5;
 }

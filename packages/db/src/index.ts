@@ -2,6 +2,7 @@ export * from "./repositories/dashboard.js";
 export * from "./repositories/check-results.js";
 export * from "./repositories/incidents.js";
 export * from "./repositories/machine-history.js";
+export * from "./repositories/machine-probes.js";
 export * from "./repositories/machines.js";
 export * from "./repositories/public-status.js";
 export * from "./repositories/services.js";

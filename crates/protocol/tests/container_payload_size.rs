@@ -81,6 +81,8 @@ fn report(container_count: usize, include_catalog: bool) -> MachineReport {
             metrics,
             catalog_included: include_catalog,
         }),
+        probe_results: Vec::new(),
+        applied_config_revision: 0,
     }
 }
 

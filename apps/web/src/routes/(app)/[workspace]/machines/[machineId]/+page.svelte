@@ -1,10 +1,11 @@
 <script lang="ts">
-  import { Activity, ArrowLeft } from "lucide-svelte";
+  import { ArrowLeft } from "lucide-svelte";
 
   import MachineConfig from "$components/machines/machine-config.svelte";
   import MachineContainers from "$components/machines/machine-containers.svelte";
   import MachineEvents from "$components/machines/machine-events.svelte";
   import MachineOverview from "$components/machines/machine-overview.svelte";
+  import MachineProbes from "$components/machines/machine-probes.svelte";
   import StatusLabel from "$components/status/status-label.svelte";
   import { formatRelativeTime } from "$lib/utils/format";
 
@@ -63,7 +64,6 @@
 
   <div
     id={`machine-panel-${activeTab}`}
-    class:empty={activeTab === "probes"}
     class="panel"
     role="tabpanel"
     aria-labelledby={`machine-tab-${activeTab}`}
@@ -71,9 +71,7 @@
     {#if activeTab === "overview"}
       <MachineOverview detail={data} />
     {:else if activeTab === "probes"}
-      <Activity size={24} />
-      <h2>No probe results</h2>
-      <p>Probe tasks assigned to this machine will appear here.</p>
+      <MachineProbes tasks={data.probeTasks} />
     {:else if activeTab === "containers"}
       <MachineContainers inventory={data.containerInventory} />
     {:else if activeTab === "events"}
@@ -113,7 +111,6 @@
   }
 
   h1,
-  h2,
   p {
     margin: 0;
   }
@@ -165,24 +162,6 @@
 
   .panel {
     padding-top: 18px;
-  }
-
-  .panel.empty {
-    display: grid;
-    min-height: 280px;
-    place-content: center;
-    justify-items: center;
-    gap: 7px;
-    color: var(--text-faint);
-  }
-
-  .panel.empty h2 {
-    font-size: 14px;
-  }
-
-  .panel.empty p {
-    color: var(--text-muted);
-    font-size: 10px;
   }
 
   @media (max-width: 520px) {

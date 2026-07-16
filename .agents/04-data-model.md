@@ -268,6 +268,8 @@ V1 默认不生成每容器长保留 rollup。七天内原始容器数据由 mac
 - `name`, `type`: `http|tcp|icmp`
 - `executor_type`: `cloudflare|agent`
 - `executor_agent_id` nullable
+- `assignment_revision`：该任务最后一次分配/变更时目标机器的 desired config revision；旧 Agent 或旧 revision 的结果必须拒绝
+- `config_bytes`：管理写入时计算的保守快照占用；同一 Agent enabled task 合计不得超过 44 KiB
 - `interval_seconds`, `timeout_ms`
 - `failure_confirmations`, `recovery_confirmations`
 - `schedule_phase_seconds`, `last_claimed_slot`, `enabled`
@@ -302,9 +304,9 @@ V1 默认不生成每容器长保留 rollup。七天内原始容器数据由 mac
 
 - `check_pk`, `workspace_pk`, `service_pk`
 - `block_start`
-- `result_0` ... `result_4` 可空 BLOB，每个 slot 保存 execution ID、observed/received time、status、latency、failure code、assertion summary 和有界 payload
+- `result_0` ... `result_4` 可空 BLOB，每个 slot 保存 execution ID、observed/received time、status、latency、failure code、assertion summary 和有界 payload。Cloudflare executor 保存一次分钟执行；Agent executor 的同一 slot 在顶层保存分钟判定，并在 `samples` 中保留该分钟所有 5/10 秒 observation。
 
-主键：`PRIMARY KEY (check_pk, block_start) WITHOUT ROWID`。Cloudflare 与 Agent 执行器都写入同一 contract。相同 nominal slot 的重试用确定性 execution ID 覆盖同一 slot。
+主键：`PRIMARY KEY (check_pk, block_start) WITHOUT ROWID`。Cloudflare 与 Agent 执行器都写入同一 contract。Agent minute batch ID 绑定 check、executor、assignment revision 和 nominal minute；相同 ID/hash 是幂等重复，不同 hash 是冲突。
 
 ### `check_rollup_5m`
 

@@ -91,6 +91,24 @@ pub fn open(
         .map_err(|_| CryptoError::Authentication)
 }
 
+pub fn open_with_nonce(
+    key: &[u8; 32],
+    nonce: [u8; 12],
+    aad: &[u8],
+    ciphertext: &[u8],
+) -> Result<Vec<u8>, CryptoError> {
+    let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| CryptoError::InvalidKey)?;
+    cipher
+        .decrypt(
+            Nonce::from_slice(&nonce),
+            Payload {
+                msg: ciphertext,
+                aad,
+            },
+        )
+        .map_err(|_| CryptoError::Authentication)
+}
+
 pub fn wrap_key(
     wrapping_key: &[u8; 32],
     wrapping_nonce: [u8; 12],

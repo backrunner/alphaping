@@ -46,6 +46,31 @@ export interface MachineContainerInventory {
   containers: readonly MachineContainer[];
 }
 
+export interface MachineProbeTask {
+  id: string;
+  serviceId: string;
+  serviceName: string;
+  name: string;
+  kind: "http" | "tcp" | "icmp";
+  target: string;
+  intervalSeconds: number;
+  timeoutMs: number;
+  assignmentRevision: number;
+  latest: {
+    observedAt: number;
+    state: "healthy" | "degraded" | "down" | "unknown";
+    latencyMs: number | null;
+    failureCode: string | null;
+  } | null;
+  history: readonly {
+    bucketStart: number;
+    state: "healthy" | "degraded" | "down" | "unknown";
+    availabilityPermille: number;
+    latencyAvgMs: number | null;
+    latencyMaxMs: number | null;
+  }[];
+}
+
 export interface MachineDetail {
   workspace: { id: string; name: string; slug: string; role: WorkspaceRole };
   machine: {
@@ -77,5 +102,6 @@ export interface MachineDetail {
     reasonCode: string;
   }[];
   containerInventory: MachineContainerInventory | null;
+  probeTasks: readonly MachineProbeTask[];
   canManage: boolean;
 }

@@ -2,8 +2,8 @@ use alphaping_crypto::{DirectionalKeys, open, seal, unwrap_key, wrap_key};
 use alphaping_protocol::{
     MAX_ENVELOPE_BYTES, PROTOCOL_VERSION, decode_message, decompress_message, encode_message,
     v1::{
-        AckStatus, DurableAck, EncryptedEnvelope, EnrollmentRequest, EnrollmentResponse,
-        EnvelopeHeader, MachineReport,
+        AckStatus, AgentConfigSnapshot, DurableAck, EncryptedEnvelope, EnrollmentRequest,
+        EnrollmentResponse, EnvelopeHeader, MachineReport,
     },
 };
 use prost::Message;
@@ -14,8 +14,10 @@ use worker::{
 };
 
 use crate::{
-    MAX_SAFE_SEQUENCE, MachineRollup, enrollment_token_digest, validate_enrollment_request,
-    validate_report,
+    MAX_SAFE_SEQUENCE, MachineRollup,
+    agent_config::build_config_snapshot,
+    check_results::{ProbePersistenceError, persist_probe_results},
+    enrollment_token_digest, validate_enrollment_request, validate_report,
 };
 
 const MAX_CLOCK_SKEW_MS: i64 = 5 * 60_000;
@@ -27,6 +29,7 @@ struct AgentKeyRow {
     machine_pk: f64,
     workspace_pk: f64,
     applied_config_revision: f64,
+    desired_config_revision: f64,
     wrapped_data_key: Vec<u8>,
     nonce_prefix: Vec<u8>,
     valid_from: f64,
@@ -91,6 +94,16 @@ enum IngestError {
 impl From<worker::Error> for IngestError {
     fn from(error: worker::Error) -> Self {
         Self::Internal(error)
+    }
+}
+
+impl From<ProbePersistenceError> for IngestError {
+    fn from(error: ProbePersistenceError) -> Self {
+        match error {
+            ProbePersistenceError::Invalid => Self::BadRequest,
+            ProbePersistenceError::Conflict => Self::Conflict,
+            ProbePersistenceError::Worker(error) => Self::Internal(error),
+        }
     }
 }
 
@@ -455,7 +468,8 @@ async fn load_agent_key(
     db.prepare(
         "SELECT m.id AS machine_id, w.id AS workspace_id,
                 m.telemetry_pk AS machine_pk, w.telemetry_pk AS workspace_pk,
-                a.applied_config_revision, k.wrapped_data_key, k.nonce_prefix,
+                a.applied_config_revision, m.desired_config_revision,
+                k.wrapped_data_key, k.nonce_prefix,
                 k.valid_from, k.valid_until, m.container_catalog_digest
          FROM agents a
          JOIN machines m ON m.id = a.machine_id
@@ -837,6 +851,7 @@ async fn closed_rollups(
 }
 
 async fn durable_ack(
+    control_db: &D1Database,
     telemetry_db: &D1Database,
     header: &EnvelopeHeader,
     report: &MachineReport,
@@ -846,6 +861,7 @@ async fn durable_ack(
     nonce_prefix: [u8; 4],
     compressed_payload: &[u8],
     duplicate: bool,
+    config: Option<AgentConfigSnapshot>,
 ) -> Result<Response, IngestError> {
     let now = now_ms();
     let previous_container_inventory = if !duplicate && report.container_inventory.is_some() {
@@ -883,6 +899,27 @@ async fn durable_ack(
         statements.extend(closed_rollups(telemetry_db, report).await?);
     }
     telemetry_db.batch(statements).await?;
+    if report.applied_config_revision > agent_key.applied_config_revision as u64 {
+        control_db
+            .prepare(
+                "UPDATE agents SET applied_config_revision = ?, last_seen_at = ?
+                 WHERE id = ? AND status = 'active' AND applied_config_revision < ?",
+            )
+            .bind(&[
+                unsigned(report.applied_config_revision),
+                number(now),
+                text(agent_id),
+                unsigned(report.applied_config_revision),
+            ])?
+            .run()
+            .await?;
+    } else {
+        control_db
+            .prepare("UPDATE agents SET last_seen_at = ? WHERE id = ? AND status = 'active'")
+            .bind(&[number(now), text(agent_id)])?
+            .run()
+            .await?;
+    }
     let acknowledgement = DurableAck {
         report_id: report.report_id.clone(),
         status: if duplicate {
@@ -891,7 +928,8 @@ async fn durable_ack(
             AckStatus::Committed as i32
         },
         committed_at_ms: now,
-        config_revision: agent_key.applied_config_revision as u64,
+        config_revision: agent_key.desired_config_revision as u64,
+        config,
     };
     let response_header = EnvelopeHeader {
         protocol_version: PROTOCOL_VERSION,
@@ -992,15 +1030,36 @@ async fn handle_report(mut request: Request, env: Env) -> Result<Response, Inges
         &header.report_id,
         agent_key.machine_pk as u64,
         agent_key.workspace_pk as u64,
+        agent_id,
         now,
     )
     .map_err(|_| IngestError::BadRequest)?;
+    if report.applied_config_revision < agent_key.applied_config_revision as u64
+        || report.applied_config_revision > agent_key.desired_config_revision as u64
+    {
+        return Err(IngestError::BadRequest);
+    }
     if let Some(inventory) = &report.container_inventory {
         sync_container_catalog(&control_db, &agent_key, inventory, now).await?;
     }
     let payload_hash = blake3::hash(&compressed_payload);
     let duplicate = classify_slot(&telemetry_db, &report, payload_hash.as_bytes()).await?;
+    persist_probe_results(&control_db, &telemetry_db, agent_id, &report).await?;
+    let config = if report.applied_config_revision < agent_key.desired_config_revision as u64 {
+        Some(
+            build_config_snapshot(
+                &control_db,
+                &env,
+                agent_id,
+                agent_key.desired_config_revision as u64,
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
     durable_ack(
+        &control_db,
         &telemetry_db,
         &header,
         &report,
@@ -1010,6 +1069,7 @@ async fn handle_report(mut request: Request, env: Env) -> Result<Response, Inges
         nonce_prefix,
         &compressed_payload,
         duplicate,
+        config,
     )
     .await
 }

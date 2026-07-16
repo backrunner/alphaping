@@ -163,7 +163,7 @@ AES-GCM nonce 固定 96 bits：
 
 ### 6.3 压缩
 
-- 顺序固定为 protobuf encode -> zstd compress -> AEAD encrypt。
+- 顺序固定为 protobuf encode -> bounded zlib/DEFLATE compress -> AEAD encrypt。压缩算法属于协议版本，未来切换不得静默复用 V1。
 - 解密后先检查声明长度和最大解压比，再解压。
 - V1 单个 HTTP envelope hard limit 为 64 KiB，使 D1 5 分钟 block 的 5 个 report slots 理论最大仍只有 320 KiB。
 - 大量离线数据拆为多个 batch，不能提交超大 envelope。
@@ -187,7 +187,9 @@ AES-GCM nonce 固定 96 bits：
 - key rotation proposal
 - server time 和 next report guidance
 
-配置必须包含 revision、created_at 和完整内容 digest。Agent 先验证、解析和预检查，再原子替换 last-known-good config，并在下次 report 回报 applied revision。
+配置 snapshot 包含 revision、created_at、完整内容 BLAKE3 digest 和最多 32 个结构化 probe task。Secret 只在 Ingest 内存中从 CONTROL_DB 解密，再放入 s2c AEAD 明文；日志、D1 telemetry 和 Web 投影都不得包含 secret value。Agent 先验证 digest、任务归属字段、周期、timeout 和 payload 上限，再以 SQLite transaction 替换 last-known-good config，并在后续 report 回报 applied revision。
+
+每个 probe result 必须绑定 `check_id/check_pk/service_pk/workspace_pk`、执行 Agent ID、assignment revision、确定性 execution ID 和 nominal slot。Ingest 重新查询当前 assignment；重指派前的 Agent、旧 revision、错误 phase 或跨 workspace 结果一律拒绝。
 
 HTTP 状态码只表达 transport/auth 大类。详细错误码必须避免泄露 Agent 是否存在、token 是否匹配特定机器或密钥版本细节。
 
