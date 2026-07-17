@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
+import { runWebManagementE2e } from "./lib/web-management-e2e.mjs";
+
 const root = resolve(import.meta.dirname, "..");
 const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const arguments_ = process.argv.slice(2);
@@ -26,6 +28,7 @@ function run(command, args, label, options = {}) {
   if (result.status !== 0) {
     throw new Error(`${label} failed${options.quiet ? `: ${result.stderr?.trim() ?? ""}` : ""}`);
   }
+  return result;
 }
 
 async function unusedPort() {
@@ -337,32 +340,39 @@ try {
     throw new Error("authenticated dashboard was not marked private");
   }
 
-  run(
-    pnpm,
-    [
-      "exec",
-      "wrangler",
-      "d1",
-      "execute",
-      "CONTROL_DB",
-      "--local",
-      "--config",
-      config,
-      "--persist-to",
-      persistTo,
-      "--command",
-      "UPDATE dashboards SET visibility = 'public' WHERE slug = 'overview'",
-    ],
-    "publish dashboard",
-    { quiet: true },
-  );
-  response = await fetch(`${baseUrl}/status/operations`);
-  assertResponse(response, 200, "public status page");
-  if (response.headers.get("cache-control") !== "public, max-age=30, stale-while-revalidate=300") {
-    throw new Error("public status page cache policy is incorrect");
-  }
+  const queryControlDb = (sql) => {
+    const result = run(
+      pnpm,
+      [
+        "exec",
+        "wrangler",
+        "d1",
+        "execute",
+        "CONTROL_DB",
+        "--local",
+        "--config",
+        config,
+        "--persist-to",
+        persistTo,
+        "--command",
+        sql,
+        "--json",
+      ],
+      "CONTROL_DB query",
+      { quiet: true },
+    );
+    const output = result.stdout.trim();
+    const jsonStart = output.lastIndexOf("\n[");
+    const payload = JSON.parse(jsonStart === -1 ? output : output.slice(jsonStart + 1));
+    const execution = Array.isArray(payload) ? payload[0] : payload;
+    if (!execution?.success || !Array.isArray(execution.results)) {
+      throw new Error("CONTROL_DB query did not return rows");
+    }
+    return execution.results;
+  };
+  await runWebManagementE2e({ baseUrl, adminCookie: cookie, queryControlDb });
 
-  console.log("Web E2E setup, authentication, dashboard, and public status flow passed");
+  console.log("Web E2E setup, management, RBAC, dashboard, and public status flows passed");
 } catch (cause) {
   if (!(cause instanceof SetupInspectionComplete)) throw cause;
 } finally {
