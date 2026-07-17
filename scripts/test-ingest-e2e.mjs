@@ -407,6 +407,12 @@ try {
       (SELECT state FROM agent_commands WHERE id = '${commandId}') AS command_state,
       (SELECT result_code FROM agent_commands WHERE id = '${commandId}') AS command_result,
       (SELECT delivery_count FROM agent_commands WHERE id = '${commandId}') AS command_deliveries
+      ,(SELECT COUNT(*) FROM containers WHERE machine_id = '${machineId}' AND deleted_at IS NULL)
+        AS container_count
+      ,(SELECT runtime FROM containers WHERE machine_id = '${machineId}' AND deleted_at IS NULL
+        LIMIT 1) AS container_runtime
+      ,(SELECT LENGTH(container_catalog_digest) FROM machines WHERE id = '${machineId}')
+        AS catalog_digest_bytes
      FROM agents a JOIN agent_keys k ON k.agent_id = a.id
      JOIN agent_enrollment_tokens t ON t.used_by_agent_id = a.id`,
   );
@@ -419,7 +425,10 @@ try {
     agent.wrapped_key_bytes !== 60 ||
     agent.command_state !== "succeeded" ||
     agent.command_result !== "no_update_available" ||
-    agent.command_deliveries !== 1
+    agent.command_deliveries !== 1 ||
+    agent.container_count !== 1 ||
+    agent.container_runtime !== "docker" ||
+    agent.catalog_digest_bytes !== 32
   ) {
     throw new Error("enrollment key wrapping or Agent latest state was not persisted");
   }
@@ -432,12 +441,15 @@ try {
         AS populated_slots,
       (SELECT cpu_permille FROM machine_latest WHERE machine_pk = 1) AS cpu_permille,
       (SELECT state FROM machine_latest WHERE machine_pk = 1) AS machine_state,
+      (SELECT container_inventory_json FROM machine_latest WHERE machine_pk = 1)
+        AS container_inventory_json,
       (SELECT highest_sequence FROM agent_replay_state LIMIT 1) AS highest_sequence,
       (SELECT COUNT(*) FROM state_events WHERE previous_state = 'offline'
         AND current_state = 'healthy' AND reason_code = 'agent_report_received') AS recovery_events,
       (SELECT COUNT(*) FROM state_events WHERE previous_state = 'healthy'
         AND current_state = 'down' AND reason_code = 'resource_threshold') AS threshold_events`,
   );
+  const containerInventory = JSON.parse(telemetry?.container_inventory_json ?? "null");
   if (
     ![1, 2].includes(telemetry?.block_count) ||
     telemetry.populated_slots !== 3 ||
@@ -445,13 +457,18 @@ try {
     telemetry.machine_state !== "down" ||
     telemetry.highest_sequence !== 5 ||
     telemetry.recovery_events !== 1 ||
-    telemetry.threshold_events !== 1
+    telemetry.threshold_events !== 1 ||
+    containerInventory?.runtimes?.map((runtime) => runtime.kind).join(",") !==
+      "docker,colima-docker,colima-containerd,apple-container" ||
+    containerInventory?.containers?.[0]?.name !== "api" ||
+    containerInventory?.containers?.[0]?.state !== "running" ||
+    containerInventory?.containers?.[0]?.health !== "healthy"
   ) {
     throw new Error("durable telemetry, threshold transitions, or replay state is incorrect");
   }
 
   console.log(
-    "Ingest E2E verified D1 enrollment, block slots, machine transitions, and replay state",
+    "Ingest E2E verified D1 enrollment, block slots, container inventory, machine transitions, and replay state",
   );
 } finally {
   if (child) await stopServer(child);

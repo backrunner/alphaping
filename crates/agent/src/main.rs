@@ -28,6 +28,11 @@ async fn main() -> Result<()> {
         println!("update_root_sha256={root}");
         return Ok(());
     }
+    if arguments.len() == 1 && arguments[0] == "diagnose-runtimes" {
+        let inventory = alphaping_runtime_adapters::RuntimeCollector::new().collect(now_ms()?);
+        println!("{}", serde_json::to_string_pretty(&inventory)?);
+        return Ok(());
+    }
     if arguments
         .first()
         .is_some_and(|argument| argument == "self-test")
@@ -144,4 +149,9 @@ fn default_spool_path() -> String {
     {
         "/var/lib/alphaping/spool.db".to_owned()
     }
+}
+
+fn now_ms() -> Result<i64> {
+    i64::try_from(SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis())
+        .context("system time is outside the runtime diagnostic range")
 }

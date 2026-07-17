@@ -13,7 +13,8 @@ use alphaping_protocol::{
     compress_message, decode_message, decompress_message, encode_message,
     v1::{
         AckStatus, AgentCommandResult, AgentCommandResultStatus, AgentCommandType,
-        EncryptedEnvelope, EnrollmentResponse, MachineReport, MetricSample,
+        ContainerCatalogEntry, ContainerInventory, ContainerMetric, ContainerPort,
+        EncryptedEnvelope, EnrollmentResponse, MachineReport, MetricSample, RuntimeSnapshot,
     },
 };
 use reqwest::{Client, StatusCode};
@@ -37,6 +38,74 @@ fn now_ms() -> Result<i64, Box<dyn Error>> {
     Ok(i64::try_from(
         SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis(),
     )?)
+}
+
+fn container_inventory(observed_at_ms: i64) -> ContainerInventory {
+    let container_key = vec![0x42; 16];
+    ContainerInventory {
+        observed_at_ms,
+        catalog_digest: vec![0x24; 32],
+        runtimes: vec![
+            RuntimeSnapshot {
+                kind: 1,
+                instance: "default".to_owned(),
+                availability: 1,
+                version: "27.0.0".to_owned(),
+                detail_code: String::new(),
+            },
+            RuntimeSnapshot {
+                kind: 2,
+                instance: "default".to_owned(),
+                availability: 3,
+                version: String::new(),
+                detail_code: "profile_stopped".to_owned(),
+            },
+            RuntimeSnapshot {
+                kind: 3,
+                instance: "default".to_owned(),
+                availability: 2,
+                version: String::new(),
+                detail_code: "profile_absent".to_owned(),
+            },
+            RuntimeSnapshot {
+                kind: 4,
+                instance: "default".to_owned(),
+                availability: 1,
+                version: "0.7.0".to_owned(),
+                detail_code: String::new(),
+            },
+        ],
+        catalog: vec![ContainerCatalogEntry {
+            container_key: container_key.clone(),
+            runtime: 1,
+            runtime_instance: "default".to_owned(),
+            runtime_container_id: "0123456789abcdef".to_owned(),
+            name: "api".to_owned(),
+            image: "example/api:1".to_owned(),
+        }],
+        metrics: vec![ContainerMetric {
+            container_key,
+            state: 2,
+            health: 3,
+            started_at_ms: observed_at_ms - 60_000,
+            restart_count: 1,
+            cpu_permille: 125,
+            memory_used_bytes: 134_217_728,
+            memory_limit_bytes: 536_870_912,
+            network_rx_bytes_per_second: 4_096,
+            network_tx_bytes_per_second: 2_048,
+            network_rx_bytes_total: 1_048_576,
+            network_tx_bytes_total: 524_288,
+            ports: vec![ContainerPort {
+                private_port: 8080,
+                public_port: 8443,
+                protocol: "tcp".to_owned(),
+                host_ip: "127.0.0.1".to_owned(),
+            }],
+            exit_code: 0,
+        }],
+        catalog_included: true,
+    }
 }
 
 async fn post_protobuf(
@@ -143,6 +212,9 @@ async fn verify_command_delivery(
     result_report.nominal_minute_ms += 60_000;
     for sample in &mut result_report.samples {
         sample.observed_at_ms += 60_000;
+    }
+    if let Some(inventory) = &mut result_report.container_inventory {
+        inventory.observed_at_ms += 60_000;
     }
     result_report.command_results = vec![AgentCommandResult {
         command_id: command.id.clone(),
@@ -269,7 +341,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         nominal_minute_ms: nominal_minute,
         samples,
         schema_version: 3,
-        container_inventory: None,
+        container_inventory: Some(container_inventory(now)),
         probe_results: Vec::new(),
         applied_config_revision: enrollment.config_revision,
         command_results: Vec::new(),
@@ -333,12 +405,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
         sample.observed_at_ms = threshold_minute + i64::try_from(index)? * 10_000;
         sample.cpu_permille = 980;
     }
+    if let Some(inventory) = &mut threshold_report.container_inventory {
+        inventory.observed_at_ms = threshold_minute;
+    }
     let threshold_payload = compress_message(&threshold_report)?;
     let threshold_envelope =
         codec.encode_report(3, now_ms()?, &threshold_report_id, &threshold_payload)?;
     let response = post_protobuf(&client, &reports_endpoint, threshold_envelope).await?;
     if response.status() != StatusCode::OK {
-        return Err(invalid_data("threshold report was rejected").into());
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(invalid_data(&format!(
+            "threshold report was rejected with {status}: {body}"
+        ))
+        .into());
     }
     let acknowledgement = codec.decode_ack(&response.bytes().await?, 3, &threshold_report_id)?;
     if AckStatus::try_from(acknowledgement.status)? != AckStatus::Committed {

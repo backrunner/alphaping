@@ -54,6 +54,10 @@ function dateTimeInput(timestamp) {
   return new Date(timestamp).toISOString().slice(0, 16);
 }
 
+function sqlString(value) {
+  return `'${value.replaceAll("'", "''")}'`;
+}
+
 export async function runWebManagementE2e({
   baseUrl,
   adminCookie,
@@ -97,15 +101,69 @@ export async function runWebManagementE2e({
        '0.1.0', 1, 'active', 1, ${Date.now()} FROM machines WHERE id = '${machine.id}'`,
   );
   const latestAt = Date.now();
+  const containerInventory = JSON.stringify({
+    observedAt: latestAt,
+    catalogDigest: "24".repeat(32),
+    runtimes: [
+      {
+        kind: "docker",
+        instance: "default",
+        availability: "available",
+        version: "27.0.0",
+        detailCode: "",
+      },
+      {
+        kind: "colima-docker",
+        instance: "default",
+        availability: "stopped",
+        version: "",
+        detailCode: "profile_stopped",
+      },
+      {
+        kind: "colima-containerd",
+        instance: "default",
+        availability: "absent",
+        version: "",
+        detailCode: "profile_absent",
+      },
+      {
+        kind: "apple-container",
+        instance: "default",
+        availability: "available",
+        version: "1.0.0",
+        detailCode: "",
+      },
+    ],
+    containers: [
+      {
+        id: "42".repeat(16),
+        runtime: "apple-container",
+        runtimeInstance: "default",
+        name: "api-runtime-e2e",
+        image: "example/api:1",
+        state: "running",
+        health: "healthy",
+        startedAt: latestAt - 60_000,
+        restartCount: 1,
+        cpuPermille: 125,
+        memoryUsedBytes: 134_217_728,
+        memoryLimitBytes: 536_870_912,
+        networkRxBps: 4_096,
+        networkTxBps: 2_048,
+        ports: [{ privatePort: 8080, publicPort: 8443, protocol: "tcp" }],
+      },
+    ],
+  });
   queryTelemetryDb(
     `INSERT INTO machine_latest
       (machine_pk, workspace_pk, agent_id, observed_at, received_at, state,
        cpu_permille, memory_used_bytes, memory_total_bytes, storage_used_bytes,
        storage_total_bytes, network_rx_bps, network_tx_bps, network_rx_total,
-       network_tx_total, report_id)
+       network_tx_total, report_id, container_inventory_json)
      VALUES (${machine.telemetry_pk}, 1, '${agentId}', ${latestAt}, ${latestAt}, 'healthy',
        420, 2147483648, 4294967296, 8589934592, 17179869184, 4096, 2048,
-       1000000, 500000, X'01010101010101010101010101010101')`,
+       1000000, 500000, X'01010101010101010101010101010101',
+       ${sqlString(containerInventory)})`,
   );
   let response = await fetch(`${baseUrl}/operations`, { headers: { cookie: adminCookie } });
   assertResponse(response, 200, "dashboard machine latest projection");
@@ -120,6 +178,23 @@ export async function runWebManagementE2e({
   const latest = await response.json();
   if (latest.latest.cpuPermille !== 420 || latest.latest.state !== "healthy") {
     throw new Error("machine latest API did not return the durable telemetry projection");
+  }
+  response = await fetch(`${baseUrl}/operations/machines/${machine.id}`, {
+    headers: { cookie: adminCookie },
+  });
+  assertResponse(response, 200, "administrator machine container projection");
+  const machineDetail = await response.text();
+  for (const expected of [
+    "docker",
+    "colima-docker",
+    "colima-containerd",
+    "apple-container",
+    "api-runtime-e2e",
+    "healthy",
+  ]) {
+    if (!machineDetail.includes(expected)) {
+      throw new Error(`machine detail omitted container projection value ${expected}`);
+    }
   }
   await submitAction(
     baseUrl,
