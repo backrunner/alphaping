@@ -21,6 +21,11 @@ binding = "TELEMETRY_DB"
 database_name = "alphaping-telemetry-template"
 database_id = "00000000-0000-0000-0000-000000000000"
 
+[[r2_buckets]]
+binding = "EXPORT_BUCKET"
+bucket_name = "alphaping-exports-template"
+preview_bucket_name = "alphaping-exports-preview-template"
+
 [env.production]
 name = "alphaping-retention-production"
 workers_dev = false
@@ -38,3 +43,7 @@ database_id = "00000000-0000-0000-0000-000000000000"
 binding = "TELEMETRY_DB"
 database_name = "alphaping-telemetry-template"
 database_id = "00000000-0000-0000-0000-000000000000"
+
+[[env.production.r2_buckets]]
+binding = "EXPORT_BUCKET"
+bucket_name = "alphaping-exports-template"

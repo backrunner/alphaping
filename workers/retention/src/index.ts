@@ -1,3 +1,4 @@
+import { cleanArtifactBucket } from "./artifact-retention";
 import { cleanAgentCommands, cleanAuditLogs, cleanExpiredAnnouncements } from "./control-retention";
 import { acquireWorkspaceRetentionLease, releaseWorkspaceRetentionLease } from "./cursor";
 import { finalizeDeletedWorkspace, finalizeSoftDeletedResources } from "./soft-delete";
@@ -64,6 +65,7 @@ export async function runRetention(env: Env, scheduledTime: number): Promise<voi
     }
     const commands = await cleanAgentCommands(env.CONTROL_DB, scheduledTime);
     deleted += commands.deleted;
+    const artifacts = await cleanArtifactBucket(env, scheduledTime);
     await env.TELEMETRY_DB.prepare(
       "UPDATE retention_runs SET completed_at = ?, deleted_rows = ? WHERE run_id = ?",
     )
@@ -74,6 +76,9 @@ export async function runRetention(env: Env, scheduledTime: number): Promise<voi
         event: "retention_completed",
         deletedRows: deleted,
         expiredCommands: commands.expired,
+        scannedArtifacts: artifacts.scanned,
+        deletedArtifacts: artifacts.deleted,
+        skippedArtifactPrefixes: artifacts.skippedPrefixes,
       }),
     );
   } catch (error) {

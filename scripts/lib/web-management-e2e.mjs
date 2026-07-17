@@ -202,6 +202,90 @@ export async function runWebManagementE2e({
     throw new Error("service secret wrapping or assertion persistence is incorrect");
   }
 
+  for (const monitor of [
+    {
+      name: "Agent TCP E2E",
+      description: "Agent-origin TCP probe",
+      kind: "tcp",
+      hostname: "192.0.2.20",
+      port: "443",
+      useTls: "on",
+      tcpPayload: "PING",
+      tcpResponsePrefix: "PONG",
+    },
+    {
+      name: "Agent ICMP E2E",
+      description: "Agent-origin ICMP probe",
+      kind: "icmp",
+      hostname: "192.0.2.21",
+      port: "",
+      useTls: "",
+      tcpPayload: "",
+      tcpResponsePrefix: "",
+    },
+  ]) {
+    await submitAction(
+      baseUrl,
+      "/operations/admin?/service",
+      adminCookie,
+      {
+        ...monitor,
+        executorKind: "agent",
+        executorAgentId: agentId,
+        intervalSeconds: "5",
+        timeoutMs: "1000",
+        failureConfirmations: "2",
+        recoveryConfirmations: "2",
+        url: "",
+        method: "GET",
+        expectedStatuses: "200",
+        degradedAfterMs: "250",
+        downAfterMs: "750",
+        maxResponseBytes: "65536",
+        requestHeaders: "",
+        secretRequestHeaders: "",
+        requestBody: "",
+        tcpPayloadIsSecret: "",
+        assertionSource: "none",
+        assertionOperator: "exists",
+        assertionSelector: "",
+        assertionExpected: "",
+        assertionSeverity: "down",
+      },
+      `administrator ${monitor.kind.toUpperCase()} Agent service creation`,
+    );
+  }
+  const agentChecks = queryControlDb(
+    `SELECT s.name, c.kind, c.executor_kind, c.executor_agent_id,
+            c.interval_seconds, c.assignment_revision, c.request_json
+     FROM check_configs c JOIN services s ON s.id = c.service_id
+     WHERE c.executor_agent_id = '${agentId}' ORDER BY c.assignment_revision`,
+  );
+  if (
+    agentChecks.length !== 2 ||
+    agentChecks[0].kind !== "tcp" ||
+    agentChecks[1].kind !== "icmp" ||
+    agentChecks.some(
+      (check) =>
+        check.executor_kind !== "agent" ||
+        check.executor_agent_id !== agentId ||
+        check.interval_seconds !== 5 ||
+        check.assignment_revision <= 1,
+    ) ||
+    agentChecks[0].assignment_revision >= agentChecks[1].assignment_revision ||
+    !agentChecks[0].request_json.includes('"port":443') ||
+    !agentChecks[1].request_json.includes('"hostname":"192.0.2.21"')
+  ) {
+    throw new Error("Agent TCP/ICMP checks did not persist their executor, period, or revision");
+  }
+  const desiredRevision = onlyRow(
+    queryControlDb(`SELECT desired_config_revision FROM machines WHERE id = '${machine.id}'`),
+    "Agent assignment revision lookup",
+  );
+  if (desiredRevision.desired_config_revision !== agentChecks[1].assignment_revision) {
+    throw new Error("Agent machine revision did not advance with its assigned checks");
+  }
+
   await submitAction(
     baseUrl,
     "/operations/incidents?/incident",
