@@ -92,6 +92,8 @@ AlphaPing 是面向个人、团队和小型组织的自托管基础设施探针�
 - `maintenance`：处于人工维护窗口，不触发正常告警。
 - `unknown`：从未成功上报或数据无法判断。
 
+V1 默认机器资源阈值：CPU 达到 80% 为 `degraded`、95% 为 `fault`；内存或存储达到 85% 为 `degraded`、95% 为 `fault`。`maintenance` 优先于资源阈值。每次 durable report 只在状态实际变化时写入幂等事件；后续版本可以在不改变 Agent report 协议的前提下增加 workspace 或 machine 级覆盖值。
+
 ### 5.3 Dashboard 总览
 
 总览必须展示：

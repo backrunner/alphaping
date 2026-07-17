@@ -83,7 +83,7 @@ async fn verify_revoked_key(
         root_key,
         nonce_prefix,
     )?;
-    let envelope = codec.encode_report(3, now_ms()?, &report_id, &compressed_payload)?;
+    let envelope = codec.encode_report(4, now_ms()?, &report_id, &compressed_payload)?;
     let response = post_protobuf(client, &format!("{origin}/v1/reports"), envelope).await?;
     if response.status() != StatusCode::NOT_FOUND {
         return Err(invalid_data("revoked Agent key accepted a report").into());
@@ -216,7 +216,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
     let response = post_protobuf(&client, &reports_endpoint, first_envelope.clone()).await?;
     if response.status() != StatusCode::OK {
-        return Err(invalid_data("first durable report was rejected").into());
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(invalid_data(&format!(
+            "first durable report was rejected with {status}: {body}"
+        ))
+        .into());
     }
     let acknowledgement = codec.decode_ack(&response.bytes().await?, 1, &report_id)?;
     if AckStatus::try_from(acknowledgement.status)? != AckStatus::Committed {
@@ -233,12 +238,33 @@ async fn main() -> Result<(), Box<dyn Error>> {
         return Err(invalid_data("idempotent report retry was not classified as duplicate").into());
     }
 
+    let threshold_report_id = vec![0x6b; 16];
+    let threshold_minute = nominal_minute + 60_000;
+    let mut threshold_report = report.clone();
+    threshold_report.report_id.clone_from(&threshold_report_id);
+    threshold_report.nominal_minute_ms = threshold_minute;
+    for (index, sample) in threshold_report.samples.iter_mut().enumerate() {
+        sample.observed_at_ms = threshold_minute + i64::try_from(index)? * 10_000;
+        sample.cpu_permille = 980;
+    }
+    let threshold_payload = compress_message(&threshold_report)?;
+    let threshold_envelope =
+        codec.encode_report(3, now_ms()?, &threshold_report_id, &threshold_payload)?;
+    let response = post_protobuf(&client, &reports_endpoint, threshold_envelope).await?;
+    if response.status() != StatusCode::OK {
+        return Err(invalid_data("threshold report was rejected").into());
+    }
+    let acknowledgement = codec.decode_ack(&response.bytes().await?, 3, &threshold_report_id)?;
+    if AckStatus::try_from(acknowledgement.status)? != AckStatus::Committed {
+        return Err(invalid_data("threshold report was not committed").into());
+    }
+
     let replay = post_protobuf(&client, &reports_endpoint, first_envelope).await?;
     if replay.status() != StatusCode::NOT_FOUND {
         return Err(invalid_data("replayed transport sequence was not rejected").into());
     }
     let mut tampered: EncryptedEnvelope =
-        decode_message(&codec.encode_report(3, now_ms()?, &report_id, &compressed)?)?;
+        decode_message(&codec.encode_report(4, now_ms()?, &report_id, &compressed)?)?;
     let byte = tampered
         .ciphertext
         .last_mut()

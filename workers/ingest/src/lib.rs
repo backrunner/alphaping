@@ -20,6 +20,57 @@ pub const MAX_RUNTIME_COUNT: usize = 16;
 pub const MAX_PROBE_RESULTS: usize = 512;
 pub const MAX_COMMAND_RESULTS: usize = 16;
 pub const MAX_SAFE_SEQUENCE: u64 = 9_007_199_254_740_991;
+pub const CPU_DEGRADED_PERMILLE: u32 = 800;
+pub const CPU_DOWN_PERMILLE: u32 = 950;
+pub const CAPACITY_DEGRADED_PERMILLE: u64 = 850;
+pub const CAPACITY_DOWN_PERMILLE: u64 = 950;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MachineHealthState {
+    Healthy,
+    Degraded,
+    Down,
+    Maintenance,
+}
+
+impl MachineHealthState {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Healthy => "healthy",
+            Self::Degraded => "degraded",
+            Self::Down => "down",
+            Self::Maintenance => "maintenance",
+        }
+    }
+}
+
+fn usage_permille(used: u64, total: u64) -> u64 {
+    if total == 0 {
+        return 0;
+    }
+    used.saturating_mul(1_000) / total
+}
+
+pub fn machine_health_state(sample: &MetricSample, maintenance: bool) -> MachineHealthState {
+    if maintenance {
+        return MachineHealthState::Maintenance;
+    }
+    let memory = usage_permille(sample.memory_used_bytes, sample.memory_total_bytes);
+    let storage = usage_permille(sample.storage_used_bytes, sample.storage_total_bytes);
+    if sample.cpu_permille >= CPU_DOWN_PERMILLE
+        || memory >= CAPACITY_DOWN_PERMILLE
+        || storage >= CAPACITY_DOWN_PERMILLE
+    {
+        MachineHealthState::Down
+    } else if sample.cpu_permille >= CPU_DEGRADED_PERMILLE
+        || memory >= CAPACITY_DEGRADED_PERMILLE
+        || storage >= CAPACITY_DEGRADED_PERMILLE
+    {
+        MachineHealthState::Degraded
+    } else {
+        MachineHealthState::Healthy
+    }
+}
 
 fn looks_like_uuid(value: &str) -> bool {
     value.len() == 36
@@ -141,6 +192,11 @@ pub fn validate_report(
     if report.samples.iter().any(|sample| {
         sample.observed_at_ms < report.nominal_minute_ms
             || sample.observed_at_ms >= report.nominal_minute_ms.saturating_add(60_000)
+            || sample.cpu_permille > 1_000
+            || (sample.memory_total_bytes > 0
+                && sample.memory_used_bytes > sample.memory_total_bytes)
+            || (sample.storage_total_bytes > 0
+                && sample.storage_used_bytes > sample.storage_total_bytes)
     }) {
         return Err(ValidationError::ReportTime);
     }
@@ -278,8 +334,8 @@ mod tests {
     use ed25519_dalek::{Signer, SigningKey};
 
     use super::{
-        EnrollmentValidationError, ValidationError, enrollment_token_digest,
-        validate_enrollment_request, validate_report,
+        EnrollmentValidationError, MachineHealthState, ValidationError, enrollment_token_digest,
+        machine_health_state, validate_enrollment_request, validate_report,
     };
 
     #[test]
@@ -345,6 +401,46 @@ mod tests {
         assert_eq!(
             validate_report(&report, &[2; 16], 7, 2, "agent-1", 180_000),
             Err(ValidationError::ReportIdentity)
+        );
+    }
+
+    #[test]
+    fn machine_thresholds_apply_down_before_degraded_and_maintenance_first() {
+        let sample = MetricSample {
+            cpu_permille: 799,
+            memory_used_bytes: 849,
+            memory_total_bytes: 1_000,
+            storage_used_bytes: 849,
+            storage_total_bytes: 1_000,
+            ..MetricSample::default()
+        };
+        assert_eq!(
+            machine_health_state(&sample, false),
+            MachineHealthState::Healthy
+        );
+        assert_eq!(
+            machine_health_state(
+                &MetricSample {
+                    cpu_permille: 800,
+                    ..sample
+                },
+                false
+            ),
+            MachineHealthState::Degraded
+        );
+        assert_eq!(
+            machine_health_state(
+                &MetricSample {
+                    memory_used_bytes: 950,
+                    ..sample
+                },
+                false
+            ),
+            MachineHealthState::Down
+        );
+        assert_eq!(
+            machine_health_state(&sample, true),
+            MachineHealthState::Maintenance
         );
     }
 }

@@ -160,6 +160,8 @@ Agent local SQLite
 5. TELEMETRY_DB timeout/overloaded/5xx 不 ACK，由 Agent 无限重试。
 6. 不使用 `waitUntil()` 假装关键数据已持久化。
 
+`machine_latest.state` 与机器状态转换事件在同一个 TELEMETRY_DB batch 中更新。V1 默认使用 CPU 80/95%、内存 85/95%、存储 85/95% 的 degraded/down 阈值，maintenance window 优先；状态未变化时不写 event，因此不会增加稳态 rows written。
+
 Live WebSocket 不进入上述确认链：它不删除 SQLite frame/delivery，不认定 report 已存储，也不改变 endpoint backoff。
 
 ## 6. Agent 本地 SQLite

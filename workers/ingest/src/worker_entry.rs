@@ -14,13 +14,13 @@ use worker::{
 };
 
 use crate::{
-    MAX_SAFE_SEQUENCE, MachineRollup,
+    MAX_SAFE_SEQUENCE, MachineHealthState, MachineRollup,
     agent_commands::{load_commands, persist_command_results},
     agent_config::build_config_snapshot,
     check_results::{ProbePersistenceError, persist_probe_results},
     enrollment_token_digest,
     live_session::issue_live_session,
-    validate_enrollment_request, validate_report,
+    machine_health_state, validate_enrollment_request, validate_report,
 };
 
 const MAX_CLOCK_SKEW_MS: i64 = 5 * 60_000;
@@ -33,6 +33,7 @@ struct AgentKeyRow {
     workspace_pk: f64,
     applied_config_revision: f64,
     desired_config_revision: f64,
+    maintenance_until: Option<f64>,
     wrapped_data_key: Vec<u8>,
     nonce_prefix: Vec<u8>,
     valid_from: f64,
@@ -472,6 +473,7 @@ async fn load_agent_key(
         "SELECT m.id AS machine_id, w.id AS workspace_id,
                 m.telemetry_pk AS machine_pk, w.telemetry_pk AS workspace_pk,
                 a.applied_config_revision, m.desired_config_revision,
+                m.maintenance_until,
                 k.wrapped_data_key, k.nonce_prefix,
                 k.valid_from, k.valid_until, m.container_catalog_digest
          FROM agents a
@@ -662,6 +664,7 @@ fn latest_statement(
     db: &D1Database,
     agent_id: &str,
     report: &MachineReport,
+    state: MachineHealthState,
     now: i64,
     previous_container_inventory: Option<&str>,
 ) -> Result<worker::D1PreparedStatement, IngestError> {
@@ -674,7 +677,7 @@ fn latest_statement(
                cpu_permille, memory_used_bytes, memory_total_bytes, storage_used_bytes,
                storage_total_bytes, network_rx_bps, network_tx_bps, network_rx_total,
                network_tx_total, report_id, container_inventory_json)
-             VALUES (?, ?, ?, ?, ?, 'healthy', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(machine_pk) DO UPDATE SET
                workspace_pk = excluded.workspace_pk,
                agent_id = excluded.agent_id,
@@ -702,6 +705,7 @@ fn latest_statement(
             text(agent_id),
             number(latest.observed_at_ms),
             number(now),
+            text(state.as_str()),
             unsigned(u64::from(latest.cpu_permille)),
             unsigned(latest.memory_used_bytes),
             unsigned(latest.memory_total_bytes),
@@ -716,26 +720,35 @@ fn latest_statement(
         ])?)
 }
 
-fn recovery_event_statement(
+fn state_transition_statement(
     db: &D1Database,
     report: &MachineReport,
+    state: MachineHealthState,
     now: i64,
 ) -> Result<worker::D1PreparedStatement, IngestError> {
     let latest = report.samples.last().ok_or(IngestError::BadRequest)?;
+    let reason = match state {
+        MachineHealthState::Healthy => "resource_recovered",
+        MachineHealthState::Degraded | MachineHealthState::Down => "resource_threshold",
+        MachineHealthState::Maintenance => "maintenance_window",
+    };
     Ok(db
         .prepare(
             "INSERT OR IGNORE INTO state_events
               (workspace_pk, resource_type, resource_pk, occurred_at, event_id,
                previous_state, current_state, reason_code)
-             SELECT workspace_pk, 1, machine_pk, ?, ?, 'offline', 'healthy',
-                    'agent_report_received'
+             SELECT workspace_pk, 1, machine_pk, ?, ?, state, ?,
+                    CASE WHEN state = 'offline' THEN 'agent_report_received' ELSE ? END
              FROM machine_latest
-             WHERE machine_pk = ? AND state = 'offline' AND observed_at <= ?",
+             WHERE machine_pk = ? AND state != ? AND observed_at <= ?",
         )
         .bind(&[
             number(now),
             blob(&report.report_id),
+            text(state.as_str()),
+            text(reason),
             unsigned(report.machine_pk),
+            text(state.as_str()),
             number(latest.observed_at_ms),
         ])?)
 }
@@ -893,6 +906,11 @@ async fn durable_ack(
     live_session: Option<alphaping_protocol::v1::LiveSessionCredential>,
 ) -> Result<Response, IngestError> {
     let now = now_ms();
+    let latest_sample = report.samples.last().ok_or(IngestError::BadRequest)?;
+    let maintenance = agent_key
+        .maintenance_until
+        .is_some_and(|until| until as i64 > now);
+    let machine_state = machine_health_state(latest_sample, maintenance);
     let previous_container_inventory = if !duplicate && report.container_inventory.is_some() {
         telemetry_db
             .prepare("SELECT container_inventory_json FROM machine_latest WHERE machine_pk = ?")
@@ -918,11 +936,17 @@ async fn durable_ack(
             hash.as_bytes(),
             compressed_payload,
         )?);
-        statements.push(recovery_event_statement(telemetry_db, report, now)?);
+        statements.push(state_transition_statement(
+            telemetry_db,
+            report,
+            machine_state,
+            now,
+        )?);
         statements.push(latest_statement(
             telemetry_db,
             agent_id,
             report,
+            machine_state,
             now,
             previous_container_inventory.as_deref(),
         )?);

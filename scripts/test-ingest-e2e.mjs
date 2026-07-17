@@ -200,6 +200,31 @@ try {
     "Ingest E2E seed",
     { quiet: true },
   );
+  run(
+    pnpm,
+    [
+      "exec",
+      "wrangler",
+      "d1",
+      "execute",
+      "TELEMETRY_DB",
+      "--local",
+      "--config",
+      config,
+      "--persist-to",
+      persistTo,
+      "--command",
+      `INSERT INTO machine_latest
+        (machine_pk, workspace_pk, agent_id, observed_at, received_at, state,
+         cpu_permille, memory_used_bytes, memory_total_bytes, storage_used_bytes,
+         storage_total_bytes, network_rx_bps, network_tx_bps, network_rx_total,
+         network_tx_total, report_id)
+       VALUES (1, 1, 'previous-agent', ${now - 300_000}, ${now - 300_000}, 'offline',
+         0, 0, 1, 0, 1, 0, 0, 0, 0, X'00000000000000000000000000000000')`,
+    ],
+    "Ingest E2E offline latest seed",
+    { quiet: true },
+  );
 
   const port = await unusedPort();
   const origin = `http://127.0.0.1:${port}`;
@@ -242,27 +267,31 @@ try {
   await waitForServer(origin, processOutput);
 
   const sessionPath = join(temporary, "agent-session.json");
-  run(
-    process.execPath,
-    [
-      resolve(root, "scripts/run-cargo.mjs"),
-      "run",
-      "--quiet",
-      "-p",
-      "alphaping-ingest",
-      "--example",
-      "ingest_e2e_client",
-      "--",
-      "run",
-      origin,
-      token.value,
-      machineId,
-      expiredToken.value,
-      revokedToken.value,
-      sessionPath,
-    ],
-    "Ingest protocol client",
-  );
+  try {
+    run(
+      process.execPath,
+      [
+        resolve(root, "scripts/run-cargo.mjs"),
+        "run",
+        "--quiet",
+        "-p",
+        "alphaping-ingest",
+        "--example",
+        "ingest_e2e_client",
+        "--",
+        "run",
+        origin,
+        token.value,
+        machineId,
+        expiredToken.value,
+        revokedToken.value,
+        sessionPath,
+      ],
+      "Ingest protocol client",
+    );
+  } catch (cause) {
+    throw new Error(`${cause.message}\n${processOutput.text}`.trim(), { cause });
+  }
   run(
     pnpm,
     [
@@ -349,23 +378,31 @@ try {
     "TELEMETRY_DB",
     `SELECT
       (SELECT COUNT(*) FROM telemetry_blocks_5m) AS block_count,
-      (SELECT (report_0 IS NOT NULL) + (report_1 IS NOT NULL) + (report_2 IS NOT NULL) +
-        (report_3 IS NOT NULL) + (report_4 IS NOT NULL) FROM telemetry_blocks_5m LIMIT 1)
+      (SELECT SUM((report_0 IS NOT NULL) + (report_1 IS NOT NULL) + (report_2 IS NOT NULL) +
+        (report_3 IS NOT NULL) + (report_4 IS NOT NULL)) FROM telemetry_blocks_5m)
         AS populated_slots,
       (SELECT cpu_permille FROM machine_latest WHERE machine_pk = 1) AS cpu_permille,
-      (SELECT highest_sequence FROM agent_replay_state LIMIT 1) AS highest_sequence`,
+      (SELECT state FROM machine_latest WHERE machine_pk = 1) AS machine_state,
+      (SELECT highest_sequence FROM agent_replay_state LIMIT 1) AS highest_sequence,
+      (SELECT COUNT(*) FROM state_events WHERE previous_state = 'offline'
+        AND current_state = 'healthy' AND reason_code = 'agent_report_received') AS recovery_events,
+      (SELECT COUNT(*) FROM state_events WHERE previous_state = 'healthy'
+        AND current_state = 'down' AND reason_code = 'resource_threshold') AS threshold_events`,
   );
   if (
-    telemetry?.block_count !== 1 ||
-    telemetry.populated_slots !== 1 ||
-    telemetry.cpu_permille !== 250 ||
-    telemetry.highest_sequence !== 2
+    ![1, 2].includes(telemetry?.block_count) ||
+    telemetry.populated_slots !== 2 ||
+    telemetry.cpu_permille !== 980 ||
+    telemetry.machine_state !== "down" ||
+    telemetry.highest_sequence !== 3 ||
+    telemetry.recovery_events !== 1 ||
+    telemetry.threshold_events !== 1
   ) {
-    throw new Error("durable telemetry block, latest row, or replay state is incorrect");
+    throw new Error("durable telemetry, threshold transitions, or replay state is incorrect");
   }
 
   console.log(
-    "Ingest E2E verified D1 enrollment, wrapped key, block slot, latest, and replay state",
+    "Ingest E2E verified D1 enrollment, block slots, machine transitions, and replay state",
   );
 } finally {
   if (child) await stopServer(child);
