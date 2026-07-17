@@ -385,6 +385,27 @@ export async function runWebManagementE2e({
     queryControlDb("SELECT id FROM services WHERE name = 'AlphaPing API E2E'"),
     "created service lookup",
   );
+  const serviceMaintenanceUntil = Date.now() + 90 * 60_000;
+  await submitAction(
+    baseUrl,
+    `/operations/services/${service.id}?/maintenance`,
+    adminCookie,
+    {
+      maintenanceUntil: dateTimeInput(serviceMaintenanceUntil),
+      timezoneOffsetMinutes: "0",
+    },
+    "administrator service maintenance update",
+  );
+  const maintainedService = onlyRow(
+    queryControlDb(`SELECT maintenance_until FROM services WHERE id = '${service.id}'`),
+    "service maintenance lookup",
+  );
+  if (
+    maintainedService.maintenance_until !==
+    Math.floor(serviceMaintenanceUntil / 60_000) * 60_000
+  ) {
+    throw new Error("service maintenance window was not persisted");
+  }
   const compiledCheck = onlyRow(
     queryControlDb(
       `SELECT request_json, secret_refs_json,
@@ -779,4 +800,46 @@ export async function runWebManagementE2e({
   assertResponse(response, 404, "explicitly denied member machine API");
   response = await fetch(`${baseUrl}/operations/machines/${machine.id}/latest`);
   assertResponse(response, 404, "guest machine API");
+
+  for (const [resourceType, resourceId, path, label] of [
+    ["service", service.id, "services", "service"],
+    ["machine", machine.id, "machines", "machine"],
+  ]) {
+    await submitAction(
+      baseUrl,
+      `/operations/${path}/${resourceId}?/delete`,
+      adminCookie,
+      {},
+      `administrator ${label} soft delete`,
+      { type: "redirect", actionStatus: 303 },
+    );
+    const deleted = onlyRow(
+      queryControlDb(`SELECT deleted_at FROM ${resourceType}s WHERE id = '${resourceId}'`),
+      `${label} soft delete lookup`,
+    );
+    if (deleted.deleted_at === null) throw new Error(`${label} soft delete was not persisted`);
+    response = await fetch(`${baseUrl}/operations/${path}/${resourceId}`, {
+      headers: { cookie: adminCookie },
+    });
+    assertResponse(response, 404, `deleted ${label} detail denial`);
+    const adminPage = await fetch(`${baseUrl}/operations/admin`, {
+      headers: { cookie: adminCookie },
+    });
+    assertResponse(adminPage, 200, "deleted resource administration view");
+    if (!(await adminPage.text()).includes("Recently deleted")) {
+      throw new Error("admin page omitted recoverable resource section");
+    }
+    await submitAction(
+      baseUrl,
+      "/operations/admin?/restoreResource",
+      adminCookie,
+      { resourceType, resourceId },
+      `administrator ${label} restore`,
+    );
+    const restored = onlyRow(
+      queryControlDb(`SELECT deleted_at FROM ${resourceType}s WHERE id = '${resourceId}'`),
+      `${label} restore lookup`,
+    );
+    if (restored.deleted_at !== null) throw new Error(`${label} restore was not persisted`);
+  }
 }

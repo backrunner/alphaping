@@ -41,6 +41,13 @@ export interface EnrollmentTokenSummary {
   state: "active" | "used" | "revoked" | "expired";
 }
 
+export interface DeletedResourceSummary {
+  type: "machine" | "service";
+  id: string;
+  name: string;
+  deletedAt: number;
+}
+
 export interface MachineConfigurationInput {
   name: string;
   expectedHost: string;
@@ -516,4 +523,124 @@ export async function regenerateMachineEnrollmentToken(
     audit,
   ]);
   return { token: enrollment.token, tokenId: enrollment.tokenId, machineId, expiresAt };
+}
+
+type ManagedResourceType = "machine" | "service";
+
+function resourceTable(type: ManagedResourceType): "machines" | "services" {
+  return type === "machine" ? "machines" : "services";
+}
+
+export async function softDeleteResource(
+  db: D1Database,
+  workspaceSlug: string,
+  userId: string,
+  type: ManagedResourceType,
+  resourceId: string,
+): Promise<void> {
+  const access = await loadMonitoringAccess(db, workspaceSlug, userId);
+  requireResourceCapability(access, type, resourceId, "manage");
+  const table = resourceTable(type);
+  const resource = await db
+    .prepare(
+      `SELECT id, name, deleted_at FROM ${table}
+       WHERE id = ? AND workspace_id = ?`,
+    )
+    .bind(resourceId, access.workspaceId)
+    .first<{ id: string; name: string; deleted_at: number | null }>();
+  if (!resource || resource.deleted_at !== null) throw error(404, "Resource not found");
+  const now = Date.now();
+  const audit = await prepareAuditStatement(db, {
+    workspaceId: access.workspaceId,
+    actorUserId: userId,
+    action: `${type}.delete`,
+    resourceType: type,
+    resourceId,
+    before: { name: resource.name, deletedAt: null },
+    after: { name: resource.name, deletedAt: now },
+    now,
+  });
+  await db.batch([
+    db
+      .prepare(
+        `UPDATE ${table} SET deleted_at = ?, updated_at = ? WHERE id = ? AND workspace_id = ?`,
+      )
+      .bind(now, now, resourceId, access.workspaceId),
+    audit,
+  ]);
+}
+
+export async function listDeletedResources(
+  db: D1Database,
+  workspaceSlug: string,
+  userId: string,
+): Promise<readonly DeletedResourceSummary[]> {
+  const access = await loadMonitoringAccess(db, workspaceSlug, userId);
+  requireAdmin(access);
+  const rows = await db
+    .prepare(
+      `SELECT 'machine' AS type, id, name, deleted_at FROM machines
+       WHERE workspace_id = ? AND deleted_at IS NOT NULL
+       UNION ALL
+       SELECT 'service' AS type, id, name, deleted_at FROM services
+       WHERE workspace_id = ? AND deleted_at IS NOT NULL
+       ORDER BY deleted_at DESC LIMIT 100`,
+    )
+    .bind(access.workspaceId, access.workspaceId)
+    .all<{ type: "machine" | "service"; id: string; name: string; deleted_at: number }>();
+  return rows.results.map((row) => ({
+    type: row.type,
+    id: row.id,
+    name: row.name,
+    deletedAt: row.deleted_at,
+  }));
+}
+
+export async function restoreResource(
+  db: D1Database,
+  workspaceSlug: string,
+  userId: string,
+  type: ManagedResourceType,
+  resourceId: string,
+): Promise<void> {
+  const access = await loadMonitoringAccess(db, workspaceSlug, userId);
+  requireAdmin(access);
+  const table = resourceTable(type);
+  const [resource, policy] = await Promise.all([
+    db
+      .prepare(
+        `SELECT id, name, deleted_at FROM ${table}
+         WHERE id = ? AND workspace_id = ? AND deleted_at IS NOT NULL`,
+      )
+      .bind(resourceId, access.workspaceId)
+      .first<{ id: string; name: string; deleted_at: number }>(),
+    db
+      .prepare(`SELECT soft_delete_grace_days FROM retention_policies WHERE workspace_id = ?`)
+      .bind(access.workspaceId)
+      .first<{ soft_delete_grace_days: number }>(),
+  ]);
+  if (!resource) throw error(404, "Resource not found");
+  const graceDays = policy?.soft_delete_grace_days ?? 7;
+  const now = Date.now();
+  if (resource.deleted_at <= now - graceDays * 86_400_000) {
+    throw error(409, "The resource recovery window has expired");
+  }
+  const audit = await prepareAuditStatement(db, {
+    workspaceId: access.workspaceId,
+    actorUserId: userId,
+    action: `${type}.restore`,
+    resourceType: type,
+    resourceId,
+    before: { name: resource.name, deletedAt: resource.deleted_at },
+    after: { name: resource.name, deletedAt: null },
+    now,
+  });
+  await db.batch([
+    db
+      .prepare(
+        `UPDATE ${table} SET deleted_at = NULL, updated_at = ? WHERE id = ? AND workspace_id = ?`,
+      )
+      .bind(now, resourceId, access.workspaceId),
+    audit,
+  ]);
 }

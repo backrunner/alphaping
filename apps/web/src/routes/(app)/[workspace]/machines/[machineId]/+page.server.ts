@@ -7,6 +7,7 @@ import {
   listMachineEnrollmentTokens,
   regenerateMachineEnrollmentToken,
   revokeMachineEnrollmentToken,
+  softDeleteResource,
   updateMachineConfiguration,
 } from "$lib/server/resources";
 
@@ -74,6 +75,22 @@ async function commandAction(
 }
 
 export const actions: Actions = {
+  delete: async ({ locals, params, platform }) => {
+    if (!locals.session || !platform) return fail(401, { message: "Unauthorized" });
+    try {
+      await softDeleteResource(
+        platform.env.CONTROL_DB,
+        params.workspace,
+        locals.session.user.id,
+        "machine",
+        params.machineId,
+      );
+    } catch (cause) {
+      const message = isHttpError(cause) ? cause.body.message : "Machine deletion failed";
+      return fail(isHttpError(cause) ? cause.status : 400, { message });
+    }
+    throw redirect(303, `/${params.workspace}/machines`);
+  },
   regenerateEnrollment: async ({ locals, params, platform }) => {
     if (!locals.session || !platform)
       return fail(401, { kind: "enrollment", message: "Unauthorized" });

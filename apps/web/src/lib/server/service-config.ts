@@ -6,6 +6,7 @@ import {
   requireAdmin,
   requireResourceCapability,
 } from "./monitoring-access.js";
+import { prepareAuditStatement } from "./workspace-admin.js";
 
 export type {
   CreateServiceMonitorInput,
@@ -272,4 +273,46 @@ export async function setServicePublicAccess(
     );
   }
   await db.batch(statements);
+}
+
+export async function setServiceMaintenance(
+  db: D1Database,
+  workspaceSlug: string,
+  userId: string,
+  serviceId: string,
+  maintenanceUntil: number | null,
+): Promise<void> {
+  const access = await loadMonitoringAccess(db, workspaceSlug, userId);
+  requireResourceCapability(access, "service", serviceId, "manage");
+  const service = await db
+    .prepare(
+      `SELECT maintenance_until FROM services
+       WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL`,
+    )
+    .bind(serviceId, access.workspaceId)
+    .first<{ maintenance_until: number | null }>();
+  if (!service) throw error(404, "Service not found");
+  if (maintenanceUntil !== null && (!Number.isInteger(maintenanceUntil) || maintenanceUntil < 0)) {
+    throw error(400, "Maintenance end time is invalid");
+  }
+  const now = Date.now();
+  const audit = await prepareAuditStatement(db, {
+    workspaceId: access.workspaceId,
+    actorUserId: userId,
+    action: "service.maintenance.update",
+    resourceType: "service",
+    resourceId: serviceId,
+    before: { maintenanceUntil: service.maintenance_until },
+    after: { maintenanceUntil },
+    now,
+  });
+  await db.batch([
+    db
+      .prepare(
+        `UPDATE services SET maintenance_until = ?, updated_at = ?
+         WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL`,
+      )
+      .bind(maintenanceUntil, now, serviceId, access.workspaceId),
+    audit,
+  ]);
 }

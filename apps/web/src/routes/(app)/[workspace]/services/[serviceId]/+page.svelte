@@ -1,5 +1,14 @@
 <script lang="ts">
-  import { ArrowLeft, ExternalLink, Globe2, LockKeyhole } from "lucide-svelte";
+  import { onMount } from "svelte";
+  import {
+    ArrowLeft,
+    CalendarClock,
+    ExternalLink,
+    Globe2,
+    LockKeyhole,
+    Save,
+    Trash2,
+  } from "lucide-svelte";
 
   import ServiceCheckList from "$components/services/service-check-list.svelte";
   import ServiceEvents from "$components/services/service-events.svelte";
@@ -8,6 +17,17 @@
   import Button from "$components/ui/button/button.svelte";
 
   let { data, form } = $props();
+  let maintenanceUntil = $state("");
+  let timezoneOffsetMinutes = $state(0);
+
+  onMount(() => {
+    timezoneOffsetMinutes = new Date().getTimezoneOffset();
+    if (data.service.maintenanceUntil !== null) {
+      maintenanceUntil = new Date(data.service.maintenanceUntil - timezoneOffsetMinutes * 60_000)
+        .toISOString()
+        .slice(0, 16);
+    }
+  });
 </script>
 
 <svelte:head><title>{data.service.name} · {data.workspace.name}</title></svelte:head>
@@ -38,11 +58,47 @@
               />Publish{/if}
           </Button>
         </form>
+        <form
+          method="POST"
+          action="?/delete"
+          onsubmit={(event) => {
+            if (
+              !window.confirm(
+                `Delete ${data.service.name}? It can be restored during the recovery window.`,
+              )
+            ) {
+              event.preventDefault();
+            }
+          }}
+        >
+          <Button type="submit" variant="secondary"><Trash2 size={13} />Delete service</Button>
+        </form>
       {/if}
     </div>
   </header>
 
-  {#if form?.message}<p class="form-message" role="alert">{form.message}</p>{/if}
+  {#if form?.message}<p class="form-message form-message--error" role="alert">
+      {form.message}
+    </p>{:else if form?.maintenanceUpdated}<p class="form-message" role="status">
+      Maintenance window updated.
+    </p>{/if}
+
+  {#if data.service.canManage}
+    <section class="maintenance">
+      <div><CalendarClock size={16} /><span>Maintenance window</span></div>
+      <form method="POST" action="?/maintenance">
+        <label
+          ><span>Suppress normal alerts until</span><input
+            type="datetime-local"
+            name="maintenanceUntil"
+            bind:value={maintenanceUntil}
+          /></label
+        >
+        <input type="hidden" name="timezoneOffsetMinutes" value={timezoneOffsetMinutes} />
+        <Button type="submit" variant="secondary"><Save size={13} />Save</Button>
+      </form>
+    </section>
+  {/if}
 
   <ServiceSummary service={data.service} />
   <ServiceCheckList checks={data.checks} />
@@ -120,10 +176,55 @@
   .form-message {
     margin-top: 10px;
     padding: 8px 10px;
-    border: 1px solid var(--status-down);
     border-radius: 6px;
+    color: var(--status-healthy);
+    background: var(--status-healthy-bg);
+    font-size: 10px;
+  }
+
+  .form-message--error {
     color: var(--status-down);
     background: var(--status-down-bg);
+  }
+
+  .maintenance {
+    display: flex;
+    min-height: 58px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding-block: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .maintenance > div,
+  .maintenance form {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .maintenance > div {
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 650;
+  }
+
+  .maintenance label > span {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--text-faint);
+    font-size: 9px;
+  }
+
+  .maintenance input {
+    height: 32px;
+    padding: 0 8px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    color: var(--text);
+    background: var(--surface);
+    font: inherit;
     font-size: 10px;
   }
 
@@ -141,6 +242,11 @@
     .header-actions form:only-child {
       margin-left: auto;
     }
+
+    .maintenance {
+      align-items: flex-start;
+      flex-direction: column;
+    }
   }
 
   @media (max-width: 420px) {
@@ -151,6 +257,16 @@
 
     .header-actions form:only-child {
       margin-left: 0;
+    }
+
+    .maintenance form {
+      width: 100%;
+      align-items: stretch;
+      flex-direction: column;
+    }
+
+    .maintenance input {
+      width: 100%;
     }
   }
 </style>

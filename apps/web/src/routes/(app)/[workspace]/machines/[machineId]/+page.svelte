@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ArrowLeft } from "lucide-svelte";
+  import { ArrowLeft, Trash2 } from "lucide-svelte";
   import type { LiveViewerSnapshot } from "@alphaping/contracts";
   import type { DashboardMachine } from "@alphaping/db";
 
@@ -12,6 +12,7 @@
   import MachineOverview from "$components/machines/machine-overview.svelte";
   import MachineProbes from "$components/machines/machine-probes.svelte";
   import StatusLabel from "$components/status/status-label.svelte";
+  import Button from "$components/ui/button/button.svelte";
   import { formatRelativeTime } from "$lib/utils/format";
 
   let { data, form } = $props();
@@ -81,6 +82,23 @@
     <div class="title-row">
       <h1>{data.machine.name}</h1>
       <StatusLabel status={currentLatest.state} />
+      {#if data.canManage}
+        <form
+          method="POST"
+          action="?/delete"
+          onsubmit={(event) => {
+            if (
+              !window.confirm(
+                `Delete ${data.machine.name}? It can be restored during the recovery window.`,
+              )
+            ) {
+              event.preventDefault();
+            }
+          }}
+        >
+          <Button type="submit" variant="secondary"><Trash2 size={13} />Delete machine</Button>
+        </form>
+      {/if}
     </div>
     <p>
       {data.agent ? `${data.agent.platform} · ${data.agent.arch}` : "Agent not enrolled"}
@@ -171,6 +189,10 @@
     margin-top: 14px;
   }
 
+  .title-row form {
+    margin-left: auto;
+  }
+
   h1,
   p {
     margin: 0;
@@ -226,6 +248,16 @@
   }
 
   @media (max-width: 520px) {
+    .title-row {
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+
+    .title-row form {
+      width: 100%;
+      margin-left: 0;
+    }
+
     .page-header p {
       align-items: flex-start;
       flex-direction: column;

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Server } from "lucide-svelte";
 
+  import DeletedResourceList from "$components/admin/deleted-resource-list.svelte";
   import ServiceMonitorForm from "$components/admin/service-monitor-form.svelte";
   import EnrollmentCommand from "$components/machines/enrollment-command.svelte";
   import Button from "$components/ui/button/button.svelte";
@@ -109,6 +110,7 @@
 
     <div class="service-monitor"><ServiceMonitorForm agents={data.agents} result={form} /></div>
   </div>
+  <DeletedResourceList resources={data.deletedResources} result={form ?? null} />
 </main>
 
 <style>
