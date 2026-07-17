@@ -231,6 +231,20 @@ try {
       throw new Error(`setup page omitted the ${expected} readiness check`);
     }
   }
+  for (const [path, contentType, expected] of [
+    ["/install.sh", "text/x-shellscript; charset=utf-8", "systemctl enable --now"],
+    ["/install.ps1", "text/plain; charset=utf-8", "sc.exe failure AlphaPingAgent"],
+  ]) {
+    response = await fetch(`${baseUrl}${path}`);
+    assertResponse(response, 200, `${path} distribution`);
+    if (
+      response.headers.get("content-type") !== contentType ||
+      response.headers.get("x-content-type-options") !== "nosniff" ||
+      !(await response.text()).includes(expected)
+    ) {
+      throw new Error(`${path} distribution headers or service definition are incorrect`);
+    }
+  }
 
   const setupForm = {
     token: "invalid-setup-token-32-characters",

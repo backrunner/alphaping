@@ -5,6 +5,15 @@ ENDPOINT=""
 MANIFEST_ORIGIN=""
 TOKEN=""
 MACHINE=""
+INSTALL_ROOT=${ALPHAPING_INSTALL_ROOT:-}
+
+case "$INSTALL_ROOT" in
+  ''|/*) ;;
+  *)
+    echo "Install root must be an absolute path" >&2
+    exit 2
+    ;;
+esac
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -71,11 +80,29 @@ LENGTH=$2
 EXPECTED=$3
 DOWNLOAD_URL=$4
 case "$VERSION" in
-  ''|*[!0-9A-Za-z.+_-]*)
+  ''|*[!0-9A-Za-z.+-]*)
     echo "Agent release manifest fields are invalid" >&2
     exit 1
     ;;
 esac
+VERSION_CORE=${VERSION%%-*}
+VERSION_CORE=${VERSION_CORE%%+*}
+OLD_IFS=$IFS
+IFS=.
+set -- $VERSION_CORE
+IFS=$OLD_IFS
+if [ "$#" -ne 3 ]; then
+  echo "Agent release manifest fields are invalid" >&2
+  exit 1
+fi
+for PART in "$@"; do
+  case "$PART" in
+    ''|*[!0-9]*)
+      echo "Agent release manifest fields are invalid" >&2
+      exit 1
+      ;;
+  esac
+done
 case "$LENGTH" in
   ''|*[!0-9]*)
     echo "Agent release manifest fields are invalid" >&2
@@ -112,16 +139,19 @@ if [ "$("$TMP_DIR/alphaping-agent" --version)" != "alphaping-agent $VERSION" ]; 
 fi
 
 if [ "$OS" = "Linux" ]; then
+  BINARY="$INSTALL_ROOT/opt/alphaping/bin/alphaping-agent"
+  CONFIG="$INSTALL_ROOT/etc/alphaping/agent.toml"
+  UNIT="$INSTALL_ROOT/etc/systemd/system/alphaping-agent.service"
   systemctl stop alphaping-agent.service 2>/dev/null || true
-  install -d -m 0755 /opt/alphaping/bin
-  install -d -m 0700 /etc/alphaping /var/lib/alphaping
-  install -m 0755 "$TMP_DIR/alphaping-agent" /opt/alphaping/bin/alphaping-agent
-  /opt/alphaping/bin/alphaping-agent enroll \
+  install -d -m 0755 "$INSTALL_ROOT/opt/alphaping/bin" "$INSTALL_ROOT/etc/systemd/system"
+  install -d -m 0700 "$INSTALL_ROOT/etc/alphaping" "$INSTALL_ROOT/var/lib/alphaping"
+  install -m 0755 "$TMP_DIR/alphaping-agent" "$BINARY"
+  "$BINARY" enroll \
     --endpoint "$ENDPOINT" \
     --machine "$MACHINE" \
     --token "$TOKEN" \
-    --config /etc/alphaping/agent.toml
-  cat >/etc/systemd/system/alphaping-agent.service <<'UNIT'
+    --config "$CONFIG"
+  cat >"$UNIT" <<'UNIT'
 [Unit]
 Description=AlphaPing monitoring agent
 After=network-online.target
@@ -148,16 +178,20 @@ UNIT
   systemctl daemon-reload
   systemctl enable --now alphaping-agent.service
 else
+  BINARY="$INSTALL_ROOT/Library/Application Support/AlphaPing/bin/alphaping-agent"
+  CONFIG="$INSTALL_ROOT/Library/Application Support/AlphaPing/agent.toml"
+  PLIST="$INSTALL_ROOT/Library/LaunchDaemons/top.backrunner.alphaping.agent.plist"
   launchctl bootout system/top.backrunner.alphaping.agent 2>/dev/null || true
-  install -d -m 0700 "/Library/Application Support/AlphaPing"
-  install -d -m 0755 "/Library/Application Support/AlphaPing/bin"
-  install -m 0755 "$TMP_DIR/alphaping-agent" "/Library/Application Support/AlphaPing/bin/alphaping-agent"
-  "/Library/Application Support/AlphaPing/bin/alphaping-agent" enroll \
+  install -d -m 0700 "$INSTALL_ROOT/Library/Application Support/AlphaPing"
+  install -d -m 0755 "$INSTALL_ROOT/Library/Application Support/AlphaPing/bin" \
+    "$INSTALL_ROOT/Library/LaunchDaemons" "$INSTALL_ROOT/Library/Logs/AlphaPing"
+  install -m 0755 "$TMP_DIR/alphaping-agent" "$BINARY"
+  "$BINARY" enroll \
     --endpoint "$ENDPOINT" \
     --machine "$MACHINE" \
     --token "$TOKEN" \
-    --config "/Library/Application Support/AlphaPing/agent.toml"
-  cat >/Library/LaunchDaemons/top.backrunner.alphaping.agent.plist <<'PLIST'
+    --config "$CONFIG"
+  cat >"$PLIST" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -176,9 +210,8 @@ else
 </dict>
 </plist>
 PLIST
-  install -d -m 0755 /Library/Logs/AlphaPing
-  chmod 0600 /Library/LaunchDaemons/top.backrunner.alphaping.agent.plist
-  launchctl bootstrap system /Library/LaunchDaemons/top.backrunner.alphaping.agent.plist
+  chmod 0600 "$PLIST"
+  launchctl bootstrap system "$PLIST"
 fi
 
 echo "AlphaPing Agent installed and started"
