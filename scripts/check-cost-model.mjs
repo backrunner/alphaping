@@ -11,6 +11,7 @@ const WORKERS_INCLUDED_REQUESTS = 10_000_000;
 const WORKERS_REQUEST_PRICE_PER_MILLION = 0.3;
 const DO_INCLUDED_REQUESTS = 1_000_000;
 const DO_REQUEST_PRICE_PER_MILLION = 0.15;
+const R2_INCLUDED_CLASS_A_OPERATIONS = 1_000_000;
 const IMPLEMENTATION_MARGIN = 1.25;
 const REPORTS_PER_MACHINE_7D = 10_080;
 const DASHBOARD_REQUESTS = 144_000;
@@ -22,6 +23,11 @@ const TYPICAL_CONTAINER_COUNT = 10;
 const TYPICAL_REPORT_BYTES = 2 * 1024;
 const MAX_CONTAINER_COUNT = 64;
 const MAX_REPORT_BYTES = 8 * 1024;
+const HOURLY_RUNS = 720;
+const WORKSPACE_RETENTION_CURSOR_WRITES = 9 * HOURLY_RUNS;
+const ARTIFACT_RETENTION_CURSOR_WRITES = 4 * HOURLY_RUNS;
+const FIXED_RETENTION_WRITES = WORKSPACE_RETENTION_CURSOR_WRITES + ARTIFACT_RETENTION_CURSOR_WRITES;
+const R2_ARTIFACT_LIST_OPERATIONS = 2 * HOURLY_RUNS;
 const MACHINE_NON_RAW_STORAGE_GB =
   0.0262 - (REPORTS_PER_MACHINE_7D * TYPICAL_REPORT_BYTES) / 1_000_000_000;
 
@@ -73,7 +79,11 @@ export function estimateScale(
     catalogChangesPerDay *
     30 *
     (Math.min(MAX_CONTAINER_COUNT, containersPerMachine) * 2 + 1);
-  const knownWrites = machines * writesPerMachine() + checks * writesPerCheck() + catalogWrites;
+  const knownWrites =
+    machines * writesPerMachine() +
+    checks * writesPerCheck() +
+    catalogWrites +
+    FIXED_RETENTION_WRITES;
   const budgetedWrites = knownWrites * IMPLEMENTATION_MARGIN;
   const modeledReads =
     DASHBOARD_REQUESTS * (machines + checks) +
@@ -104,6 +114,8 @@ export function estimateScale(
     checks,
     containersPerMachine,
     catalogWrites,
+    fixedRetentionWrites: FIXED_RETENTION_WRITES,
+    r2ClassAOperations: R2_ARTIFACT_LIST_OPERATIONS,
     knownWrites,
     budgetedWrites,
     modeledReads,
@@ -138,6 +150,7 @@ console.table(
     storage: `${scale.storageGb.toFixed(3)} GB`,
     requests: millions(scale.workersRequests),
     liveDoRequests: millions(scale.durableObjectRequests),
+    r2ClassA: millions(scale.r2ClassAOperations),
     overage: `$${scale.platformOverage.toFixed(2)}`,
   })),
 );
@@ -153,6 +166,13 @@ if (baseline.workersRequests !== 4_968_994 || baseline.durableObjectRequests !==
 }
 if (baseline.modeledReads !== 68_360_000) {
   throw new Error(`D1 read ledger drifted: ${baseline.modeledReads}`);
+}
+if (
+  baseline.fixedRetentionWrites !== 9_360 ||
+  baseline.r2ClassAOperations !== 1_440 ||
+  baseline.r2ClassAOperations > R2_INCLUDED_CLASS_A_OPERATIONS
+) {
+  throw new Error("retention operation ledger drifted");
 }
 const maximumContainerDensity = estimateScale(100, 100, {
   containersPerMachine: 64,

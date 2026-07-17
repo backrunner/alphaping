@@ -117,11 +117,13 @@ subtotal                             5,227,200
 Agent executor 即使配置 5/10 秒周期，也把同一 check/minute 的 observation 合并到一个 `check_result_blocks_5m` slot，因此 raw/latest/rollup 写入与 60 秒中央检查相同。Agent path 不写 `last_claimed_slot`，上表把所有检查都按更贵的 central path 计算，属于保守上界；任务创建、重指派和 config revision 写入是低频管理写，不随 probe 周期增长。
 
 ```text
-combined known rows written          9,936,000/month
-25% implementation/retry margin      2,484,000/month
-budgeted total                      12,420,000/month
+machine/check known rows written     9,936,000/month
+fixed retention cursor writes            9,360/month
+combined known rows written          9,945,360/month
+25% implementation/retry margin      2,486,340/month
+budgeted total                      12,431,700/month
 Paid included                       50,000,000/month
-remaining headroom                  37,580,000/month
+remaining headroom                  37,568,300/month
 D1 write overage                          0.00 USD
 ```
 
@@ -219,7 +221,7 @@ Cloudflare 对 DO 入站 WebSocket 消息按 20:1 折算 request；WebSocket upg
 
 | 方案 | 30 machines + 30 checks | 100 machines + 100 checks |
 | --- | ---: | ---: |
-| 按需 10s Live Hub + 60s durable D1 writes | 9.936m | 33.120m |
+| 按需 10s Live Hub + 60s durable D1 writes | 9.945m | 33.129m |
 | 每 10s 全部 durable D1 writes | 28.858m | 96.192m |
 | 每 10s 全部 durable 的估算总费 | 约 5.24 USD | 至少 58.20 USD，未计 storage |
 
@@ -319,10 +321,12 @@ machine reports/check executions      4,320,000 each/month
 machine known D1 writes              15,696,000/month
 check known D1 writes                17,424,000/month
 combined known D1 writes             33,120,000/month
-25% margin                            8,280,000/month
-budgeted D1 writes                   41,400,000/month
+fixed retention cursor writes             9,360/month
+combined deployment writes           33,129,360/month
+25% margin                            8,282,340/month
+budgeted D1 writes                   41,411,700/month
 Paid included                        50,000,000/month
-headroom                              8,600,000/month
+headroom                              8,588,300/month
 ```
 
 Workers requests：
@@ -383,11 +387,11 @@ D1 storage overage at 0.75 USD/GB       4.1048 USD/month
 
 | Machines + checks | D1 known writes | Requests | Target storage | 估算总费 |
 | --- | ---: | ---: | ---: | ---: |
-| 30 + 30 | 9.94m | 1.64m | 约 1.63 GB | 5.00 USD |
-| 100 + 100 | 33.12m | 4.97m | 约 4.28 GB | 5.00-5.45 USD |
-| 150 + 150 | 49.68m | 7.34m | 约 6.17 GB | 约 18.96 USD，含 25% write margin 与保守 CPU |
-| 200 + 200 | 66.24m | 9.72m | 约 8.06 GB | 约 41.59 USD，含 25% write margin 与保守 CPU |
-| 300 + 300 | 99.36m | 14.47m | 约 11.84 GB | 约 88.28 USD，含 25% write margin、请求与保守 CPU |
+| 30 + 30 | 9.945m | 1.64m | 约 1.63 GB | 5.00 USD |
+| 100 + 100 | 33.129m | 4.97m | 约 4.28 GB | 5.00-5.45 USD |
+| 150 + 150 | 49.689m | 7.34m | 约 6.17 GB | 约 18.97 USD，含 25% write margin 与保守 CPU |
+| 200 + 200 | 66.249m | 9.72m | 约 8.06 GB | 约 41.61 USD，含 25% write margin 与保守 CPU |
+| 300 + 300 | 99.369m | 14.47m | 约 11.84 GB | 约 88.30 USD，含 25% write margin、请求与保守 CPU |
 
 增长最终由 D1 rows written 主导，大约在 100+100 之后开始逼近 included 边界。每台 60 秒 machine report 将已知月写入增加 156,960；每个 60 秒 centralized check 因增加可直接查询的 5 分钟 service status bucket，将已知月写入增加 174,240。将 interval 从 60 秒改为 300 秒时，该 check 的执行、CPU 和主要写入约降为五分之一。
 

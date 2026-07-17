@@ -363,14 +363,14 @@ delay = cap(attempt)/2 + random(0, cap(attempt)/2)
 
 ```text
 30 machines + 30 one-minute checks
-known D1 writes                 9.9360m/month
-with 25% margin                12.4200m/month
+known D1 writes                 9.94536m/month
+with 25% margin                12.43170m/month
 Paid included                 50.0000m/month
 expected total                     5.00 USD/month
 
 100 machines + 100 one-minute checks
-known D1 writes                33.120m/month
-with 25% margin                41.400m/month
+known D1 writes                33.12936m/month
+with 25% margin                41.41170m/month
 Paid included                 50.000m/month
 ```
 
