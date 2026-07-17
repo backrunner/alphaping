@@ -9,6 +9,8 @@ export interface CheckConfigRow {
   interval_seconds: number;
   phase_seconds: number;
   timeout_ms: number;
+  retry_count: number;
+  critical: number;
   request_json: string;
   secret_refs_json: string;
   failure_confirmations: number;

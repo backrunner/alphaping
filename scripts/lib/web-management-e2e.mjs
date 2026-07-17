@@ -359,6 +359,8 @@ export async function runWebManagementE2e({
       executorAgentId: "",
       intervalSeconds: "60",
       timeoutMs: "5000",
+      retryCount: "1",
+      critical: "on",
       failureConfirmations: "2",
       recoveryConfirmations: "2",
       url: "https://example.com/health",
@@ -384,7 +386,7 @@ export async function runWebManagementE2e({
     "administrator service creation",
   );
   const service = onlyRow(
-    queryControlDb("SELECT id FROM services WHERE name = 'AlphaPing API E2E'"),
+    queryControlDb("SELECT id, telemetry_pk FROM services WHERE name = 'AlphaPing API E2E'"),
     "created service lookup",
   );
   const serviceMaintenanceUntil = Date.now() + 90 * 60_000;
@@ -408,12 +410,24 @@ export async function runWebManagementE2e({
   ) {
     throw new Error("service maintenance window was not persisted");
   }
+  const maintainedLatest = onlyRow(
+    queryTelemetryDb(
+      `SELECT state, reason_code FROM service_latest WHERE service_pk = ${service.telemetry_pk}`,
+    ),
+    "service maintenance latest lookup",
+  );
+  if (
+    maintainedLatest.state !== "maintenance" ||
+    maintainedLatest.reason_code !== "maintenance_window"
+  ) {
+    throw new Error("service maintenance did not immediately update the public state projection");
+  }
   const compiledCheck = onlyRow(
     queryControlDb(
-      `SELECT request_json, secret_refs_json,
+      `SELECT request_json, secret_refs_json, retry_count, critical,
         (SELECT COUNT(*) FROM check_assertions a WHERE a.check_id = c.id) AS assertion_count,
         (SELECT COUNT(*) FROM check_secrets s WHERE s.workspace_id = c.workspace_id) AS secret_count
-       FROM check_configs c WHERE c.service_id = '${service.id}'`,
+       FROM check_configs c WHERE c.service_id = '${service.id}' AND c.kind = 'http'`,
     ),
     "compiled check lookup",
   );
@@ -424,9 +438,102 @@ export async function runWebManagementE2e({
     compiledCheck.assertion_count !== 1 ||
     compiledCheck.secret_count !== 1 ||
     compiledRequest.maxRedirects !== 1 ||
-    compiledRequest.tlsVerify !== true
+    compiledRequest.tlsVerify !== true ||
+    compiledCheck.retry_count !== 1 ||
+    compiledCheck.critical !== 1
   ) {
     throw new Error("service secret wrapping or assertion persistence is incorrect");
+  }
+
+  await submitAction(
+    baseUrl,
+    `/operations/services/${service.id}?/addCheck`,
+    adminCookie,
+    {
+      checkName: "Public TCP fallback",
+      kind: "tcp",
+      executorKind: "cloudflare",
+      executorAgentId: "",
+      intervalSeconds: "60",
+      timeoutMs: "1500",
+      retryCount: "1",
+      critical: "on",
+      failureConfirmations: "2",
+      recoveryConfirmations: "2",
+      url: "",
+      method: "GET",
+      expectedStatuses: "200",
+      maxRedirects: "3",
+      tlsVerify: "on",
+      degradedAfterMs: "",
+      downAfterMs: "",
+      maxResponseBytes: "65536",
+      requestHeaders: "",
+      secretRequestHeaders: "",
+      requestBody: "",
+      hostname: "example.com",
+      serverName: "",
+      port: "443",
+      useTls: "on",
+      tcpPayload: "",
+      tcpResponsePrefix: "",
+    },
+    "service secondary check creation",
+  );
+  const secondaryCheck = onlyRow(
+    queryControlDb(
+      `SELECT id FROM check_configs WHERE service_id = '${service.id}' AND kind = 'tcp'`,
+    ),
+    "secondary service check lookup",
+  );
+  await submitAction(
+    baseUrl,
+    `/operations/services/${service.id}?/updateCheckPolicy`,
+    adminCookie,
+    {
+      checkId: secondaryCheck.id,
+      enabled: "on",
+      intervalSeconds: "120",
+      timeoutMs: "2000",
+      retryCount: "2",
+      failureConfirmations: "4",
+      recoveryConfirmations: "3",
+    },
+    "secondary service check policy update",
+  );
+  const updatedSecondaryCheck = onlyRow(
+    queryControlDb(
+      `SELECT interval_seconds, timeout_ms, retry_count, failure_confirmations,
+              recovery_confirmations, critical
+       FROM check_configs WHERE id = '${secondaryCheck.id}'`,
+    ),
+    "updated secondary service check lookup",
+  );
+  if (
+    updatedSecondaryCheck.interval_seconds !== 120 ||
+    updatedSecondaryCheck.timeout_ms !== 2000 ||
+    updatedSecondaryCheck.retry_count !== 2 ||
+    updatedSecondaryCheck.failure_confirmations !== 4 ||
+    updatedSecondaryCheck.recovery_confirmations !== 3 ||
+    updatedSecondaryCheck.critical !== 0
+  ) {
+    throw new Error("secondary service check policy was not persisted");
+  }
+  await submitAction(
+    baseUrl,
+    `/operations/services/${service.id}?/deleteCheck`,
+    adminCookie,
+    { checkId: secondaryCheck.id },
+    "secondary service check deletion",
+  );
+  const remainingChecks = onlyRow(
+    queryControlDb(
+      `SELECT COUNT(*) AS count FROM check_configs WHERE service_id = '${service.id}'`,
+    ),
+    "remaining service checks lookup",
+  );
+  if (remainingChecks.count !== 1) {
+    throw new Error("service check deletion did not retain exactly one required check");
   }
 
   for (const monitor of [
@@ -462,6 +569,8 @@ export async function runWebManagementE2e({
         executorAgentId: agentId,
         intervalSeconds: "5",
         timeoutMs: "1000",
+        retryCount: "1",
+        critical: "on",
         failureConfirmations: "2",
         recoveryConfirmations: "2",
         url: "",
@@ -486,7 +595,7 @@ export async function runWebManagementE2e({
     );
   }
   const agentChecks = queryControlDb(
-    `SELECT s.name, c.kind, c.executor_kind, c.executor_agent_id,
+    `SELECT c.id, s.id AS service_id, s.name, c.kind, c.executor_kind, c.executor_agent_id,
             c.interval_seconds, c.assignment_revision, c.request_json
      FROM check_configs c JOIN services s ON s.id = c.service_id
      WHERE c.executor_agent_id = '${agentId}' ORDER BY c.assignment_revision`,
@@ -515,6 +624,73 @@ export async function runWebManagementE2e({
   );
   if (desiredRevision.desired_config_revision !== agentChecks[1].assignment_revision) {
     throw new Error("Agent machine revision did not advance with its assigned checks");
+  }
+  await submitAction(
+    baseUrl,
+    `/operations/services/${agentChecks[1].service_id}?/updateCheckPolicy`,
+    adminCookie,
+    {
+      checkId: agentChecks[1].id,
+      enabled: "on",
+      intervalSeconds: "10",
+      timeoutMs: "1200",
+      retryCount: "2",
+      failureConfirmations: "3",
+      recoveryConfirmations: "2",
+      critical: "on",
+    },
+    "Agent check policy update",
+  );
+  const updatedAgentPolicy = onlyRow(
+    queryControlDb(
+      `SELECT c.assignment_revision, c.interval_seconds, c.retry_count,
+              m.desired_config_revision
+       FROM check_configs c JOIN agents a ON a.id = c.executor_agent_id
+       JOIN machines m ON m.id = a.machine_id WHERE c.id = '${agentChecks[1].id}'`,
+    ),
+    "updated Agent policy revision lookup",
+  );
+  if (
+    updatedAgentPolicy.interval_seconds !== 10 ||
+    updatedAgentPolicy.retry_count !== 2 ||
+    updatedAgentPolicy.assignment_revision <= agentChecks[1].assignment_revision ||
+    updatedAgentPolicy.desired_config_revision !== updatedAgentPolicy.assignment_revision
+  ) {
+    throw new Error("Agent check policy did not advance the authenticated configuration revision");
+  }
+  await submitAction(
+    baseUrl,
+    `/operations/services/${agentChecks[1].service_id}?/delete`,
+    adminCookie,
+    {},
+    "Agent-backed service soft delete",
+    { type: "redirect", actionStatus: 303 },
+  );
+  const deletionRevision = onlyRow(
+    queryControlDb(`SELECT desired_config_revision FROM machines WHERE id = '${machine.id}'`),
+    "Agent service deletion revision lookup",
+  );
+  if (deletionRevision.desired_config_revision !== updatedAgentPolicy.assignment_revision + 1) {
+    throw new Error("Agent service deletion did not advance the removal configuration revision");
+  }
+  await submitAction(
+    baseUrl,
+    "/operations/admin?/restoreResource",
+    adminCookie,
+    { resourceType: "service", resourceId: agentChecks[1].service_id },
+    "Agent-backed service restore",
+  );
+  const restorationRevision = onlyRow(
+    queryControlDb(`SELECT desired_config_revision FROM machines WHERE id = '${machine.id}'`),
+    "Agent service restoration revision lookup",
+  );
+  if (
+    restorationRevision.desired_config_revision !==
+    deletionRevision.desired_config_revision + 1
+  ) {
+    throw new Error(
+      "Agent service restoration did not advance the restored configuration revision",
+    );
   }
 
   await submitAction(

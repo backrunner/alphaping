@@ -26,6 +26,7 @@ struct PreviousCheckRow {
 struct ServiceCheckRow {
     check_pk: f64,
     state: String,
+    critical: f64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -134,8 +135,8 @@ async fn current_state_statements(
         db.prepare(
             "INSERT INTO check_latest
               (check_pk, workspace_pk, service_pk, observed_at, state, latency_ms, failure_code,
-               failure_summary, consecutive_failures, consecutive_successes, result_id)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               failure_summary, consecutive_failures, consecutive_successes, critical, result_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(check_pk) DO UPDATE SET
                workspace_pk = excluded.workspace_pk, service_pk = excluded.service_pk,
                observed_at = excluded.observed_at, state = excluded.state,
@@ -143,6 +144,7 @@ async fn current_state_statements(
                failure_summary = excluded.failure_summary,
                consecutive_failures = excluded.consecutive_failures,
                consecutive_successes = excluded.consecutive_successes,
+               critical = excluded.critical,
                result_id = excluded.result_id
              WHERE excluded.observed_at >= check_latest.observed_at",
         )
@@ -157,11 +159,12 @@ async fn current_state_statements(
             optional_text(confirmed.failure_summary.as_deref()),
             unsigned(u64::from(confirmed.consecutive_failures)),
             unsigned(u64::from(confirmed.consecutive_successes)),
+            unsigned(u64::from(batch.config.critical)),
             blob(&batch.result_id),
         ])?,
     ];
     let checks = db
-        .prepare("SELECT check_pk, state FROM check_latest WHERE service_pk = ?")
+        .prepare("SELECT check_pk, state, critical FROM check_latest WHERE service_pk = ?")
         .bind(&[unsigned(batch.config.service_pk)])?
         .all()
         .await?
@@ -169,9 +172,9 @@ async fn current_state_statements(
     let mut states = checks
         .into_iter()
         .filter(|check| check.check_pk as u64 != batch.config.check_pk)
-        .map(|check| parse_state(&check.state))
+        .map(|check| (parse_state(&check.state), check.critical == 1.0))
         .collect::<Vec<_>>();
-    states.push(confirmed.state);
+    states.push((confirmed.state, batch.config.critical));
     let next_service = service_state(&states, batch.config.maintenance_until, batch.observed_at);
     let previous_service = db
         .prepare("SELECT state FROM service_latest WHERE service_pk = ?")
@@ -233,14 +236,27 @@ fn parse_state(value: &str) -> ResultState {
     }
 }
 
-fn service_state(states: &[ResultState], maintenance_until: Option<i64>, now: i64) -> &'static str {
+fn service_state(
+    states: &[(ResultState, bool)],
+    maintenance_until: Option<i64>,
+    now: i64,
+) -> &'static str {
     if maintenance_until.is_some_and(|until| until > now) {
         "maintenance"
-    } else if states.contains(&ResultState::Down) {
+    } else if states
+        .iter()
+        .any(|(state, critical)| *critical && *state == ResultState::Down)
+    {
         "down"
-    } else if states.contains(&ResultState::Degraded) {
+    } else if states
+        .iter()
+        .any(|(state, _)| matches!(state, ResultState::Down | ResultState::Degraded))
+    {
         "degraded"
-    } else if states.contains(&ResultState::Healthy) {
+    } else if states
+        .iter()
+        .any(|(state, _)| *state == ResultState::Healthy)
+    {
         "healthy"
     } else {
         "unknown"

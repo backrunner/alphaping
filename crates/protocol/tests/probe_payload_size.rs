@@ -17,6 +17,7 @@ fn task(index: u64) -> ProbeTask {
         interval_seconds: 5,
         phase_seconds: (index % 5) as u32,
         timeout_ms: 5_000,
+        retry_count: Some(0),
         request: Some(probe_task::Request::Http(HttpProbeRequest {
             url: format!("https://service-{index}.example.com/health"),
             method: "GET".to_owned(),

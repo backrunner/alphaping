@@ -1,4 +1,4 @@
-import { executeHttp, executeTcp } from "./executor.js";
+import { executeHttp, executeTcp, executeWithRetries } from "./executor.js";
 import { reconcileMachineLiveness } from "./machine-liveness.js";
 import { persistCheckResult } from "./persistence.js";
 import { dueSlot, isDue } from "./schedule.js";
@@ -44,16 +44,16 @@ async function processCheck(env: Env, row: CheckConfigRow, nowMs: number): Promi
   let result;
   try {
     const secrets = await resolveCheckSecrets(env.CONTROL_DB, row, env.CHECK_SECRET_WRAPPING_KEY);
-    result =
+    const execute =
       row.kind === "http"
-        ? await executeHttp(
-            applyHttpSecrets(parseHttpRequest(row.request_json), secrets),
-            row.timeout_ms,
-          )
-        : await executeTcp(
-            applyTcpSecrets(parseTcpRequest(row.request_json), secrets),
-            row.timeout_ms,
-          );
+        ? () =>
+            executeHttp(
+              applyHttpSecrets(parseHttpRequest(row.request_json), secrets),
+              row.timeout_ms,
+            )
+        : () =>
+            executeTcp(applyTcpSecrets(parseTcpRequest(row.request_json), secrets), row.timeout_ms);
+    result = await executeWithRetries(execute, row.retry_count);
   } catch (cause) {
     result = {
       state: "down" as const,
@@ -80,6 +80,7 @@ async function runChecks(env: Env, scheduledAt: number): Promise<void> {
             w.telemetry_pk AS workspace_telemetry_pk, s.telemetry_pk AS service_telemetry_pk,
             s.maintenance_until AS service_maintenance_until,
             c.kind, c.interval_seconds, c.phase_seconds, c.timeout_ms,
+            c.retry_count, c.critical,
             c.request_json, c.secret_refs_json, c.failure_confirmations,
             c.recovery_confirmations, c.last_claimed_slot
      FROM check_configs c

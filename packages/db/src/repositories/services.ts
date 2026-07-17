@@ -96,7 +96,7 @@ async function loadCheckRows(db: D1Database, workspaceId: string): Promise<reado
     await db
       .prepare(
         `SELECT id, telemetry_pk, service_id, name, kind, executor_kind, enabled,
-            interval_seconds, timeout_ms, request_json,
+            interval_seconds, timeout_ms, retry_count, critical, request_json,
             failure_confirmations, recovery_confirmations
      FROM check_configs WHERE workspace_id = ? ORDER BY service_id, created_at LIMIT 1000`,
       )
@@ -203,7 +203,7 @@ async function loadTelemetry(
       : db
           .prepare(
             `SELECT check_pk, observed_at, state, latency_ms, failure_code, failure_summary,
-                  consecutive_failures, consecutive_successes
+                  consecutive_failures, consecutive_successes, critical
            FROM check_latest WHERE workspace_pk = ? AND check_pk IN (${placeholders(checkPks.length)})`,
           )
           .bind(workspacePk, ...checkPks)
@@ -233,10 +233,15 @@ function summarizeService(
   const latestService = telemetry.services.find((row) => row.service_pk === service.telemetry_pk);
   const checkPks = new Set(checks.map((check) => check.telemetry_pk));
   const latestChecks = telemetry.checks.filter((check) => checkPks.has(check.check_pk));
-  const fallbackState = latestChecks.reduce<MonitorState>((worst, check) => {
-    const state = normalizeState(check.state);
-    return stateRank(state) > stateRank(worst) ? state : worst;
-  }, "unknown");
+  const fallbackState: MonitorState = latestChecks.some(
+    (check) => check.critical === 1 && check.state === "down",
+  )
+    ? "down"
+    : latestChecks.some((check) => check.state === "down" || check.state === "degraded")
+      ? "degraded"
+      : latestChecks.some((check) => check.state === "healthy")
+        ? "healthy"
+        : "unknown";
   const serviceBuckets = telemetry.buckets.filter(
     (row) => row.resource_pk === service.telemetry_pk,
   );
@@ -282,8 +287,8 @@ export async function loadServiceCollection(
     canAccessResource(access.workspace.role, access.grants, "service", service.id, "view"),
   );
   const allowedIds = new Set(services.map((service) => service.id));
-  const checks = (await loadCheckRows(controlDb, access.workspace.id)).filter((check) =>
-    allowedIds.has(check.service_id),
+  const checks = (await loadCheckRows(controlDb, access.workspace.id)).filter(
+    (check) => allowedIds.has(check.service_id) && check.enabled === 1,
   );
   const telemetry = await loadTelemetry(
     telemetryDb,
@@ -370,7 +375,13 @@ export async function loadServiceDetail(
       role: access.workspace.role,
     },
     service: {
-      ...summarizeService(service, checks, telemetry, canManage, now),
+      ...summarizeService(
+        service,
+        checks.filter((check) => check.enabled === 1),
+        telemetry,
+        canManage,
+        now,
+      ),
       maintenanceUntil: service.maintenance_until,
       createdAt: service.created_at,
     },
@@ -386,6 +397,8 @@ export async function loadServiceDetail(
         enabled: check.enabled === 1,
         intervalSeconds: check.interval_seconds,
         timeoutMs: check.timeout_ms,
+        retryCount: check.retry_count,
+        critical: check.critical === 1,
         failureConfirmations: check.failure_confirmations,
         recoveryConfirmations: check.recovery_confirmations,
         target: target.target,

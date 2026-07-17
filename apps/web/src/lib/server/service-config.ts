@@ -1,3 +1,4 @@
+import { canAccessResource } from "@alphaping/authz";
 import { error } from "@sveltejs/kit";
 
 import { compileServiceConfig, type CreateServiceMonitorInput } from "./service-config-compiler.js";
@@ -24,6 +25,33 @@ interface AgentRow {
 }
 interface RevisionRow {
   revision: number;
+}
+
+interface ManagedServiceRow {
+  id: string;
+  telemetry_pk: number;
+  name: string;
+  description: string;
+  maintenance_until: number | null;
+}
+
+export interface ServiceCheckAgent {
+  id: string;
+  name: string;
+}
+
+export type AddServiceCheckInput = Omit<CreateServiceMonitorInput, "name" | "description"> & {
+  checkName: string;
+};
+
+export interface UpdateServiceCheckPolicyInput {
+  enabled: boolean;
+  intervalSeconds: number;
+  timeoutMs: number;
+  retryCount: number;
+  failureConfirmations: number;
+  recoveryConfirmations: number;
+  critical: boolean;
 }
 
 async function nextSequence(db: D1Database, kind: "service" | "check"): Promise<number> {
@@ -63,6 +91,26 @@ async function availableSlug(db: D1Database, workspaceId: string, name: string):
   throw error(409, "A unique service slug could not be generated");
 }
 
+function configurationBytes(compiled: Awaited<ReturnType<typeof compileServiceConfig>>): number {
+  return (
+    new TextEncoder().encode(JSON.stringify(compiled.request)).byteLength +
+    compiled.secrets.reduce((total, secret) => total + secret.wrappedValue.byteLength, 0) +
+    512
+  );
+}
+
+function boundedPolicyInteger(
+  value: number,
+  minimum: number,
+  maximum: number,
+  label: string,
+): number {
+  if (!Number.isInteger(value) || value < minimum || value > maximum) {
+    throw error(400, `${label} must be between ${minimum} and ${maximum}`);
+  }
+  return value;
+}
+
 export async function createServiceMonitor(
   db: D1Database,
   workspaceSlug: string,
@@ -94,10 +142,7 @@ export async function createServiceMonitor(
     throw error(409, "An Agent can run at most 32 enabled checks");
   }
   const compiled = await compileServiceConfig(input, access.workspaceId, wrappingKey);
-  const configBytes =
-    new TextEncoder().encode(JSON.stringify(compiled.request)).byteLength +
-    compiled.secrets.reduce((total, secret) => total + secret.wrappedValue.byteLength, 0) +
-    512;
+  const configBytes = configurationBytes(compiled);
   if (agent && agent.config_bytes + configBytes > 44 * 1024) {
     throw error(409, "The Agent configuration has reached its encrypted snapshot size limit");
   }
@@ -150,9 +195,10 @@ export async function createServiceMonitor(
         `INSERT INTO check_configs
         (id, telemetry_pk, workspace_id, service_id, name, kind, executor_kind,
          executor_agent_id, assignment_revision, enabled, interval_seconds, phase_seconds, timeout_ms,
-         request_json, secret_refs_json, failure_confirmations, recovery_confirmations,
+         retry_count, critical, request_json, secret_refs_json,
+         failure_confirmations, recovery_confirmations,
          config_bytes, last_claimed_slot, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
       )
       .bind(
         checkId,
@@ -167,6 +213,8 @@ export async function createServiceMonitor(
         input.intervalSeconds,
         checkPk % input.intervalSeconds,
         input.timeoutMs,
+        input.retryCount,
+        input.critical ? 1 : 0,
         JSON.stringify(compiled.request),
         JSON.stringify(compiled.secretRefs),
         input.failureConfirmations,
@@ -222,8 +270,557 @@ export async function createServiceMonitor(
         .bind(secret.id, access.workspaceId, secret.name, secret.wrappedValue, secret.nonce, now),
     );
   }
+  statements.push(
+    await prepareAuditStatement(db, {
+      workspaceId: access.workspaceId,
+      actorUserId: userId,
+      action: "service.create",
+      resourceType: "service",
+      resourceId: serviceId,
+      before: null,
+      after: {
+        name: input.name,
+        description: input.description,
+        checkId,
+        kind: input.kind,
+        executorKind: input.executorKind,
+      },
+      now,
+    }),
+  );
   await db.batch(statements);
   return { serviceId };
+}
+
+export async function listServiceCheckAgents(
+  db: D1Database,
+  workspaceSlug: string,
+  userId: string,
+  serviceId: string,
+): Promise<readonly ServiceCheckAgent[]> {
+  const access = await loadMonitoringAccess(db, workspaceSlug, userId);
+  requireResourceCapability(access, "service", serviceId, "manage");
+  const service = await db
+    .prepare(`SELECT id FROM services WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL`)
+    .bind(serviceId, access.workspaceId)
+    .first<{ id: string }>();
+  if (!service) throw error(404, "Service not found");
+  const agents = await db
+    .prepare(
+      `SELECT a.id, a.machine_id, m.name FROM agents a
+       JOIN machines m ON m.id = a.machine_id
+       WHERE a.workspace_id = ? AND a.status = 'active' AND m.deleted_at IS NULL
+       ORDER BY m.name LIMIT 200`,
+    )
+    .bind(access.workspaceId)
+    .all<{ id: string; machine_id: string; name: string }>();
+  return agents.results
+    .filter((agent) =>
+      canAccessResource(access.role, access.grants, "machine", agent.machine_id, "view"),
+    )
+    .map((agent) => ({ id: agent.id, name: agent.name }));
+}
+
+export async function addServiceCheck(
+  db: D1Database,
+  workspaceSlug: string,
+  userId: string,
+  wrappingKey: string,
+  serviceId: string,
+  input: AddServiceCheckInput,
+): Promise<{ checkId: string }> {
+  const access = await loadMonitoringAccess(db, workspaceSlug, userId);
+  requireResourceCapability(access, "service", serviceId, "manage");
+  const service = await db
+    .prepare(
+      `SELECT id, telemetry_pk, name, description, maintenance_until FROM services
+       WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL`,
+    )
+    .bind(serviceId, access.workspaceId)
+    .first<ManagedServiceRow>();
+  if (!service) throw error(404, "Service not found");
+  const checkName = input.checkName.trim();
+  if (checkName.length < 2 || checkName.length > 80) throw error(400, "Check name is invalid");
+  const agent =
+    input.executorKind === "agent"
+      ? await db
+          .prepare(
+            `SELECT a.id, a.machine_id,
+                    (SELECT COUNT(*) FROM check_configs c
+                     WHERE c.executor_agent_id = a.id AND c.enabled = 1) AS probe_count,
+                    (SELECT COALESCE(SUM(c.config_bytes), 0) FROM check_configs c
+                     WHERE c.executor_agent_id = a.id AND c.enabled = 1) AS config_bytes
+             FROM agents a
+             WHERE a.id = ? AND a.workspace_id = ? AND a.status = 'active'`,
+          )
+          .bind(input.executorAgentId, access.workspaceId)
+          .first<AgentRow>()
+      : null;
+  if (
+    input.executorKind === "agent" &&
+    (!agent || !canAccessResource(access.role, access.grants, "machine", agent.machine_id, "view"))
+  ) {
+    throw error(400, "A valid Agent executor is required");
+  }
+  if (agent && agent.probe_count >= 32) {
+    throw error(409, "An Agent can run at most 32 enabled checks");
+  }
+  const compiled = await compileServiceConfig(
+    { ...input, name: service.name, description: service.description },
+    access.workspaceId,
+    wrappingKey,
+  );
+  const configBytes = configurationBytes(compiled);
+  if (agent && agent.config_bytes + configBytes > 44 * 1024) {
+    throw error(409, "The Agent configuration has reached its encrypted snapshot size limit");
+  }
+  const checkPk = await nextSequence(db, "check");
+  const checkId = crypto.randomUUID();
+  const now = Date.now();
+  const assignmentRevision = agent
+    ? await db
+        .prepare(
+          `UPDATE machines
+           SET desired_config_revision = desired_config_revision + 1, updated_at = ?
+           WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL
+           RETURNING desired_config_revision AS revision`,
+        )
+        .bind(now, agent.machine_id, access.workspaceId)
+        .first<RevisionRow>()
+    : { revision: 0 };
+  if (!assignmentRevision) {
+    throw error(409, "The Agent machine configuration could not be advanced");
+  }
+  const statements: D1PreparedStatement[] = [
+    db
+      .prepare(
+        `INSERT INTO check_configs
+          (id, telemetry_pk, workspace_id, service_id, name, kind, executor_kind,
+           executor_agent_id, assignment_revision, enabled, interval_seconds, phase_seconds,
+           timeout_ms, retry_count, critical, request_json, secret_refs_json,
+           failure_confirmations, recovery_confirmations, config_bytes, last_claimed_slot,
+           created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+      )
+      .bind(
+        checkId,
+        checkPk,
+        access.workspaceId,
+        serviceId,
+        checkName,
+        input.kind,
+        input.executorKind,
+        input.executorKind === "agent" ? input.executorAgentId : null,
+        assignmentRevision.revision,
+        input.intervalSeconds,
+        checkPk % input.intervalSeconds,
+        input.timeoutMs,
+        input.retryCount,
+        input.critical ? 1 : 0,
+        JSON.stringify(compiled.request),
+        JSON.stringify(compiled.secretRefs),
+        input.failureConfirmations,
+        input.recoveryConfirmations,
+        configBytes,
+        now,
+        now,
+      ),
+  ];
+  for (const [index, assertion] of compiled.assertions.entries()) {
+    statements.push(
+      db
+        .prepare(
+          `INSERT INTO check_assertions
+            (id, check_id, sort_order, source, operator, selector, expected_json, severity, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(
+          crypto.randomUUID(),
+          checkId,
+          index,
+          assertion.source,
+          assertion.operator,
+          assertion.selector,
+          JSON.stringify(assertion.expected),
+          assertion.severity,
+          now,
+        ),
+    );
+  }
+  for (const secret of compiled.secrets) {
+    statements.push(
+      db
+        .prepare(
+          `INSERT INTO check_secrets
+            (id, workspace_id, name, wrapped_value, wrapping_key_id, nonce, created_at)
+           VALUES (?, ?, ?, ?, 'v1', ?, ?)`,
+        )
+        .bind(secret.id, access.workspaceId, secret.name, secret.wrappedValue, secret.nonce, now),
+    );
+  }
+  statements.push(
+    await prepareAuditStatement(db, {
+      workspaceId: access.workspaceId,
+      actorUserId: userId,
+      action: "service.check.create",
+      resourceType: "service",
+      resourceId: serviceId,
+      before: null,
+      after: {
+        checkId,
+        checkName,
+        kind: input.kind,
+        executorKind: input.executorKind,
+        critical: input.critical,
+      },
+      now,
+    }),
+  );
+  await db.batch(statements);
+  return { checkId };
+}
+
+interface CheckPolicyRow {
+  id: string;
+  telemetry_pk: number;
+  service_telemetry_pk: number;
+  workspace_telemetry_pk: number;
+  machine_id: string | null;
+  executor_agent_id: string | null;
+  executor_kind: "cloudflare" | "agent";
+  enabled: number;
+  interval_seconds: number;
+  timeout_ms: number;
+  retry_count: number;
+  failure_confirmations: number;
+  recovery_confirmations: number;
+  critical: number;
+  config_bytes: number;
+  secret_refs_json: string;
+  assignment_revision: number;
+  maintenance_until: number | null;
+}
+
+function aggregateServiceState(
+  checks: readonly { state: string; critical: number }[],
+  maintenanceUntil: number | null,
+  now: number,
+): "healthy" | "degraded" | "down" | "maintenance" | "unknown" {
+  if (maintenanceUntil !== null && maintenanceUntil > now) return "maintenance";
+  if (checks.some((check) => check.critical === 1 && check.state === "down")) return "down";
+  if (checks.some((check) => check.state === "down" || check.state === "degraded")) {
+    return "degraded";
+  }
+  if (checks.some((check) => check.state === "healthy")) return "healthy";
+  return "unknown";
+}
+
+async function synchronizeCheckPolicyTelemetry(
+  db: D1Database,
+  row: CheckPolicyRow,
+  input: UpdateServiceCheckPolicyInput,
+  now: number,
+): Promise<void> {
+  if (input.enabled) {
+    await db
+      .prepare(`UPDATE check_latest SET critical = ? WHERE check_pk = ?`)
+      .bind(input.critical ? 1 : 0, row.telemetry_pk)
+      .run();
+  } else {
+    await db.prepare(`DELETE FROM check_latest WHERE check_pk = ?`).bind(row.telemetry_pk).run();
+  }
+  const [checks, previous] = await Promise.all([
+    db
+      .prepare(`SELECT state, critical FROM check_latest WHERE service_pk = ?`)
+      .bind(row.service_telemetry_pk)
+      .all<{ state: string; critical: number }>(),
+    db
+      .prepare(`SELECT state FROM service_latest WHERE service_pk = ?`)
+      .bind(row.service_telemetry_pk)
+      .first<{ state: string }>(),
+  ]);
+  const state = aggregateServiceState(checks.results, row.maintenance_until, now);
+  if (previous?.state === state) return;
+  const reason = state === "maintenance" ? "maintenance_window" : "check_configuration";
+  const eventId = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(`${row.id}:${now}:policy`),
+  );
+  await db.batch([
+    db
+      .prepare(
+        `INSERT INTO service_latest
+          (service_pk, workspace_pk, state, status_since, reason_code, last_transition_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(service_pk) DO UPDATE SET
+           workspace_pk = excluded.workspace_pk, state = excluded.state,
+           status_since = excluded.status_since, reason_code = excluded.reason_code,
+           last_transition_at = excluded.last_transition_at, updated_at = excluded.updated_at`,
+      )
+      .bind(row.service_telemetry_pk, row.workspace_telemetry_pk, state, now, reason, now, now),
+    db
+      .prepare(
+        `INSERT OR IGNORE INTO state_events
+          (workspace_pk, resource_type, resource_pk, occurred_at, event_id,
+           previous_state, current_state, reason_code)
+         VALUES (?, 2, ?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        row.workspace_telemetry_pk,
+        row.service_telemetry_pk,
+        now,
+        eventId,
+        previous?.state ?? "unknown",
+        state,
+        reason,
+      ),
+  ]);
+}
+
+export async function updateServiceCheckPolicy(
+  controlDb: D1Database,
+  telemetryDb: D1Database,
+  workspaceSlug: string,
+  userId: string,
+  serviceId: string,
+  checkId: string,
+  input: UpdateServiceCheckPolicyInput,
+): Promise<void> {
+  const access = await loadMonitoringAccess(controlDb, workspaceSlug, userId);
+  requireResourceCapability(access, "service", serviceId, "manage");
+  const row = await controlDb
+    .prepare(
+      `SELECT c.id, c.telemetry_pk, s.telemetry_pk AS service_telemetry_pk,
+              w.telemetry_pk AS workspace_telemetry_pk, a.machine_id, c.executor_agent_id,
+              c.executor_kind,
+              c.enabled, c.interval_seconds, c.timeout_ms, c.retry_count,
+              c.failure_confirmations, c.recovery_confirmations, c.critical,
+              c.config_bytes, c.secret_refs_json, c.assignment_revision, s.maintenance_until
+       FROM check_configs c
+       JOIN services s ON s.id = c.service_id AND s.deleted_at IS NULL
+       JOIN workspaces w ON w.id = c.workspace_id AND w.deleted_at IS NULL
+       LEFT JOIN agents a ON a.id = c.executor_agent_id
+       WHERE c.id = ? AND c.service_id = ? AND c.workspace_id = ?`,
+    )
+    .bind(checkId, serviceId, access.workspaceId)
+    .first<CheckPolicyRow>();
+  if (!row) throw error(404, "Check not found");
+  const minimumInterval = row.executor_kind === "cloudflare" ? 60 : 5;
+  boundedPolicyInteger(input.intervalSeconds, minimumInterval, 86_400, "Check interval");
+  boundedPolicyInteger(input.timeoutMs, 100, 30_000, "Timeout");
+  boundedPolicyInteger(input.retryCount, 0, 3, "Retry count");
+  boundedPolicyInteger(input.failureConfirmations, 1, 20, "Failure confirmations");
+  boundedPolicyInteger(input.recoveryConfirmations, 1, 20, "Recovery confirmations");
+  if (row.enabled === 1 && !input.enabled) {
+    const remaining = await controlDb
+      .prepare(
+        `SELECT COUNT(*) AS count FROM check_configs
+         WHERE service_id = ? AND workspace_id = ? AND enabled = 1 AND id != ?`,
+      )
+      .bind(serviceId, access.workspaceId, checkId)
+      .first<{ count: number }>();
+    if (!remaining || remaining.count === 0) {
+      throw error(409, "A service must keep at least one enabled check");
+    }
+  }
+  if (row.executor_kind === "agent" && row.enabled === 0 && input.enabled) {
+    if (!row.machine_id || !row.executor_agent_id) {
+      throw error(409, "The Agent executor is unavailable");
+    }
+    const capacity = await controlDb
+      .prepare(
+        `SELECT COUNT(*) AS probe_count, COALESCE(SUM(config_bytes), 0) AS config_bytes
+         FROM check_configs
+         WHERE executor_agent_id = ? AND enabled = 1`,
+      )
+      .bind(row.executor_agent_id)
+      .first<{ probe_count: number; config_bytes: number }>();
+    if (!capacity || capacity.probe_count >= 32) {
+      throw error(409, "An Agent can run at most 32 enabled checks");
+    }
+    if (capacity.config_bytes + row.config_bytes > 44 * 1024) {
+      throw error(409, "The Agent configuration has reached its encrypted snapshot size limit");
+    }
+  }
+  const now = Date.now();
+  let assignmentRevision = row.assignment_revision;
+  if (row.executor_kind === "agent") {
+    if (!row.machine_id) throw error(409, "The Agent executor is unavailable");
+    const revision = await controlDb
+      .prepare(
+        `UPDATE machines SET desired_config_revision = desired_config_revision + 1, updated_at = ?
+         WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL
+         RETURNING desired_config_revision AS revision`,
+      )
+      .bind(now, row.machine_id, access.workspaceId)
+      .first<RevisionRow>();
+    if (!revision) throw error(409, "The Agent machine configuration could not be advanced");
+    assignmentRevision = revision.revision;
+  }
+  const before = {
+    enabled: row.enabled === 1,
+    intervalSeconds: row.interval_seconds,
+    timeoutMs: row.timeout_ms,
+    retryCount: row.retry_count,
+    failureConfirmations: row.failure_confirmations,
+    recoveryConfirmations: row.recovery_confirmations,
+    critical: row.critical === 1,
+    assignmentRevision: row.assignment_revision,
+  };
+  const after = { ...input, assignmentRevision };
+  await controlDb.batch([
+    controlDb
+      .prepare(
+        `UPDATE check_configs SET enabled = ?, interval_seconds = ?, phase_seconds = ?,
+           timeout_ms = ?, retry_count = ?, failure_confirmations = ?,
+           recovery_confirmations = ?, critical = ?, assignment_revision = ?, updated_at = ?
+         WHERE id = ? AND service_id = ? AND workspace_id = ?`,
+      )
+      .bind(
+        input.enabled ? 1 : 0,
+        input.intervalSeconds,
+        row.telemetry_pk % input.intervalSeconds,
+        input.timeoutMs,
+        input.retryCount,
+        input.failureConfirmations,
+        input.recoveryConfirmations,
+        input.critical ? 1 : 0,
+        assignmentRevision,
+        now,
+        checkId,
+        serviceId,
+        access.workspaceId,
+      ),
+    await prepareAuditStatement(controlDb, {
+      workspaceId: access.workspaceId,
+      actorUserId: userId,
+      action: "service.check.policy.update",
+      resourceType: "service",
+      resourceId: serviceId,
+      before,
+      after,
+      now,
+    }),
+  ]);
+  await synchronizeCheckPolicyTelemetry(telemetryDb, row, input, now);
+}
+
+function referencedSecretIds(value: string): readonly string[] {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return [];
+    const config = parsed as Readonly<Record<string, unknown>>;
+    const headers =
+      typeof config.headers === "object" &&
+      config.headers !== null &&
+      !Array.isArray(config.headers)
+        ? Object.values(config.headers as Readonly<Record<string, unknown>>)
+        : [];
+    return [config.body, config.tcpPayload, ...headers].filter(
+      (id): id is string => typeof id === "string" && id.length > 0,
+    );
+  } catch {
+    return [];
+  }
+}
+
+export async function deleteServiceCheck(
+  controlDb: D1Database,
+  telemetryDb: D1Database,
+  workspaceSlug: string,
+  userId: string,
+  serviceId: string,
+  checkId: string,
+): Promise<void> {
+  const access = await loadMonitoringAccess(controlDb, workspaceSlug, userId);
+  requireResourceCapability(access, "service", serviceId, "manage");
+  const [row, count] = await Promise.all([
+    controlDb
+      .prepare(
+        `SELECT c.id, c.telemetry_pk, s.telemetry_pk AS service_telemetry_pk,
+                w.telemetry_pk AS workspace_telemetry_pk, a.machine_id, c.executor_agent_id,
+                c.executor_kind, c.enabled, c.interval_seconds, c.timeout_ms, c.retry_count,
+                c.failure_confirmations, c.recovery_confirmations, c.critical,
+                c.config_bytes, c.secret_refs_json, c.assignment_revision, s.maintenance_until
+         FROM check_configs c
+         JOIN services s ON s.id = c.service_id AND s.deleted_at IS NULL
+         JOIN workspaces w ON w.id = c.workspace_id AND w.deleted_at IS NULL
+         LEFT JOIN agents a ON a.id = c.executor_agent_id
+         WHERE c.id = ? AND c.service_id = ? AND c.workspace_id = ?`,
+      )
+      .bind(checkId, serviceId, access.workspaceId)
+      .first<CheckPolicyRow>(),
+    controlDb
+      .prepare(
+        `SELECT COUNT(*) AS count FROM check_configs
+         WHERE service_id = ? AND workspace_id = ?`,
+      )
+      .bind(serviceId, access.workspaceId)
+      .first<{ count: number }>(),
+  ]);
+  if (!row) throw error(404, "Check not found");
+  if (!count || count.count <= 1) throw error(409, "A service must keep at least one check");
+  const now = Date.now();
+  if (row.executor_kind === "agent") {
+    if (!row.machine_id) throw error(409, "The Agent executor is unavailable");
+    const revision = await controlDb
+      .prepare(
+        `UPDATE machines SET desired_config_revision = desired_config_revision + 1, updated_at = ?
+         WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL
+         RETURNING desired_config_revision AS revision`,
+      )
+      .bind(now, row.machine_id, access.workspaceId)
+      .first<RevisionRow>();
+    if (!revision) throw error(409, "The Agent machine configuration could not be advanced");
+  }
+  const secretIds = referencedSecretIds(row.secret_refs_json);
+  const statements: D1PreparedStatement[] = [
+    controlDb
+      .prepare(`DELETE FROM check_configs WHERE id = ? AND service_id = ? AND workspace_id = ?`)
+      .bind(checkId, serviceId, access.workspaceId),
+  ];
+  if (secretIds.length > 0) {
+    statements.push(
+      controlDb
+        .prepare(
+          `DELETE FROM check_secrets WHERE workspace_id = ?
+           AND id IN (${secretIds.map(() => "?").join(", ")})`,
+        )
+        .bind(access.workspaceId, ...secretIds),
+    );
+  }
+  statements.push(
+    await prepareAuditStatement(controlDb, {
+      workspaceId: access.workspaceId,
+      actorUserId: userId,
+      action: "service.check.delete",
+      resourceType: "service",
+      resourceId: serviceId,
+      before: {
+        checkId,
+        enabled: row.enabled === 1,
+        executorKind: row.executor_kind,
+        critical: row.critical === 1,
+      },
+      after: null,
+      now,
+    }),
+  );
+  await controlDb.batch(statements);
+  await synchronizeCheckPolicyTelemetry(
+    telemetryDb,
+    row,
+    {
+      enabled: false,
+      intervalSeconds: row.interval_seconds,
+      timeoutMs: row.timeout_ms,
+      retryCount: row.retry_count,
+      failureConfirmations: row.failure_confirmations,
+      recoveryConfirmations: row.recovery_confirmations,
+      critical: row.critical === 1,
+    },
+    now,
+  );
 }
 
 export async function setServicePublicAccess(
@@ -276,27 +873,33 @@ export async function setServicePublicAccess(
 }
 
 export async function setServiceMaintenance(
-  db: D1Database,
+  controlDb: D1Database,
+  telemetryDb: D1Database,
   workspaceSlug: string,
   userId: string,
   serviceId: string,
   maintenanceUntil: number | null,
 ): Promise<void> {
-  const access = await loadMonitoringAccess(db, workspaceSlug, userId);
+  const access = await loadMonitoringAccess(controlDb, workspaceSlug, userId);
   requireResourceCapability(access, "service", serviceId, "manage");
-  const service = await db
+  const service = await controlDb
     .prepare(
-      `SELECT maintenance_until FROM services
-       WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL`,
+      `SELECT s.maintenance_until, s.telemetry_pk, w.telemetry_pk AS workspace_telemetry_pk
+       FROM services s JOIN workspaces w ON w.id = s.workspace_id
+       WHERE s.id = ? AND s.workspace_id = ? AND s.deleted_at IS NULL`,
     )
     .bind(serviceId, access.workspaceId)
-    .first<{ maintenance_until: number | null }>();
+    .first<{
+      maintenance_until: number | null;
+      telemetry_pk: number;
+      workspace_telemetry_pk: number;
+    }>();
   if (!service) throw error(404, "Service not found");
   if (maintenanceUntil !== null && (!Number.isInteger(maintenanceUntil) || maintenanceUntil < 0)) {
     throw error(400, "Maintenance end time is invalid");
   }
   const now = Date.now();
-  const audit = await prepareAuditStatement(db, {
+  const audit = await prepareAuditStatement(controlDb, {
     workspaceId: access.workspaceId,
     actorUserId: userId,
     action: "service.maintenance.update",
@@ -306,13 +909,59 @@ export async function setServiceMaintenance(
     after: { maintenanceUntil },
     now,
   });
-  await db.batch([
-    db
+  await controlDb.batch([
+    controlDb
       .prepare(
         `UPDATE services SET maintenance_until = ?, updated_at = ?
          WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL`,
       )
       .bind(maintenanceUntil, now, serviceId, access.workspaceId),
     audit,
+  ]);
+  const [checks, previous] = await Promise.all([
+    telemetryDb
+      .prepare(`SELECT state, critical FROM check_latest WHERE service_pk = ?`)
+      .bind(service.telemetry_pk)
+      .all<{ state: string; critical: number }>(),
+    telemetryDb
+      .prepare(`SELECT state FROM service_latest WHERE service_pk = ?`)
+      .bind(service.telemetry_pk)
+      .first<{ state: string }>(),
+  ]);
+  const state = aggregateServiceState(checks.results, maintenanceUntil, now);
+  if (previous?.state === state) return;
+  const reason = state === "maintenance" ? "maintenance_window" : "maintenance_window_ended";
+  const eventId = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(`${serviceId}:${now}:maintenance`),
+  );
+  await telemetryDb.batch([
+    telemetryDb
+      .prepare(
+        `INSERT INTO service_latest
+          (service_pk, workspace_pk, state, status_since, reason_code, last_transition_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(service_pk) DO UPDATE SET
+           workspace_pk = excluded.workspace_pk, state = excluded.state,
+           status_since = excluded.status_since, reason_code = excluded.reason_code,
+           last_transition_at = excluded.last_transition_at, updated_at = excluded.updated_at`,
+      )
+      .bind(service.telemetry_pk, service.workspace_telemetry_pk, state, now, reason, now, now),
+    telemetryDb
+      .prepare(
+        `INSERT OR IGNORE INTO state_events
+          (workspace_pk, resource_type, resource_pk, occurred_at, event_id,
+           previous_state, current_state, reason_code)
+         VALUES (?, 2, ?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        service.workspace_telemetry_pk,
+        service.telemetry_pk,
+        now,
+        eventId,
+        previous?.state ?? "unknown",
+        state,
+        reason,
+      ),
   ]);
 }

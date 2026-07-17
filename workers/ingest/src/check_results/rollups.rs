@@ -203,7 +203,11 @@ fn status_bucket_statement(
     {
         "maintenance"
     } else if rollup.down > 0 {
-        "down"
+        if batch.config.critical {
+            "down"
+        } else {
+            "degraded"
+        }
     } else if rollup.degraded > 0 {
         "degraded"
     } else if rollup.healthy > 0 {

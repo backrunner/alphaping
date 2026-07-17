@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { applyConfirmationWindow } from "./persistence.js";
+import { applyConfirmationWindow, serviceState } from "./persistence.js";
 import type { CheckConfigRow, ExecutedCheck } from "./types.js";
 
 const config: CheckConfigRow = {
@@ -14,6 +14,8 @@ const config: CheckConfigRow = {
   interval_seconds: 60,
   phase_seconds: 0,
   timeout_ms: 5_000,
+  retry_count: 0,
+  critical: 1,
   request_json: "{}",
   secret_refs_json: "{}",
   failure_confirmations: 3,
@@ -29,6 +31,20 @@ const down: ExecutedCheck = {
 };
 
 describe("check confirmation windows", () => {
+  it("degrades for a non-critical failure and fails for a critical one", () => {
+    expect(
+      serviceState(
+        [
+          { state: "healthy", critical: 1 },
+          { state: "down", critical: 0 },
+        ],
+        null,
+        1,
+      ),
+    ).toBe("degraded");
+    expect(serviceState([{ state: "down", critical: 1 }], null, 1)).toBe("down");
+  });
+
   it("keeps a healthy check healthy until the failure threshold", () => {
     const first = applyConfirmationWindow(
       config,

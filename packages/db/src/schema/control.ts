@@ -287,6 +287,8 @@ export const checkConfigs = sqliteTable(
     intervalSeconds: integer("interval_seconds").notNull().default(60),
     phaseSeconds: integer("phase_seconds").notNull().default(0),
     timeoutMs: integer("timeout_ms").notNull().default(5_000),
+    retryCount: integer("retry_count").notNull().default(0),
+    critical: integer("critical", { mode: "boolean" }).notNull().default(true),
     requestJson: text("request_json").notNull(),
     failureConfirmations: integer("failure_confirmations").notNull().default(3),
     recoveryConfirmations: integer("recovery_confirmations").notNull().default(2),

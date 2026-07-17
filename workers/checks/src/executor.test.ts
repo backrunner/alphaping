@@ -1,7 +1,7 @@
 import { connect } from "cloudflare:sockets";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { executeHttp, executeTcp } from "./executor.js";
+import { executeHttp, executeTcp, executeWithRetries } from "./executor.js";
 import { parseHttpRequest, parseTcpRequest } from "./validation.js";
 
 vi.mock("cloudflare:sockets", () => ({ connect: vi.fn() }));
@@ -9,6 +9,20 @@ vi.mock("cloudflare:sockets", () => ({ connect: vi.fn() }));
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.clearAllMocks();
+});
+
+describe("check retry policy", () => {
+  it("stops after success within the configured retry bound", async () => {
+    let attempts = 0;
+    const result = await executeWithRetries(async () => {
+      attempts += 1;
+      return attempts < 3
+        ? { state: "down", latencyMs: null, failureCode: "network", failureSummary: null }
+        : { state: "healthy", latencyMs: 12, failureCode: null, failureSummary: null };
+    }, 3);
+    expect(attempts).toBe(3);
+    expect(result.state).toBe("healthy");
+  });
 });
 
 describe("HTTP check execution", () => {

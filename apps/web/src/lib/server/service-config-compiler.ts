@@ -29,6 +29,8 @@ export interface CreateServiceMonitorInput {
   executorAgentId: string;
   intervalSeconds: number;
   timeoutMs: number;
+  retryCount: number;
+  critical: boolean;
   failureConfirmations: number;
   recoveryConfirmations: number;
   url: string;
@@ -314,6 +316,7 @@ export async function compileServiceConfig(
     "Check interval",
   );
   boundedInteger(input.timeoutMs, 100, 30_000, "Timeout");
+  boundedInteger(input.retryCount, 0, 3, "Retry count");
   boundedInteger(input.failureConfirmations, 1, 20, "Failure confirmations");
   boundedInteger(input.recoveryConfirmations, 1, 20, "Recovery confirmations");
   if (input.executorKind === "cloudflare" && input.kind === "icmp") {

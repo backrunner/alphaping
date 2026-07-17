@@ -24,6 +24,15 @@
         required
       /></label
     ><label
+      ><span>Retries</span><input
+        type="number"
+        name="retryCount"
+        min="0"
+        max="3"
+        value="0"
+        required
+      /></label
+    ><label
       ><span>Failure count</span><input
         type="number"
         name="failureConfirmations"
@@ -42,6 +51,10 @@
         required
       /></label
     >
+    <label class="inline-check"
+      ><input type="checkbox" name="critical" checked /><span>Critical check</span></label
+    >
+    <input type="hidden" name="critical" value="off" />
   </div>
 </details>
 
@@ -61,7 +74,7 @@
   }
   div {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 10px;
   }
   label > span {
@@ -84,6 +97,19 @@
   input:focus {
     border-color: var(--accent);
     outline: 2px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+  .inline-check {
+    display: inline-flex;
+    min-height: 32px;
+    align-items: center;
+    gap: 7px;
+  }
+  .inline-check input {
+    width: 13px;
+    min-height: 13px;
+  }
+  .inline-check span {
+    margin: 0;
   }
   @media (max-width: 680px) {
     div {

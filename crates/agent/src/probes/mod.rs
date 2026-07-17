@@ -13,7 +13,7 @@ use alphaping_protocol::{
 use anyhow::{Context, Result, bail};
 use tokio::{
     sync::{mpsc, watch},
-    time::{MissedTickBehavior, interval},
+    time::{MissedTickBehavior, interval, sleep},
 };
 
 const MAX_PROBE_TASKS: usize = 32;
@@ -110,6 +110,7 @@ pub fn validate_config(config: &AgentConfigSnapshot) -> Result<()> {
             || !(5..=86_400).contains(&task.interval_seconds)
             || task.phase_seconds >= task.interval_seconds
             || !(100..=30_000).contains(&task.timeout_ms)
+            || task.retry_count.unwrap_or(0) > 3
         {
             bail!("invalid probe task");
         }
@@ -197,11 +198,20 @@ fn due_slot_ms(now_ms: i64, task: &ProbeTask) -> i64 {
 
 async fn execute_task(agent_id: &str, task: ProbeTask, nominal_slot_ms: i64) -> ProbeResult {
     let timeout = Duration::from_millis(u64::from(task.timeout_ms));
-    let outcome = match task.request.as_ref() {
-        Some(probe_task::Request::Http(request)) => http::execute(request, timeout).await,
-        Some(probe_task::Request::Tcp(request)) => tcp::execute(request, timeout).await,
-        Some(probe_task::Request::Icmp(request)) => icmp::execute(request, timeout).await,
-        None => ProbeOutcome::failed("invalid_config"),
+    let retry_count = task.retry_count.unwrap_or(0);
+    let mut retries = 0;
+    let outcome = loop {
+        let outcome = match task.request.as_ref() {
+            Some(probe_task::Request::Http(request)) => http::execute(request, timeout).await,
+            Some(probe_task::Request::Tcp(request)) => tcp::execute(request, timeout).await,
+            Some(probe_task::Request::Icmp(request)) => icmp::execute(request, timeout).await,
+            None => ProbeOutcome::failed("invalid_config"),
+        };
+        if outcome.state != ProbeState::Down || retries >= retry_count {
+            break outcome;
+        }
+        retries += 1;
+        sleep(Duration::from_millis(100)).await;
     };
     let mut identity = blake3::Hasher::new();
     identity.update(task.check_id.as_bytes());

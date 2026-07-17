@@ -37,6 +37,8 @@ export interface CheckRow {
   enabled: number;
   interval_seconds: number;
   timeout_ms: number;
+  retry_count: number;
+  critical: number;
   request_json: string;
   failure_confirmations: number;
   recovery_confirmations: number;
@@ -59,6 +61,7 @@ export interface CheckLatestRow {
   failure_summary: string | null;
   consecutive_failures: number;
   consecutive_successes: number;
+  critical: number;
 }
 
 export interface StatusBucketRow {
@@ -114,6 +117,8 @@ export interface ServiceCheckSummary {
   enabled: boolean;
   intervalSeconds: number;
   timeoutMs: number;
+  retryCount: number;
+  critical: boolean;
   failureConfirmations: number;
   recoveryConfirmations: number;
   target: string;

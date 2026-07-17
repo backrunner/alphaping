@@ -285,7 +285,8 @@ V1 默认不生成每容器长保留 rollup。七天内原始容器数据由 mac
 - `executor_agent_id` nullable
 - `assignment_revision`：该任务最后一次分配/变更时目标机器的 desired config revision；旧 Agent 或旧 revision 的结果必须拒绝
 - `config_bytes`：管理写入时计算的保守快照占用；同一 Agent enabled task 合计不得超过 44 KiB
-- `interval_seconds`, `timeout_ms`
+- `interval_seconds`, `timeout_ms`, `retry_count`（0-3 次）
+- `critical`：关键检查失败形成服务故障；非关键检查失败只把服务降级
 - `failure_confirmations`, `recovery_confirmations`
 - `schedule_phase_seconds`, `last_claimed_slot`, `enabled`
 - `config_json`
@@ -314,6 +315,7 @@ V1 默认不生成每容器长保留 rollup。七天内原始容器数据由 mac
 - `status`, `latency_ms`
 - `failure_code`, `failure_summary`
 - `consecutive_failures`, `consecutive_successes`
+- `critical`，随结果投影保存，供中央和 Agent 结果使用同一聚合规则
 
 ### `check_result_blocks_5m`
 
@@ -356,7 +358,7 @@ V1 默认不生成每容器长保留 rollup。七天内原始容器数据由 mac
 
 允许公开页面一次查询得到胶囊时间线，不扫描原始结果。
 
-Checks Worker 只在五分钟 block 闭合时写一次 service bucket。同一服务的多个 check 使用最差状态、最低可用率和最高延迟幂等合并，因此并发 Cron 不需要额外 lease row。该写入和 retention delete 已作为每个 60 秒 centralized check 每月额外 17,280 rows written 纳入成本门禁。
+Checks Worker 只在五分钟 block 闭合时写一次 service bucket。同一服务的多个 check 按关键性策略合并状态，并使用最低可用率和最高延迟幂等合并；关键检查 `down` 形成服务 `down`，非关键检查 `down` 形成服务 `degraded`，因此并发 Cron 不需要额外 lease row。该写入和 retention delete 已作为每个 60 秒 centralized check 每月额外 17,280 rows written 纳入成本门禁。
 
 ## 9. 事件、Incident 和公告
 

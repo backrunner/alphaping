@@ -30,6 +30,7 @@ export const checkLatest = sqliteTable("check_latest", {
   failureSummary: text("failure_summary"),
   consecutiveFailures: integer("consecutive_failures").notNull().default(0),
   consecutiveSuccesses: integer("consecutive_successes").notNull().default(0),
+  critical: integer("critical", { mode: "boolean" }).notNull().default(true),
   resultId: blob("result_id", { mode: "buffer" }).notNull(),
 });
 

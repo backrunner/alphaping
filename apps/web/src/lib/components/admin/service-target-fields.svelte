@@ -144,6 +144,7 @@
     <label class="inline-check"
       ><input type="checkbox" name="tlsVerify" checked /><span>Verify TLS certificates</span></label
     >
+    <input type="hidden" name="tlsVerify" value="off" />
   {:else}<input type="hidden" name="tlsVerify" value="on" />{/if}
 {/if}
 

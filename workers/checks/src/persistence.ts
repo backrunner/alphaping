@@ -40,6 +40,7 @@ interface PreviousCheckLatest extends ConfirmationState {
 interface ServiceCheckLatest {
   check_pk: number;
   state: CheckState;
+  critical: number;
 }
 
 interface PreviousServiceLatest {
@@ -252,15 +253,17 @@ export function applyConfirmationWindow(
   };
 }
 
-function serviceState(
-  states: readonly CheckState[],
+export function serviceState(
+  checks: readonly { state: CheckState; critical: number }[],
   maintenanceUntil: number | null,
   now: number,
 ): ServiceState {
   if (maintenanceUntil !== null && maintenanceUntil > now) return "maintenance";
-  if (states.includes("down")) return "down";
-  if (states.includes("degraded")) return "degraded";
-  if (states.includes("healthy")) return "healthy";
+  if (checks.some((check) => check.critical === 1 && check.state === "down")) return "down";
+  if (checks.some((check) => check.state === "down" || check.state === "degraded")) {
+    return "degraded";
+  }
+  if (checks.some((check) => check.state === "healthy")) return "healthy";
   return "unknown";
 }
 
@@ -278,7 +281,9 @@ function prepareStatusBucket(
     config.service_maintenance_until !== null && config.service_maintenance_until > nominalMinute
       ? "maintenance"
       : rollup.downCount > 0
-        ? "down"
+        ? config.critical === 1
+          ? "down"
+          : "degraded"
         : rollup.degradedCount > 0
           ? "degraded"
           : rollup.healthyCount > 0
@@ -364,7 +369,7 @@ export async function persistCheckResult(
       .bind(config.telemetry_pk)
       .first<PreviousCheckLatest>(),
     db
-      .prepare(`SELECT check_pk, state FROM check_latest WHERE service_pk = ?`)
+      .prepare(`SELECT check_pk, state, critical FROM check_latest WHERE service_pk = ?`)
       .bind(config.service_telemetry_pk)
       .all<ServiceCheckLatest>(),
     db
@@ -404,8 +409,8 @@ export async function persistCheckResult(
     .prepare(
       `INSERT INTO check_latest
       (check_pk, workspace_pk, service_pk, observed_at, state, latency_ms, failure_code,
-       failure_summary, consecutive_failures, consecutive_successes, result_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       failure_summary, consecutive_failures, consecutive_successes, critical, result_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(check_pk) DO UPDATE SET
       workspace_pk = excluded.workspace_pk,
       service_pk = excluded.service_pk,
@@ -416,6 +421,7 @@ export async function persistCheckResult(
       failure_summary = excluded.failure_summary,
       consecutive_failures = excluded.consecutive_failures,
       consecutive_successes = excluded.consecutive_successes,
+      critical = excluded.critical,
       result_id = excluded.result_id
      WHERE excluded.observed_at >= check_latest.observed_at`,
     )
@@ -430,15 +436,16 @@ export async function persistCheckResult(
       confirmed.failureSummary?.slice(0, 160) ?? null,
       confirmed.consecutiveFailures,
       confirmed.consecutiveSuccesses,
+      config.critical,
       resultId,
     );
 
-  const currentStates = serviceChecks.results
+  const currentChecks = serviceChecks.results
     .filter((check) => check.check_pk !== config.telemetry_pk)
-    .map((check) => check.state);
-  currentStates.push(confirmed.state);
+    .map((check) => ({ state: check.state, critical: check.critical }));
+  currentChecks.push({ state: confirmed.state, critical: config.critical });
   const nextServiceState = serviceState(
-    currentStates,
+    currentChecks,
     config.service_maintenance_until,
     observedAt,
   );

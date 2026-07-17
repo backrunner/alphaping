@@ -204,6 +204,7 @@ message ProbeTask {
     TcpProbeRequest tcp = 11;
     IcmpProbeRequest icmp = 12;
   }
+  optional uint32 retry_count = 13;
 }
 
 message AgentConfigSnapshot {

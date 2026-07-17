@@ -29,6 +29,7 @@ struct ProbeConfigRow {
     interval_seconds: f64,
     phase_seconds: f64,
     timeout_ms: f64,
+    retry_count: f64,
     request_json: String,
     secret_refs_json: String,
 }
@@ -132,7 +133,7 @@ pub async fn build_config_snapshot(
             "SELECT c.id, c.telemetry_pk, s.telemetry_pk AS service_pk,
                     w.telemetry_pk AS workspace_pk, c.workspace_id,
                     c.assignment_revision, c.kind, c.interval_seconds, c.phase_seconds,
-                    c.timeout_ms, c.request_json, c.secret_refs_json
+                    c.timeout_ms, c.retry_count, c.request_json, c.secret_refs_json
              FROM check_configs c
              JOIN services s ON s.id = c.service_id AND s.deleted_at IS NULL
              JOIN workspaces w ON w.id = c.workspace_id AND w.deleted_at IS NULL
@@ -292,6 +293,7 @@ fn compile_task(
         interval_seconds: row.interval_seconds as u32,
         phase_seconds: row.phase_seconds as u32,
         timeout_ms: row.timeout_ms as u32,
+        retry_count: Some(row.retry_count as u32),
         request: Some(request),
     })
 }

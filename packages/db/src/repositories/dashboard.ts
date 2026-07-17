@@ -52,11 +52,13 @@ interface ServiceRow {
   id: string;
   telemetry_pk: number;
   name: string;
+  maintenance_until: number | null;
 }
 
 interface CheckRow {
   service_id: string;
   telemetry_pk: number;
+  critical: number;
 }
 
 interface CheckLatestRow {
@@ -65,12 +67,15 @@ interface CheckLatestRow {
   observed_at: number;
 }
 
-interface RollupRow {
-  check_pk: number;
+interface ServiceLatestRow {
+  service_pk: number;
+  state: DashboardService["state"];
+}
+
+interface ServiceBucketRow {
+  resource_pk: number;
   bucket_start: number;
-  healthy_count: number;
-  degraded_count: number;
-  down_count: number;
+  state: DashboardService["timeline"][number]["state"];
 }
 
 interface IncidentRow {
@@ -106,11 +111,11 @@ export interface DashboardMachine {
 export interface DashboardService {
   id: string;
   name: string;
-  state: "healthy" | "degraded" | "down" | "unknown";
+  state: "healthy" | "degraded" | "down" | "maintenance" | "unknown";
   lastCheckedAt: number | null;
   timeline: readonly {
     bucketStart: number;
-    state: "healthy" | "degraded" | "down" | "unknown";
+    state: "healthy" | "degraded" | "down" | "maintenance" | "unknown";
   }[];
 }
 
@@ -150,10 +155,6 @@ function parseLabels(value: string): Readonly<Record<string, string>> {
   } catch {
     return {};
   }
-}
-
-function stateRank(state: DashboardService["state"]): number {
-  return { unknown: 0, healthy: 1, degraded: 2, down: 3 }[state];
 }
 
 export async function loadDashboardSnapshot(
@@ -197,7 +198,7 @@ export async function loadDashboardSnapshot(
     .all<MachineRow>();
   const serviceRows = await controlDb
     .prepare(
-      `SELECT id, telemetry_pk, name FROM services
+      `SELECT id, telemetry_pk, name, maintenance_until FROM services
        WHERE workspace_id = ? AND deleted_at IS NULL ORDER BY name LIMIT 500`,
     )
     .bind(workspace.id)
@@ -289,74 +290,87 @@ export async function loadDashboardSnapshot(
   const checks = (
     await controlDb
       .prepare(
-        `SELECT service_id, telemetry_pk FROM check_configs
+        `SELECT service_id, telemetry_pk, critical FROM check_configs
          WHERE workspace_id = ? AND enabled = 1 LIMIT 1000`,
       )
       .bind(workspace.id)
       .all<CheckRow>()
   ).results.filter((check) => allowedServiceIds.has(check.service_id));
   const checkPks = checks.map((check) => check.telemetry_pk);
-  const latestChecks =
-    checkPks.length === 0
-      ? []
-      : (
-          await telemetryDb
-            .prepare(
-              `SELECT check_pk, state, observed_at FROM check_latest
-               WHERE check_pk IN (${placeholders(checkPks.length)})`,
-            )
-            .bind(...checkPks)
-            .all<CheckLatestRow>()
-        ).results;
   const historyStart = Math.floor((now - 30 * 300_000) / 300_000) * 300_000;
-  const rollups =
+  const servicePks = allowedServices.map((service) => service.telemetry_pk);
+  const [latestChecks, latestServices, serviceBuckets] = await Promise.all([
     checkPks.length === 0
-      ? []
-      : (
-          await telemetryDb
-            .prepare(
-              `SELECT check_pk, bucket_start, healthy_count, degraded_count, down_count
-               FROM check_rollups_5m
-               WHERE check_pk IN (${placeholders(checkPks.length)}) AND bucket_start >= ?
-               ORDER BY bucket_start`,
-            )
-            .bind(...checkPks, historyStart)
-            .all<RollupRow>()
-        ).results;
+      ? Promise.resolve({ results: [] as CheckLatestRow[] })
+      : telemetryDb
+          .prepare(
+            `SELECT check_pk, state, observed_at FROM check_latest
+             WHERE check_pk IN (${placeholders(checkPks.length)})`,
+          )
+          .bind(...checkPks)
+          .all<CheckLatestRow>(),
+    servicePks.length === 0
+      ? Promise.resolve({ results: [] as ServiceLatestRow[] })
+      : telemetryDb
+          .prepare(
+            `SELECT service_pk, state FROM service_latest
+             WHERE workspace_pk = ? AND service_pk IN (${placeholders(servicePks.length)})`,
+          )
+          .bind(workspace.telemetry_pk, ...servicePks)
+          .all<ServiceLatestRow>(),
+    servicePks.length === 0
+      ? Promise.resolve({ results: [] as ServiceBucketRow[] })
+      : telemetryDb
+          .prepare(
+            `SELECT resource_pk, bucket_start, state FROM status_buckets
+             WHERE workspace_pk = ? AND resource_type = 2 AND bucket_seconds = 300
+               AND resource_pk IN (${placeholders(servicePks.length)}) AND bucket_start >= ?
+             ORDER BY bucket_start`,
+          )
+          .bind(workspace.telemetry_pk, ...servicePks, historyStart)
+          .all<ServiceBucketRow>(),
+  ]);
   const checksByService = new Map<string, number[]>();
   for (const check of checks) {
     const group = checksByService.get(check.service_id) ?? [];
     group.push(check.telemetry_pk);
     checksByService.set(check.service_id, group);
   }
-  const latestByCheck = new Map(latestChecks.map((latest) => [latest.check_pk, latest]));
-  const rollupStateByCheckAndBucket = new Map<string, DashboardService["state"]>();
-  for (const rollup of rollups) {
-    const state: DashboardService["state"] =
-      rollup.down_count > 0
-        ? "down"
-        : rollup.degraded_count > 0
-          ? "degraded"
-          : rollup.healthy_count > 0
-            ? "healthy"
-            : "unknown";
-    rollupStateByCheckAndBucket.set(`${rollup.check_pk}:${rollup.bucket_start}`, state);
-  }
+  const latestByCheck = new Map(latestChecks.results.map((latest) => [latest.check_pk, latest]));
+  const criticalByCheck = new Map(
+    checks.map((check) => [check.telemetry_pk, check.critical === 1]),
+  );
+  const latestByService = new Map(
+    latestServices.results.map((latest) => [latest.service_pk, latest.state]),
+  );
+  const bucketByServiceAndTime = new Map(
+    serviceBuckets.results.map((bucket) => [
+      `${bucket.resource_pk}:${bucket.bucket_start}`,
+      bucket.state,
+    ]),
+  );
   const services: readonly DashboardService[] = allowedServices.map((service) => {
     const serviceChecks = checksByService.get(service.id) ?? [];
     const current = serviceChecks
       .map((checkPk) => latestByCheck.get(checkPk))
       .filter((latest): latest is CheckLatestRow => latest !== undefined);
-    const state = current.reduce<DashboardService["state"]>(
-      (worst, latest) => (stateRank(latest.state) > stateRank(worst) ? latest.state : worst),
-      "unknown",
-    );
+    const fallbackState: DashboardService["state"] = current.some(
+      (latest) => latest.state === "down" && criticalByCheck.get(latest.check_pk),
+    )
+      ? "down"
+      : current.some((latest) => latest.state === "down" || latest.state === "degraded")
+        ? "degraded"
+        : current.some((latest) => latest.state === "healthy")
+          ? "healthy"
+          : "unknown";
+    const state: DashboardService["state"] =
+      service.maintenance_until !== null && service.maintenance_until > now
+        ? "maintenance"
+        : (latestByService.get(service.telemetry_pk) ?? fallbackState);
     const timeline = Array.from({ length: 30 }, (_, index) => {
       const bucketStart = historyStart + index * 300_000;
-      const bucketState = serviceChecks.reduce<DashboardService["state"]>((worst, checkPk) => {
-        const state = rollupStateByCheckAndBucket.get(`${checkPk}:${bucketStart}`) ?? "unknown";
-        return stateRank(state) > stateRank(worst) ? state : worst;
-      }, "unknown");
+      const bucketState =
+        bucketByServiceAndTime.get(`${service.telemetry_pk}:${bucketStart}`) ?? "unknown";
       return { bucketStart, state: bucketState };
     });
     return {

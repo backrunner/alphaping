@@ -20,6 +20,17 @@ function outcome(
   return { state, latencyMs, failureCode, failureSummary };
 }
 
+export async function executeWithRetries(
+  execute: () => Promise<ExecutedCheck>,
+  retryCount: number,
+): Promise<ExecutedCheck> {
+  let result = await execute();
+  for (let retry = 0; result.state === "down" && retry < retryCount; retry += 1) {
+    result = await execute();
+  }
+  return result;
+}
+
 function redirectHeaders(
   configured: Headers,
   from: URL,

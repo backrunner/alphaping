@@ -187,7 +187,7 @@ AES-GCM nonce 固定 96 bits：
 - key rotation proposal
 - server time 和 next report guidance
 
-配置 snapshot 包含 revision、created_at、可选采样/上报周期、可选容器监控开关、完整内容 BLAKE3 digest 和最多 32 个结构化 probe task。新增 collection 和 probe TLS 字段保持 protobuf optional：旧 Agent 忽略未知字段，新 Agent 对省略的 `tls_verify` 默认启用证书校验，对省略的 TCP `server_name` 回退到连接 hostname；TLS 校验关闭只允许显式的 Agent 检查，Cloudflare 中央检查始终校验证书。Secret 只在 Ingest 内存中从 CONTROL_DB 解密，再放入 s2c AEAD 明文；日志、D1 telemetry 和 Web 投影都不得包含 secret value。Agent 先验证 digest、任务归属字段、周期、timeout、redirect、SNI 和 payload 上限，再原子保存本地配置并以 SQLite transaction 替换 last-known-good snapshot，在后续 report 回报 applied revision。
+配置 snapshot 包含 revision、created_at、可选采样/上报周期、可选容器监控开关、完整内容 BLAKE3 digest 和最多 32 个结构化 probe task。新增 collection、probe TLS 和 `retry_count` 字段保持 protobuf optional：旧 Agent 忽略未知字段，新 Agent 对省略的 `tls_verify` 默认启用证书校验、对省略的 TCP `server_name` 回退到连接 hostname、对省略的 retry 使用 0 次；retry 明确限制为 0-3 次。TLS 校验关闭只允许显式的 Agent 检查，Cloudflare 中央检查始终校验证书。Secret 只在 Ingest 内存中从 CONTROL_DB 解密，再放入 s2c AEAD 明文；日志、D1 telemetry 和 Web 投影都不得包含 secret value。Agent 先验证 digest、任务归属字段、周期、timeout、retry、redirect、SNI 和 payload 上限，再原子保存本地配置并以 SQLite transaction 替换 last-known-good snapshot，在后续 report 回报 applied revision。
 
 每个 probe result 必须绑定 `check_id/check_pk/service_pk/workspace_pk`、执行 Agent ID、assignment revision、确定性 execution ID 和 nominal slot。Ingest 重新查询当前 assignment；重指派前的 Agent、旧 revision、错误 phase 或跨 workspace 结果一律拒绝。
 

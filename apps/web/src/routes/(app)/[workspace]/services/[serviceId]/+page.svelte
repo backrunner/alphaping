@@ -10,6 +10,7 @@
     Trash2,
   } from "lucide-svelte";
 
+  import ServiceCheckForm from "$components/services/service-check-form.svelte";
   import ServiceCheckList from "$components/services/service-check-list.svelte";
   import ServiceEvents from "$components/services/service-events.svelte";
   import ServiceSummary from "$components/services/service-summary.svelte";
@@ -101,7 +102,10 @@
   {/if}
 
   <ServiceSummary service={data.service} />
-  <ServiceCheckList checks={data.checks} />
+  <ServiceCheckList checks={data.checks} canManage={data.service.canManage} result={form ?? null} />
+  {#if data.service.canManage}
+    <ServiceCheckForm agents={data.checkAgents} result={form ?? null} />
+  {/if}
   <ServiceEvents events={data.events} />
 </main>
 

@@ -17,6 +17,8 @@ function serviceInput(
     executorAgentId: "",
     intervalSeconds: 60,
     timeoutMs: 5_000,
+    retryCount: 1,
+    critical: true,
     failureConfirmations: 3,
     recoveryConfirmations: 2,
     url: "https://example.com/health",

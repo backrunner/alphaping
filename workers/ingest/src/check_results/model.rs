@@ -12,6 +12,7 @@ pub struct AssignedCheck {
     pub phase_seconds: u32,
     pub failure_confirmations: u32,
     pub recovery_confirmations: u32,
+    pub critical: bool,
     pub maintenance_until: Option<i64>,
 }
 
@@ -279,6 +280,7 @@ mod tests {
             phase_seconds: 0,
             failure_confirmations: 2,
             recovery_confirmations: 2,
+            critical: true,
             maintenance_until: None,
         }
     }
@@ -304,6 +306,7 @@ mod tests {
         assert_eq!(batch.result_id.len(), 32);
         assert_eq!(batch.observed_at, 131_000);
         assert_eq!(batch.latency_ms, Some(10));
+        assert!(batch.config.critical);
         assert_eq!(batch.config.maintenance_until, None);
         assert!(
             String::from_utf8(batch.payload.clone())
