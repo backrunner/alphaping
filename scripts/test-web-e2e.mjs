@@ -354,7 +354,7 @@ try {
     throw new Error("authenticated dashboard was not marked private");
   }
 
-  const queryControlDb = (sql) => {
+  const queryD1 = (binding, sql) => {
     const result = run(
       pnpm,
       [
@@ -362,7 +362,7 @@ try {
         "wrangler",
         "d1",
         "execute",
-        "CONTROL_DB",
+        binding,
         "--local",
         "--config",
         config,
@@ -372,7 +372,7 @@ try {
         sql,
         "--json",
       ],
-      "CONTROL_DB query",
+      `${binding} query`,
       { quiet: true },
     );
     const output = result.stdout.trim();
@@ -380,11 +380,16 @@ try {
     const payload = JSON.parse(jsonStart === -1 ? output : output.slice(jsonStart + 1));
     const execution = Array.isArray(payload) ? payload[0] : payload;
     if (!execution?.success || !Array.isArray(execution.results)) {
-      throw new Error("CONTROL_DB query did not return rows");
+      throw new Error(`${binding} query did not return rows`);
     }
     return execution.results;
   };
-  await runWebManagementE2e({ baseUrl, adminCookie: cookie, queryControlDb });
+  await runWebManagementE2e({
+    baseUrl,
+    adminCookie: cookie,
+    queryControlDb: (sql) => queryD1("CONTROL_DB", sql),
+    queryTelemetryDb: (sql) => queryD1("TELEMETRY_DB", sql),
+  });
 
   console.log("Web E2E setup, management, RBAC, dashboard, and public status flows passed");
 } catch (cause) {

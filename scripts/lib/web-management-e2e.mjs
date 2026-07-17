@@ -54,7 +54,12 @@ function dateTimeInput(timestamp) {
   return new Date(timestamp).toISOString().slice(0, 16);
 }
 
-export async function runWebManagementE2e({ baseUrl, adminCookie, queryControlDb }) {
+export async function runWebManagementE2e({
+  baseUrl,
+  adminCookie,
+  queryControlDb,
+  queryTelemetryDb,
+}) {
   const machineAction = await submitAction(
     baseUrl,
     "/operations/admin?/machine",
@@ -73,7 +78,7 @@ export async function runWebManagementE2e({ baseUrl, adminCookie, queryControlDb
     throw new Error("machine creation did not return the one-time enrollment material");
   }
   const machine = onlyRow(
-    queryControlDb("SELECT id FROM machines WHERE name = 'Edge E2E'"),
+    queryControlDb("SELECT id, telemetry_pk FROM machines WHERE name = 'Edge E2E'"),
     "created machine lookup",
   );
   const enrollment = onlyRow(
@@ -91,6 +96,31 @@ export async function runWebManagementE2e({ baseUrl, adminCookie, queryControlDb
      SELECT '${agentId}', workspace_id, id, X'${"01".repeat(32)}', 'linux', 'x86_64',
        '0.1.0', 1, 'active', 1, ${Date.now()} FROM machines WHERE id = '${machine.id}'`,
   );
+  const latestAt = Date.now();
+  queryTelemetryDb(
+    `INSERT INTO machine_latest
+      (machine_pk, workspace_pk, agent_id, observed_at, received_at, state,
+       cpu_permille, memory_used_bytes, memory_total_bytes, storage_used_bytes,
+       storage_total_bytes, network_rx_bps, network_tx_bps, network_rx_total,
+       network_tx_total, report_id)
+     VALUES (${machine.telemetry_pk}, 1, '${agentId}', ${latestAt}, ${latestAt}, 'healthy',
+       420, 2147483648, 4294967296, 8589934592, 17179869184, 4096, 2048,
+       1000000, 500000, X'01010101010101010101010101010101')`,
+  );
+  let response = await fetch(`${baseUrl}/operations`, { headers: { cookie: adminCookie } });
+  assertResponse(response, 200, "dashboard machine latest projection");
+  const dashboard = await response.text();
+  if (!dashboard.includes("Edge E2E") || !dashboard.includes("42.0%")) {
+    throw new Error("dashboard did not render the newly reported machine latest state");
+  }
+  response = await fetch(`${baseUrl}/operations/machines/${machine.id}/latest`, {
+    headers: { cookie: adminCookie },
+  });
+  assertResponse(response, 200, "administrator machine latest API");
+  const latest = await response.json();
+  if (latest.latest.cpuPermille !== 420 || latest.latest.state !== "healthy") {
+    throw new Error("machine latest API did not return the durable telemetry projection");
+  }
   await submitAction(
     baseUrl,
     `/operations/machines/${machine.id}?/checkUpdate`,
@@ -243,7 +273,7 @@ export async function runWebManagementE2e({ baseUrl, adminCookie, queryControlDb
   );
   const token = inviteAction.serialized.match(/\/invite\/([A-Za-z0-9_-]{43})/)?.[1];
   if (!token) throw new Error("invitation action did not return a one-time URL");
-  let response = await fetch(`${baseUrl}/invite/${token}`);
+  response = await fetch(`${baseUrl}/invite/${token}`);
   assertResponse(response, 200, "anonymous invitation view");
   const invitationPage = await response.text();
   if (!invitationPage.includes("me****@example.test")) {
