@@ -1,6 +1,7 @@
 import { error, fail, isHttpError, redirect } from "@sveltejs/kit";
 
 import { loadDeveloperPanel } from "$lib/server/monitoring-access";
+import { installerChecksums } from "$lib/server/installers";
 import { createMachine } from "$lib/server/resources";
 import { createServiceMonitor } from "$lib/server/service-config";
 
@@ -18,6 +19,7 @@ export const load: PageServerLoad = async ({ locals, params, platform, url }) =>
     workspace: params.workspace,
     ingestOrigin: platform.env.INGEST_ORIGIN,
     installOrigin: url.origin,
+    installerChecksums: await installerChecksums(),
     agents: panel.agents,
   };
 };

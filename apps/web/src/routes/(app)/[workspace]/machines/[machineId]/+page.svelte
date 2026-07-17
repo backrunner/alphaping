@@ -7,6 +7,7 @@
   import MachineConfig from "$components/machines/machine-config.svelte";
   import MachineContainers from "$components/machines/machine-containers.svelte";
   import MachineEvents from "$components/machines/machine-events.svelte";
+  import MachineEnrollment from "$components/machines/machine-enrollment.svelte";
   import MachineLive from "$components/machines/machine-live.svelte";
   import MachineOverview from "$components/machines/machine-overview.svelte";
   import MachineProbes from "$components/machines/machine-probes.svelte";
@@ -15,12 +16,15 @@
 
   let { data, form } = $props();
   function initialTab(): "overview" | "config" {
-    return form?.kind === "machineConfig" ? "config" : "overview";
+    return data.canManage &&
+      (form?.kind === "machineConfig" ||
+        form?.kind === "enrollment" ||
+        data.requestedTab === "config")
+      ? "config"
+      : "overview";
   }
 
-  let activeTab = $state<"overview" | "probes" | "containers" | "events" | "config">(
-    initialTab(),
-  );
+  let activeTab = $state<"overview" | "probes" | "containers" | "events" | "config">(initialTab());
   function initialLatest(): DashboardMachine {
     return data.latest;
   }
@@ -123,6 +127,15 @@
       <MachineEvents events={data.events} />
     {:else if activeTab === "config" && data.canManage}
       <MachineConfig machine={data.machine} result={form ?? null} />
+      <MachineEnrollment
+        machineId={data.machine.id}
+        tokens={data.enrollmentTokens}
+        result={form ?? null}
+        ingestOrigin={data.ingestOrigin}
+        installOrigin={data.installOrigin}
+        checksums={data.installerChecksums}
+        manageHref={`/${data.workspace.slug}/machines/${data.machine.id}?tab=config`}
+      />
       {#if data.agent}
         <AgentUpdateControls agent={data.agent} commands={data.agentCommands} result={form} />
       {/if}

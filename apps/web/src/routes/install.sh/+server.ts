@@ -1,12 +1,5 @@
-import installer from "../../../../../scripts/install/install.sh?raw";
+import { installerResponse } from "$lib/server/installers";
 
 import type { RequestHandler } from "./$types";
 
-export const GET: RequestHandler = () =>
-  new Response(installer, {
-    headers: {
-      "cache-control": "public, max-age=300",
-      "content-type": "text/x-shellscript; charset=utf-8",
-      "x-content-type-options": "nosniff",
-    },
-  });
+export const GET: RequestHandler = () => installerResponse("unix");

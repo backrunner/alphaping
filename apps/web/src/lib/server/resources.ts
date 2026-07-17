@@ -24,6 +24,23 @@ interface MachineConfigurationRow {
   desired_config_revision: number;
 }
 
+interface EnrollmentTokenRow {
+  id: string;
+  expires_at: number;
+  used_at: number | null;
+  revoked_at: number | null;
+  created_at: number;
+}
+
+export interface EnrollmentTokenSummary {
+  id: string;
+  expiresAt: number;
+  usedAt: number | null;
+  revokedAt: number | null;
+  createdAt: number;
+  state: "active" | "used" | "revoked" | "expired";
+}
+
 export interface MachineConfigurationInput {
   name: string;
   expectedHost: string;
@@ -75,6 +92,15 @@ async function tokenDigest(token: string, pepper: string): Promise<ArrayBuffer> 
     ["sign"],
   );
   return crypto.subtle.sign("HMAC", key, new TextEncoder().encode(token));
+}
+
+async function enrollmentMaterial(pepper: string) {
+  const token = randomToken();
+  return {
+    token,
+    tokenId: crypto.randomUUID(),
+    digest: await tokenDigest(token, pepper),
+  };
 }
 
 async function nextSequence(db: D1Database, kind: "machine") {
@@ -190,12 +216,10 @@ export async function createMachine(
   requireAdmin(access);
   const configuration = normalizeMachineConfiguration(input);
   const telemetryPk = await nextSequence(db, "machine");
-  const token = randomToken();
-  const digest = await tokenDigest(token, enrollmentPepper);
+  const enrollment = await enrollmentMaterial(enrollmentPepper);
   const now = Date.now();
   const expiresAt = now + 15 * 60_000;
   const machineId = crypto.randomUUID();
-  const tokenId = crypto.randomUUID();
   const audit = await prepareAuditStatement(db, {
     workspaceId: access.workspaceId,
     actorUserId: userId,
@@ -238,7 +262,15 @@ export async function createMachine(
           (id, workspace_id, machine_id, token_digest, expires_at, created_by, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
       )
-      .bind(tokenId, access.workspaceId, machineId, digest, expiresAt, userId, now),
+      .bind(
+        enrollment.tokenId,
+        access.workspaceId,
+        machineId,
+        enrollment.digest,
+        expiresAt,
+        userId,
+        now,
+      ),
     db
       .prepare(
         `INSERT INTO dashboard_resources
@@ -255,7 +287,7 @@ export async function createMachine(
       .bind(access.workspaceId, machineId, now),
     audit,
   ]);
-  return { token, tokenId, machineId, expiresAt };
+  return { token: enrollment.token, tokenId: enrollment.tokenId, machineId, expiresAt };
 }
 
 function rowConfiguration(row: MachineConfigurationRow): NormalizedMachineConfiguration {
@@ -330,4 +362,158 @@ export async function updateMachineConfiguration(
     audit,
   ]);
   return { revision };
+}
+
+async function requireManagedMachine(
+  db: D1Database,
+  workspaceSlug: string,
+  userId: string,
+  machineId: string,
+) {
+  const access = await loadMonitoringAccess(db, workspaceSlug, userId);
+  requireResourceCapability(access, "machine", machineId, "manage");
+  const machine = await db
+    .prepare(`SELECT id FROM machines WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL`)
+    .bind(machineId, access.workspaceId)
+    .first<{ id: string }>();
+  if (!machine) throw error(404, "Resource not found");
+  return access;
+}
+
+function enrollmentTokenSummary(row: EnrollmentTokenRow, now: number): EnrollmentTokenSummary {
+  return {
+    id: row.id,
+    expiresAt: row.expires_at,
+    usedAt: row.used_at,
+    revokedAt: row.revoked_at,
+    createdAt: row.created_at,
+    state:
+      row.used_at !== null
+        ? "used"
+        : row.revoked_at !== null
+          ? "revoked"
+          : row.expires_at <= now
+            ? "expired"
+            : "active",
+  };
+}
+
+export async function listMachineEnrollmentTokens(
+  db: D1Database,
+  workspaceSlug: string,
+  userId: string,
+  machineId: string,
+): Promise<readonly EnrollmentTokenSummary[]> {
+  const access = await requireManagedMachine(db, workspaceSlug, userId, machineId);
+  const tokens = await db
+    .prepare(
+      `SELECT id, expires_at, used_at, revoked_at, created_at
+       FROM agent_enrollment_tokens
+       WHERE workspace_id = ? AND machine_id = ?
+       ORDER BY created_at DESC LIMIT 20`,
+    )
+    .bind(access.workspaceId, machineId)
+    .all<EnrollmentTokenRow>();
+  const now = Date.now();
+  return tokens.results.map((token) => enrollmentTokenSummary(token, now));
+}
+
+export async function revokeMachineEnrollmentToken(
+  db: D1Database,
+  workspaceSlug: string,
+  userId: string,
+  machineId: string,
+  tokenId: string,
+): Promise<void> {
+  const access = await requireManagedMachine(db, workspaceSlug, userId, machineId);
+  const token = await db
+    .prepare(
+      `SELECT id, expires_at, used_at, revoked_at, created_at
+       FROM agent_enrollment_tokens
+       WHERE id = ? AND workspace_id = ? AND machine_id = ?`,
+    )
+    .bind(tokenId, access.workspaceId, machineId)
+    .first<EnrollmentTokenRow>();
+  if (!token) throw error(404, "Resource not found");
+  if (token.used_at !== null || token.revoked_at !== null) {
+    throw error(409, "Enrollment token is no longer revocable");
+  }
+  const now = Date.now();
+  const audit = await prepareAuditStatement(db, {
+    workspaceId: access.workspaceId,
+    actorUserId: userId,
+    action: "agent.enrollment.revoke",
+    resourceType: "machine",
+    resourceId: machineId,
+    before: enrollmentTokenSummary(token, now),
+    after: { ...enrollmentTokenSummary(token, now), revokedAt: now, state: "revoked" },
+    now,
+  });
+  await db.batch([
+    db
+      .prepare(
+        `UPDATE agent_enrollment_tokens SET revoked_at = ?
+         WHERE id = ? AND workspace_id = ? AND machine_id = ?
+           AND used_at IS NULL AND revoked_at IS NULL`,
+      )
+      .bind(now, tokenId, access.workspaceId, machineId),
+    audit,
+  ]);
+}
+
+export async function regenerateMachineEnrollmentToken(
+  db: D1Database,
+  workspaceSlug: string,
+  userId: string,
+  enrollmentPepper: string,
+  machineId: string,
+): Promise<{ token: string; tokenId: string; machineId: string; expiresAt: number }> {
+  const access = await requireManagedMachine(db, workspaceSlug, userId, machineId);
+  const previous = await db
+    .prepare(
+      `SELECT id, expires_at, used_at, revoked_at, created_at
+       FROM agent_enrollment_tokens
+       WHERE workspace_id = ? AND machine_id = ? AND used_at IS NULL AND revoked_at IS NULL
+       ORDER BY created_at DESC LIMIT 20`,
+    )
+    .bind(access.workspaceId, machineId)
+    .all<EnrollmentTokenRow>();
+  const enrollment = await enrollmentMaterial(enrollmentPepper);
+  const now = Date.now();
+  const expiresAt = now + 15 * 60_000;
+  const audit = await prepareAuditStatement(db, {
+    workspaceId: access.workspaceId,
+    actorUserId: userId,
+    action: "agent.enrollment.regenerate",
+    resourceType: "machine",
+    resourceId: machineId,
+    before: { replacedTokenIds: previous.results.map((token) => token.id) },
+    after: { tokenId: enrollment.tokenId, expiresAt },
+    now,
+  });
+  await db.batch([
+    db
+      .prepare(
+        `UPDATE agent_enrollment_tokens SET revoked_at = ?
+         WHERE workspace_id = ? AND machine_id = ? AND used_at IS NULL AND revoked_at IS NULL`,
+      )
+      .bind(now, access.workspaceId, machineId),
+    db
+      .prepare(
+        `INSERT INTO agent_enrollment_tokens
+          (id, workspace_id, machine_id, token_digest, expires_at, created_by, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        enrollment.tokenId,
+        access.workspaceId,
+        machineId,
+        enrollment.digest,
+        expiresAt,
+        userId,
+        now,
+      ),
+    audit,
+  ]);
+  return { token: enrollment.token, tokenId: enrollment.tokenId, machineId, expiresAt };
 }

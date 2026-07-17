@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -237,10 +238,14 @@ try {
   ]) {
     response = await fetch(`${baseUrl}${path}`);
     assertResponse(response, 200, `${path} distribution`);
+    const body = await response.text();
+    const checksum = createHash("sha256").update(body).digest("hex");
     if (
       response.headers.get("content-type") !== contentType ||
       response.headers.get("x-content-type-options") !== "nosniff" ||
-      !(await response.text()).includes(expected)
+      response.headers.get("x-alphaping-sha256") !== checksum ||
+      !/^sha-256=:[A-Za-z0-9+/]{43}=:$/u.test(response.headers.get("content-digest") ?? "") ||
+      !body.includes(expected)
     ) {
       throw new Error(`${path} distribution headers or service definition are incorrect`);
     }

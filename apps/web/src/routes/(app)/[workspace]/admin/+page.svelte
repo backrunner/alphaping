@@ -1,71 +1,27 @@
 <script lang="ts">
-  import { Copy, Server, Terminal, AppWindow } from "lucide-svelte";
+  import { Server } from "lucide-svelte";
 
   import ServiceMonitorForm from "$components/admin/service-monitor-form.svelte";
+  import EnrollmentCommand from "$components/machines/enrollment-command.svelte";
   import Button from "$components/ui/button/button.svelte";
 
   let { data, form } = $props();
-  let copied = $state(false);
-  let installMode = $state<"unix" | "windows">("unix");
-
-  const unixInstallCommand = $derived(
-    form?.kind === "machine" && form.machine
-      ? `curl -fsSL ${data.installOrigin}/install.sh | sudo sh -s -- --endpoint ${data.ingestOrigin} --manifest-origin ${data.installOrigin} --machine ${form.machine.machineId} --token ${form.machine.token}`
-      : "",
-  );
-  const windowsInstallCommand = $derived(
-    form?.kind === "machine" && form.machine
-      ? `& ([scriptblock]::Create((irm ${data.installOrigin}/install.ps1))) -Endpoint '${data.ingestOrigin}' -ManifestOrigin '${data.installOrigin}' -Machine '${form.machine.machineId}' -Token '${form.machine.token}'`
-      : "",
-  );
-  const installCommand = $derived(
-    installMode === "windows" ? windowsInstallCommand : unixInstallCommand,
-  );
-
-  async function copyInstallCommand() {
-    if (!installCommand) return;
-    await navigator.clipboard.writeText(installCommand);
-    copied = true;
-    setTimeout(() => (copied = false), 1_500);
-  }
 </script>
 
 <svelte:head><title>Developer · AlphaPing</title></svelte:head>
 
 <main class="admin">
   {#if form?.kind === "machine" && form.machine}
-    <section class="enrollment" aria-live="polite">
-      <div>
-        <strong>Enrollment command ready</strong>
-        <span>Expires {new Date(form.machine.expiresAt).toLocaleTimeString()}</span>
-      </div>
-      <div class="enrollment__command">
-        <div class="enrollment__modes" role="tablist" aria-label="Installation platform">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={installMode === "unix"}
-            class:active={installMode === "unix"}
-            onclick={() => (installMode = "unix")}
-          >
-            <Terminal size={12} />Shell
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={installMode === "windows"}
-            class:active={installMode === "windows"}
-            onclick={() => (installMode = "windows")}
-          >
-            <AppWindow size={12} />PowerShell
-          </button>
-        </div>
-        <code>{installCommand}</code>
-      </div>
-      <Button variant="secondary" onclick={copyInstallCommand}
-        ><Copy size={14} />{copied ? "Copied" : "Copy"}</Button
-      >
-    </section>
+    <EnrollmentCommand
+      machineId={form.machine.machineId}
+      tokenId={form.machine.tokenId}
+      token={form.machine.token}
+      expiresAt={form.machine.expiresAt}
+      ingestOrigin={data.ingestOrigin}
+      installOrigin={data.installOrigin}
+      checksums={data.installerChecksums}
+      manageHref={`/${data.workspace}/machines/${form.machine.machineId}?tab=config`}
+    />
   {/if}
 
   <div class="admin__grid">
@@ -273,72 +229,6 @@
     background: var(--status-down-bg);
   }
 
-  .enrollment {
-    display: grid;
-    grid-template-columns: minmax(160px, auto) minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 12px;
-    margin-top: 18px;
-    padding: 12px;
-    border: 1px solid var(--status-healthy);
-    border-radius: 6px;
-    background: var(--status-healthy-bg);
-  }
-
-  .enrollment strong,
-  .enrollment span {
-    display: block;
-  }
-
-  .enrollment span {
-    margin-top: 2px;
-    color: var(--text-muted);
-    font-size: 10px;
-  }
-
-  .enrollment__command {
-    min-width: 0;
-  }
-
-  .enrollment__modes {
-    display: flex;
-    gap: 2px;
-    margin-bottom: 6px;
-  }
-
-  .enrollment__modes button {
-    display: inline-flex;
-    height: 24px;
-    align-items: center;
-    gap: 5px;
-    padding: 0 7px;
-    border: 0;
-    border-radius: 4px;
-    color: var(--text-muted);
-    background: transparent;
-    font: inherit;
-    font-size: 10px;
-    cursor: pointer;
-  }
-
-  .enrollment__modes button.active {
-    color: var(--text);
-    background: var(--surface-strong);
-  }
-
-  .enrollment code {
-    display: block;
-    overflow: hidden;
-    padding: 7px 8px;
-    border-radius: 4px;
-    color: var(--text);
-    background: var(--surface);
-    font-family: var(--font-mono);
-    font-size: 10px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
   @media (max-width: 760px) {
     .admin__grid {
       grid-template-columns: 1fr;
@@ -349,19 +239,6 @@
       padding-left: 0;
       border-top: 1px solid var(--border);
       border-left: 0;
-    }
-
-    .enrollment {
-      grid-template-columns: 1fr auto;
-    }
-
-    .enrollment code {
-      grid-column: 1 / -1;
-    }
-
-    .enrollment__command {
-      grid-column: 1 / -1;
-      grid-row: 2;
     }
   }
 

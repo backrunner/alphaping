@@ -82,6 +82,7 @@ export async function runWebManagementE2e({
   );
   if (
     !machineAction.serialized.includes("token") ||
+    !machineAction.serialized.includes("tokenId") ||
     !machineAction.serialized.includes("expiresAt")
   ) {
     throw new Error("machine creation did not return the one-time enrollment material");
@@ -108,11 +109,11 @@ export async function runWebManagementE2e({
   }
   const enrollment = onlyRow(
     queryControlDb(
-      `SELECT COUNT(*) AS count FROM agent_enrollment_tokens WHERE machine_id = '${machine.id}'`,
+      `SELECT id, revoked_at FROM agent_enrollment_tokens WHERE machine_id = '${machine.id}'`,
     ),
     "machine enrollment lookup",
   );
-  if (enrollment.count !== 1) throw new Error("machine enrollment token was not persisted once");
+  if (enrollment.revoked_at !== null) throw new Error("machine enrollment token was not active");
   const maintenanceUntil = Date.now() + 2 * 60 * 60_000;
   await submitAction(
     baseUrl,
@@ -162,6 +163,60 @@ export async function runWebManagementE2e({
   );
   if (!configurationAudit.before_digest || !configurationAudit.after_digest) {
     throw new Error("machine configuration update did not retain audit digests");
+  }
+  await submitAction(
+    baseUrl,
+    `/operations/machines/${machine.id}?/revokeEnrollment`,
+    adminCookie,
+    { tokenId: enrollment.id },
+    "administrator enrollment token revocation",
+  );
+  const revokedEnrollment = onlyRow(
+    queryControlDb(
+      `SELECT revoked_at FROM agent_enrollment_tokens
+       WHERE machine_id = '${machine.id}' AND id = '${enrollment.id}'`,
+    ),
+    "revoked enrollment token lookup",
+  );
+  if (revokedEnrollment.revoked_at === null) {
+    throw new Error("enrollment token revocation was not persisted");
+  }
+  const regeneratedAction = await submitAction(
+    baseUrl,
+    `/operations/machines/${machine.id}?/regenerateEnrollment`,
+    adminCookie,
+    {},
+    "administrator enrollment token regeneration",
+  );
+  if (
+    !regeneratedAction.serialized.includes("tokenId") ||
+    !regeneratedAction.serialized.includes("token")
+  ) {
+    throw new Error("token regeneration did not return one-time enrollment material");
+  }
+  const enrollmentTokens = queryControlDb(
+    `SELECT id, revoked_at, used_at FROM agent_enrollment_tokens
+     WHERE machine_id = '${machine.id}' ORDER BY created_at`,
+  );
+  if (
+    enrollmentTokens.length !== 2 ||
+    enrollmentTokens[0].revoked_at === null ||
+    enrollmentTokens[1].revoked_at !== null ||
+    enrollmentTokens[1].used_at !== null
+  ) {
+    throw new Error("token regeneration did not leave exactly one active unused token");
+  }
+  let response = await fetch(`${baseUrl}/operations/machines/${machine.id}?tab=config`, {
+    headers: { cookie: adminCookie },
+  });
+  assertResponse(response, 200, "machine enrollment management view");
+  const enrollmentPage = await response.text();
+  if (
+    !enrollmentPage.includes(enrollmentTokens[1].id) ||
+    !enrollmentPage.includes("Replace token") ||
+    !enrollmentPage.includes("SHA-256")
+  ) {
+    throw new Error("machine enrollment management omitted token actions or installer checksum");
   }
   const agentId = "018f5f7e-7d28-7e12-a521-100000000001";
   queryControlDb(
@@ -236,7 +291,7 @@ export async function runWebManagementE2e({
        1000000, 500000, X'01010101010101010101010101010101',
        ${sqlString(containerInventory)})`,
   );
-  let response = await fetch(`${baseUrl}/operations`, { headers: { cookie: adminCookie } });
+  response = await fetch(`${baseUrl}/operations`, { headers: { cookie: adminCookie } });
   assertResponse(response, 200, "dashboard machine latest projection");
   const dashboard = await response.text();
   if (!dashboard.includes("Edge E2E") || !dashboard.includes("42.0%")) {
@@ -582,7 +637,6 @@ export async function runWebManagementE2e({
     "member direct machine creation",
     { type: "failure", actionStatus: 404 },
   );
-
   await submitAction(
     baseUrl,
     "/operations/admin/access?/grant",
@@ -621,6 +675,14 @@ export async function runWebManagementE2e({
     memberCookie,
     { bypassRollout: "on" },
     "view-only member forced update check",
+    { type: "failure", actionStatus: 404 },
+  );
+  await submitAction(
+    baseUrl,
+    `/operations/machines/${machine.id}?/regenerateEnrollment`,
+    memberCookie,
+    {},
+    "view-only member enrollment token regeneration",
     { type: "failure", actionStatus: 404 },
   );
   await submitAction(

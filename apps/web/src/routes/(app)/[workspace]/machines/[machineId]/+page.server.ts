@@ -2,21 +2,46 @@ import { loadMachineDetail, MachineNotFoundError } from "@alphaping/db";
 import { error, fail, isHttpError, redirect } from "@sveltejs/kit";
 
 import { queueAgentCommand } from "$lib/server/agent-commands";
-import { updateMachineConfiguration } from "$lib/server/resources";
+import { installerChecksums } from "$lib/server/installers";
+import {
+  listMachineEnrollmentTokens,
+  regenerateMachineEnrollmentToken,
+  revokeMachineEnrollmentToken,
+  updateMachineConfiguration,
+} from "$lib/server/resources";
 
 import type { Actions, PageServerLoad } from "./$types";
 
-export const load: PageServerLoad = async ({ locals, params, platform }) => {
+export const load: PageServerLoad = async ({ locals, params, platform, url }) => {
   if (!locals.session) throw redirect(303, "/login");
   if (!platform) throw error(503, "Cloudflare bindings are unavailable");
   try {
-    return await loadMachineDetail(
+    const detail = await loadMachineDetail(
       platform.env.CONTROL_DB,
       platform.env.TELEMETRY_DB,
       params.workspace,
       locals.session.user.id,
       params.machineId,
     );
+    const [enrollmentTokens, checksums] = detail.canManage
+      ? await Promise.all([
+          listMachineEnrollmentTokens(
+            platform.env.CONTROL_DB,
+            params.workspace,
+            locals.session.user.id,
+            params.machineId,
+          ),
+          installerChecksums(),
+        ])
+      : [[], { unix: "", windows: "" }];
+    return {
+      ...detail,
+      enrollmentTokens,
+      installerChecksums: checksums,
+      ingestOrigin: platform.env.INGEST_ORIGIN,
+      installOrigin: url.origin,
+      requestedTab: url.searchParams.get("tab"),
+    };
   } catch (cause) {
     if (cause instanceof MachineNotFoundError) throw error(404, "Machine not found");
     throw cause;
@@ -49,6 +74,45 @@ async function commandAction(
 }
 
 export const actions: Actions = {
+  regenerateEnrollment: async ({ locals, params, platform }) => {
+    if (!locals.session || !platform)
+      return fail(401, { kind: "enrollment", message: "Unauthorized" });
+    try {
+      const enrollment = await regenerateMachineEnrollmentToken(
+        platform.env.CONTROL_DB,
+        params.workspace,
+        locals.session.user.id,
+        platform.env.ENROLLMENT_TOKEN_PEPPER,
+        params.machineId,
+      );
+      return { kind: "enrollment", enrollment };
+    } catch (cause) {
+      const message = isHttpError(cause)
+        ? cause.body.message
+        : "Enrollment token generation failed";
+      return fail(isHttpError(cause) ? cause.status : 400, { kind: "enrollment", message });
+    }
+  },
+  revokeEnrollment: async ({ request, locals, params, platform }) => {
+    if (!locals.session || !platform)
+      return fail(401, { kind: "enrollment", message: "Unauthorized" });
+    const form = await request.formData();
+    try {
+      await revokeMachineEnrollmentToken(
+        platform.env.CONTROL_DB,
+        params.workspace,
+        locals.session.user.id,
+        params.machineId,
+        String(form.get("tokenId") ?? ""),
+      );
+      return { kind: "enrollment", revoked: true };
+    } catch (cause) {
+      const message = isHttpError(cause)
+        ? cause.body.message
+        : "Enrollment token revocation failed";
+      return fail(isHttpError(cause) ? cause.status : 400, { kind: "enrollment", message });
+    }
+  },
   updateConfig: async ({ request, locals, params, platform }) => {
     if (!locals.session || !platform)
       return fail(401, { kind: "machineConfig", message: "Unauthorized" });
