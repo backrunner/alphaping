@@ -10,6 +10,15 @@ pub async fn install_verified_binary(
     expected_version: &str,
 ) -> Result<()> {
     let current = std::env::current_exe().context("cannot locate the running Agent binary")?;
+    install_verified_binary_at(&current, bytes, config_path, expected_version).await
+}
+
+async fn install_verified_binary_at(
+    current: &Path,
+    bytes: &[u8],
+    config_path: &Path,
+    expected_version: &str,
+) -> Result<()> {
     let parent = current
         .parent()
         .context("running Agent binary has no parent directory")?;
@@ -30,16 +39,16 @@ pub async fn install_verified_binary(
         if previous.exists() {
             fs::remove_file(&previous).context("cannot remove the previous Agent backup")?;
         }
-        fs::rename(&current, &previous).context("cannot preserve the current Agent binary")?;
-        if let Err(error) = fs::rename(&temporary, &current) {
-            let _ = fs::rename(&previous, &current);
+        fs::rename(current, &previous).context("cannot preserve the current Agent binary")?;
+        if let Err(error) = fs::rename(&temporary, current) {
+            let _ = fs::rename(&previous, current);
             return Err(error).context("cannot atomically install the Agent update");
         }
         sync_directory(parent)?;
-        if let Err(error) = self_test(&current, config_path).await {
+        if let Err(error) = self_test(current, config_path).await {
             let failed = parent.join(format!(".alphaping-agent-{}.failed", Uuid::now_v7()));
-            let _ = fs::rename(&current, &failed);
-            fs::rename(&previous, &current)
+            let _ = fs::rename(current, &failed);
+            fs::rename(&previous, current)
                 .context("updated Agent failed health check and rollback failed")?;
             sync_directory(parent)?;
             let _ = fs::remove_file(failed);
@@ -54,11 +63,11 @@ pub async fn install_verified_binary(
         if helper.exists() {
             fs::remove_file(&helper).context("cannot replace the Windows updater helper")?;
         }
-        fs::copy(&current, &helper).context("cannot create the Windows updater helper")?;
+        fs::copy(current, &helper).context("cannot create the Windows updater helper")?;
         Command::new(&helper)
             .arg("apply-update")
             .arg("--current")
-            .arg(&current)
+            .arg(current)
             .arg("--candidate")
             .arg(&temporary)
             .arg("--config")
@@ -198,4 +207,61 @@ async fn verify_binary_version(binary: &Path, expected_version: &str) -> Result<
 fn sync_directory(path: &Path) -> Result<()> {
     fs::File::open(path)?.sync_all()?;
     Ok(())
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use std::os::unix::fs::PermissionsExt;
+
+    use tempfile::tempdir;
+
+    use super::*;
+
+    fn write_script(path: &Path, body: &str) {
+        fs::write(path, body).expect("write test Agent");
+        fs::set_permissions(path, fs::Permissions::from_mode(0o755))
+            .expect("make test Agent executable");
+    }
+
+    #[tokio::test]
+    async fn installs_a_candidate_after_both_health_checks_pass() {
+        let directory = tempdir().expect("temporary directory");
+        let current = directory.path().join("alphaping-agent");
+        let config = directory.path().join("agent.toml");
+        fs::write(&config, "unused").expect("test config");
+        write_script(&current, "#!/bin/sh\necho old\n");
+        let candidate = b"#!/bin/sh\ncase \"$1\" in\n  --version) echo 'alphaping-agent 0.2.0' ;;\n  self-test) exit 0 ;;\n  *) exit 2 ;;\nesac\n";
+
+        install_verified_binary_at(&current, candidate, &config, "0.2.0")
+            .await
+            .expect("install verified candidate");
+
+        assert_eq!(fs::read(&current).expect("installed Agent"), candidate);
+        assert_eq!(
+            fs::read(directory.path().join("alphaping-agent.previous")).expect("previous Agent"),
+            b"#!/bin/sh\necho old\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn restores_the_previous_binary_when_post_install_health_fails() {
+        let directory = tempdir().expect("temporary directory");
+        let current = directory.path().join("alphaping-agent");
+        let state = directory.path().join("health-count");
+        fs::write(&state, "0").expect("health state");
+        let previous = b"#!/bin/sh\necho old\n";
+        write_script(
+            &current,
+            std::str::from_utf8(previous).expect("test script"),
+        );
+        let candidate = b"#!/bin/sh\ncase \"$1\" in\n  --version) echo 'alphaping-agent 0.2.0' ;;\n  self-test)\n    count=$(cat \"$3\")\n    if [ \"$count\" = 0 ]; then echo 1 >\"$3\"; exit 0; fi\n    exit 1 ;;\n  *) exit 2 ;;\nesac\n";
+
+        let error = install_verified_binary_at(&current, candidate, &state, "0.2.0")
+            .await
+            .expect_err("post-install health must fail");
+
+        assert!(error.to_string().contains("rolled back"));
+        assert_eq!(fs::read(&current).expect("restored Agent"), previous);
+        assert!(!directory.path().join("alphaping-agent.previous").exists());
+    }
 }

@@ -1,6 +1,8 @@
 import { createHash, createPrivateKey, sign } from "node:crypto";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
+import { canonicalJson, canonicalJsonSha256, RELEASE_TARGETS } from "./lib/common.mjs";
+import { validateReleaseBundle } from "./lib/bundle.mjs";
 
 function argument(name) {
   const index = process.argv.indexOf(name);
@@ -8,21 +10,10 @@ function argument(name) {
   return process.argv[index + 1];
 }
 
-function canonical(value) {
-  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
-  if (value && typeof value === "object") {
-    return `{${Object.keys(value)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`)
-      .join(",")}}`;
-  }
-  return JSON.stringify(value);
-}
-
 async function envelope(role, signed, root, privateDirectory) {
   const roleDefinition = root.roles[role];
   if (!roleDefinition || roleDefinition.threshold < 1) throw new Error(`root omitted ${role}`);
-  const payload = Buffer.from(canonical(signed));
+  const payload = Buffer.from(canonicalJson(signed));
   const signatures = [];
   for (const keyId of roleDefinition.key_ids) {
     const matching = [
@@ -45,7 +36,7 @@ async function envelope(role, signed, root, privateDirectory) {
   if (signatures.length < roleDefinition.threshold) {
     throw new Error(`${role} signature threshold was not met`);
   }
-  return Buffer.from(canonical({ signed, signatures }));
+  return Buffer.from(canonicalJson({ signed, signatures }));
 }
 
 function metadataFile(version, bytes) {
@@ -72,17 +63,13 @@ const rolloutPercent = Number(process.env.ALPHAPING_ROLLOUT_PERCENT ?? "100");
 if (!Number.isInteger(rolloutPercent) || rolloutPercent < 0 || rolloutPercent > 100) {
   throw new Error("ALPHAPING_ROLLOUT_PERCENT must be between 0 and 100");
 }
-const targetNames = [
-  ["linux-x86_64", "linux", "x86_64", ""],
-  ["linux-aarch64", "linux", "aarch64", ""],
-  ["macos-x86_64", "macos", "x86_64", ""],
-  ["macos-aarch64", "macos", "aarch64", ""],
-  ["windows-x86_64", "windows", "x86_64", ".exe"],
-  ["windows-aarch64", "windows", "aarch64", ".exe"],
-];
+const releaseBundle = await validateReleaseBundle(artifactDirectory, version);
+if (releaseBundle.updateRootSha256 !== canonicalJsonSha256(root)) {
+  throw new Error("release artifacts were built with a different update root");
+}
 const targets = {};
-for (const [target, platform, arch, suffix] of targetNames) {
-  const name = `alphaping-agent-${target}${suffix}`;
+for (const target of RELEASE_TARGETS) {
+  const name = `alphaping-agent-${target.name}${target.suffix}`;
   const path = resolve(artifactDirectory, name);
   const details = await stat(path);
   if (!details.isFile() || details.size < 1 || details.size > 64 * 1024 * 1024) {
@@ -90,8 +77,8 @@ for (const [target, platform, arch, suffix] of targetNames) {
   }
   targets[basename(path)] = {
     version,
-    platform,
-    arch,
+    platform: target.platform,
+    arch: target.arch,
     channel: "stable",
     length: details.size,
     sha256: createHash("sha256")
@@ -153,9 +140,9 @@ await writeFile(
   resolve(outputDirectory, "agent-release-manifest.json"),
   `${JSON.stringify(
     Object.fromEntries(
-      targetNames.map(([target, , , suffix]) => {
-        const description = targets[`alphaping-agent-${target}${suffix}`];
-        return [target, { version, length: description.length, sha256: description.sha256 }];
+      RELEASE_TARGETS.map((target) => {
+        const description = targets[`alphaping-agent-${target.name}${target.suffix}`];
+        return [target.name, { version, length: description.length, sha256: description.sha256 }];
       }),
     ),
   )}\n`,

@@ -1,0 +1,142 @@
+name: Agent Release Artifacts
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact Agent semantic version already present in Cargo.toml
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      source_date_epoch: ${{ steps.release.outputs.source_date_epoch }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - id: release
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="$INPUT_VERSION"
+          fi
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
+          CARGO_VERSION=$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -1)
+          test "$VERSION" = "$CARGO_VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "source_date_epoch=$(git show -s --format=%ct HEAD)" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x86_64
+            rust_target: x86_64-unknown-linux-gnu
+            runner: ubuntu-24.04
+            binary: target/x86_64-unknown-linux-gnu/release/alphaping-agent
+          - target: linux-aarch64
+            rust_target: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+            binary: target/aarch64-unknown-linux-gnu/release/alphaping-agent
+          - target: macos-x86_64
+            rust_target: x86_64-apple-darwin
+            runner: macos-15-intel
+            binary: target/x86_64-apple-darwin/release/alphaping-agent
+          - target: macos-aarch64
+            rust_target: aarch64-apple-darwin
+            runner: macos-15
+            binary: target/aarch64-apple-darwin/release/alphaping-agent
+          - target: windows-x86_64
+            rust_target: x86_64-pc-windows-msvc
+            runner: windows-2025
+            binary: target/x86_64-pc-windows-msvc/release/alphaping-agent.exe
+          - target: windows-aarch64
+            rust_target: aarch64-pc-windows-msvc
+            runner: windows-11-arm
+            binary: target/aarch64-pc-windows-msvc/release/alphaping-agent.exe
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+        with:
+          toolchain: 1.96.0
+          targets: ${{ matrix.rust_target }}
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+        with:
+          key: agent-release-${{ matrix.rust_target }}
+      - name: Validate public update root
+        shell: bash
+        env:
+          ALPHAPING_UPDATE_ROOT_JSON: ${{ vars.ALPHAPING_UPDATE_ROOT_JSON }}
+        run: |
+          test -n "$ALPHAPING_UPDATE_ROOT_JSON"
+          node -e 'JSON.parse(process.env.ALPHAPING_UPDATE_ROOT_JSON)'
+      - name: Build Agent
+        shell: bash
+        env:
+          ALPHAPING_UPDATE_ROOT_JSON: ${{ vars.ALPHAPING_UPDATE_ROOT_JSON }}
+          SOURCE_DATE_EPOCH: ${{ needs.prepare.outputs.source_date_epoch }}
+        run: cargo build --locked --release -p alphaping-agent --target ${{ matrix.rust_target }}
+      - name: Package and verify Agent
+        shell: bash
+        run: >-
+          node scripts/release/package-agent.mjs
+          --binary "${{ matrix.binary }}"
+          --target "${{ matrix.target }}"
+          --version "${{ needs.prepare.outputs.version }}"
+          --source-commit "$GITHUB_SHA"
+          --source-date-epoch "${{ needs.prepare.outputs.source_date_epoch }}"
+          --output "release-package"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: agent-${{ matrix.target }}
+          path: release-package/*
+          if-no-files-found: error
+          retention-days: 7
+
+  bundle:
+    needs: [prepare, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: agent-*
+          path: release-packages
+          merge-multiple: true
+      - run: >-
+          node scripts/release/assemble-release.mjs
+          --input release-packages
+          --output release-artifacts
+          --version "${{ needs.prepare.outputs.version }}"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: alphaping-agent-release-${{ needs.prepare.outputs.version }}
+          path: release-artifacts/*
+          if-no-files-found: error
+          retention-days: 14

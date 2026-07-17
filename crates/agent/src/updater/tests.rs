@@ -83,3 +83,27 @@ fn chained_metadata_hash_rejects_tampering() {
     assert!(file.verify(bytes).is_ok());
     assert!(file.verify(b"tampered snapshot").is_err());
 }
+
+#[test]
+fn expired_signed_metadata_is_rejected() {
+    let now = 1_752_580_800_000;
+    let keys = vec![
+        ("targets-a".to_owned(), SigningKey::from_bytes(&[7; 32])),
+        ("targets-b".to_owned(), SigningKey::from_bytes(&[9; 32])),
+    ];
+    let root = root(&keys, now);
+    let expired = signed(
+        json!({
+            "type": "targets",
+            "spec_version": "1.0",
+            "version": 4,
+            "expires_at_ms": now,
+            "targets": {},
+        }),
+        &keys,
+    );
+    assert!(
+        root.verify::<TargetsMetadata>(&expired, "targets", "targets", now)
+            .is_err()
+    );
+}

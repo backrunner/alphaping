@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use alphaping_agent::{config::AgentConfig, enrollment::enroll, runtime, spool::Spool};
 use anyhow::{Context, Result, bail};
@@ -13,6 +16,16 @@ async fn main() -> Result<()> {
     let arguments = std::env::args_os().skip(1).collect::<Vec<_>>();
     if arguments.len() == 1 && arguments[0] == "--version" {
         println!("alphaping-agent {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+    if arguments.len() == 1 && arguments[0] == "release-info" {
+        let now_ms = i64::try_from(SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis())
+            .context("system time is outside the release metadata range")?;
+        let root = alphaping_agent::updater::embedded_root_sha256(now_ms)?;
+        println!("version={}", env!("CARGO_PKG_VERSION"));
+        println!("platform={}", std::env::consts::OS);
+        println!("arch={}", std::env::consts::ARCH);
+        println!("update_root_sha256={root}");
         return Ok(());
     }
     if arguments

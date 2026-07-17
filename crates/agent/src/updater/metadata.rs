@@ -210,3 +210,11 @@ pub fn embedded_root(now_ms: i64) -> Result<TrustedRoot> {
         .context("release root is not embedded in this Agent build")?;
     TrustedRoot::from_json(root.as_bytes(), now_ms)
 }
+
+pub fn embedded_root_sha256(now_ms: i64) -> Result<String> {
+    let root = option_env!("ALPHAPING_UPDATE_ROOT_JSON")
+        .context("release root is not embedded in this Agent build")?;
+    TrustedRoot::from_json(root.as_bytes(), now_ms)?;
+    let canonical: Value = serde_json::from_str(root)?;
+    Ok(hex::encode(Sha256::digest(serde_json::to_vec(&canonical)?)))
+}

@@ -10,6 +10,8 @@
   },
   "scripts": {
     "agent:build": "node scripts/run-cargo.mjs build -p alphaping-agent --release",
+    "agent:package": "node scripts/release/package-agent.mjs",
+    "agent:release:assemble": "node scripts/release/assemble-release.mjs",
     "agent:test": "node scripts/run-cargo.mjs test -p alphaping-agent",
     "build": "turbo run build",
     "check": "turbo run check",

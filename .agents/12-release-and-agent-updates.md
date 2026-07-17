@@ -41,6 +41,10 @@ node scripts/release/build-metadata.mjs \
 
 Targets signing requires both targets keys. Timestamp and snapshot keys can be provided only to the online release job after the targets envelope has been approved.
 
+`.github/workflows/agent-release.yml` builds all six OS/architecture targets on native GitHub-hosted runners. Every binary must execute both `--version` and `release-info`; packaging fails unless the platform, architecture, version and a currently valid embedded public root match. Each target receives a SHA-256 sidecar, an SPDX 2.3 JSON SBOM and a source/build manifest. The bundle job requires all targets to share one commit, `SOURCE_DATE_EPOCH` and root digest, then emits `SHA256SUMS` plus `agent-release-bundle.json`.
+
+The workflow deliberately stops at a short-lived Actions artifact. It does not receive root/targets private keys, create a GitHub Release or publish an unsigned binary. `ALPHAPING_UPDATE_ROOT_JSON` is a public GitHub Actions repository variable. An operator downloads the verified bundle, performs the offline targets approval/signing step with `build-metadata.mjs`, and only then publishes the binaries, SBOMs, checksums and signed metadata together.
+
 ## 3. First install
 
 The authenticated control-plane origin serves `/install.sh` and `/install.ps1`. The generated command also passes that origin as `--manifest-origin`. `/agent-release/{target}` reads `AGENT_RELEASE_MANIFEST_JSON`, validates every field, and returns the exact version, length, SHA-256, and fixed `alkinum/alphaping` versioned URL.

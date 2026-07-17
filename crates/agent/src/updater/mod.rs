@@ -20,6 +20,7 @@ use self::{
 
 #[cfg(windows)]
 pub use install::apply_windows_update;
+pub use metadata::embedded_root_sha256;
 
 pub enum UpdateRequest {
     Check {

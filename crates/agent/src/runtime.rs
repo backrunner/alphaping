@@ -141,11 +141,10 @@ pub async fn run(
                 }
             }
             _ = automatic_update_tick.tick(), if config.auto_update && updater.is_some() && !automatic_update_in_flight && !command_in_flight => {
-                automatic_update_in_flight = true;
-                spawn_automatic_update(
-                    updater.clone().expect("guarded updater"),
-                    automatic_result_tx.clone(),
-                );
+                if let Some(updater) = updater.clone() {
+                    automatic_update_in_flight = true;
+                    spawn_automatic_update(updater, automatic_result_tx.clone());
+                }
             }
             Some(restart_required) = automatic_result_rx.recv() => {
                 automatic_update_in_flight = false;
