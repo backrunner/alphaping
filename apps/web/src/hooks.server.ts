@@ -6,7 +6,7 @@ import { createAuth } from "$lib/server/auth";
 
 const SECURITY_HEADERS: Readonly<Record<string, string>> = {
   "cross-origin-opener-policy": "same-origin",
-  "referrer-policy": "no-referrer",
+  "referrer-policy": "same-origin",
   "x-content-type-options": "nosniff",
   "x-frame-options": "DENY",
 };
@@ -27,21 +27,34 @@ export const handle: Handle = async ({ event, resolve }) => {
   const platform = event.platform;
   if (!platform) return resolve(event);
 
+  const pathname = event.url.pathname;
+  const setupRoute = pathname.startsWith("/setup");
+  if (setupRoute) {
+    const response = await resolve(event);
+    for (const [name, value] of Object.entries(SECURITY_HEADERS)) response.headers.set(name, value);
+    response.headers.set("cache-control", "private, no-store");
+    return response;
+  }
+
+  const routeNeedsInstallation = !pathname.includes(".");
+  if (routeNeedsInstallation) {
+    const installation = await platform.env.CONTROL_DB.prepare(
+      "SELECT 1 AS installed FROM installations WHERE state = 'complete' LIMIT 1",
+    )
+      .first<{ installed: number }>()
+      .catch(() => null);
+    if (!installation) {
+      if (pathname.startsWith("/api/auth")) {
+        return Response.json({ code: "INSTALLATION_REQUIRED" }, { status: 503 });
+      }
+      throw redirect(303, "/setup");
+    }
+  }
+
   const secret = platform.env.BETTER_AUTH_SECRET;
   const auth = createAuth(platform.env.CONTROL_DB, secret, event.url.origin);
   event.locals.auth = auth;
   event.locals.session = await auth.api.getSession({ headers: event.request.headers });
-
-  const routeNeedsInstallation =
-    !event.url.pathname.startsWith("/setup") &&
-    !event.url.pathname.startsWith("/api/auth") &&
-    !event.url.pathname.includes(".");
-  if (routeNeedsInstallation) {
-    const installation = await platform.env.CONTROL_DB.prepare(
-      "SELECT 1 AS installed FROM installations WHERE state = 'complete' LIMIT 1",
-    ).first<{ installed: number }>();
-    if (!installation) throw redirect(303, "/setup");
-  }
 
   const response = await svelteKitHandler({ event, resolve, auth, building });
   for (const [name, value] of Object.entries(SECURITY_HEADERS)) {

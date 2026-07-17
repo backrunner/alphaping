@@ -41,6 +41,12 @@
     transform: translateY(1px);
   }
 
+  .button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+    transform: none;
+  }
+
   .button:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;

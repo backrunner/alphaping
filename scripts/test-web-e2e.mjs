@@ -9,8 +9,9 @@ const root = resolve(import.meta.dirname, "..");
 const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const arguments_ = process.argv.slice(2);
 const skipBuild = arguments_.includes("--skip-build");
-if (arguments_.some((argument) => argument !== "--skip-build")) {
-  throw new Error("Usage: test-web-e2e.mjs [--skip-build]");
+const inspectSetup = arguments_.includes("--inspect-setup");
+if (arguments_.some((argument) => !["--skip-build", "--inspect-setup"].includes(argument))) {
+  throw new Error("Usage: test-web-e2e.mjs [--skip-build] [--inspect-setup]");
 }
 
 function run(command, args, label, options = {}) {
@@ -86,6 +87,8 @@ const setupToken = "e2e-setup-token-32-characters-long";
 const authSecret = "e2e-auth-secret-that-is-at-least-32-bytes-long";
 let child = null;
 
+class SetupInspectionComplete extends Error {}
+
 try {
   if (!skipBuild) run(pnpm, ["--filter", "@alphaping/web", "build"], "Web build");
   for (const binding of ["CONTROL_DB", "TELEMETRY_DB"]) {
@@ -125,6 +128,11 @@ try {
         vars: {
           SETUP_TOKEN: setupToken,
           BETTER_AUTH_SECRET: authSecret,
+          ENROLLMENT_TOKEN_PEPPER:
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          CHECK_SECRET_WRAPPING_KEY:
+            "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+          LIVE_TICKET_SECRET: "e2e-live-ticket-secret-that-is-at-least-32-bytes-long",
           INGEST_ORIGIN: "https://ingest.example.com",
           LIVE_ORIGIN: "wss://live.example.com",
           AGENT_RELEASE_MANIFEST_JSON:
@@ -185,6 +193,16 @@ try {
   });
   await waitForServer(baseUrl, processOutput);
 
+  if (inspectSetup) {
+    console.log(`Setup inspection server: ${baseUrl}/setup`);
+    console.log("Press Ctrl+C to stop and remove the temporary D1 state");
+    await new Promise((resolveStop) => {
+      process.once("SIGINT", resolveStop);
+      process.once("SIGTERM", resolveStop);
+    });
+    throw new SetupInspectionComplete();
+  }
+
   let response = await fetch(baseUrl, { redirect: "manual" });
   assertResponse(response, 303, "uninitialized root");
   if (response.headers.get("location") !== "/setup")
@@ -192,8 +210,23 @@ try {
 
   response = await fetch(`${baseUrl}/setup`);
   assertResponse(response, 200, "setup page");
-  if (!(await response.text()).includes("Initialize this AlphaPing deployment")) {
+  if (response.headers.get("referrer-policy") !== "same-origin") {
+    throw new Error("setup referrer policy would suppress the native form Origin header");
+  }
+  const setupPage = await response.text();
+  if (!setupPage.includes("Initialize this AlphaPing deployment")) {
     throw new Error("setup page did not render initialization UI");
+  }
+  for (const expected of [
+    "Initialization progress",
+    "Control database",
+    "Telemetry database",
+    "Data channel secrets",
+    "Worker endpoints",
+  ]) {
+    if (!setupPage.includes(expected)) {
+      throw new Error(`setup page omitted the ${expected} readiness check`);
+    }
   }
 
   const setupForm = {
@@ -235,8 +268,17 @@ try {
     redirect: "manual",
   });
   assertResponse(response, 303, "initialization");
-  if (response.headers.get("location") !== "/login?workspace=operations") {
-    throw new Error("initialization did not redirect to workspace login");
+  if (response.headers.get("location") !== "/setup") {
+    throw new Error("initialization did not redirect to the completion step");
+  }
+
+  response = await fetch(`${baseUrl}/setup`);
+  assertResponse(response, 200, "setup completion");
+  const completionPage = await response.text();
+  for (const expected of ["Initialization complete", "Add first machine", "Add service monitor"]) {
+    if (!completionPage.includes(expected)) {
+      throw new Error(`setup completion omitted ${expected}`);
+    }
   }
 
   response = await fetch(`${baseUrl}/setup`, {
@@ -321,6 +363,8 @@ try {
   }
 
   console.log("Web E2E setup, authentication, dashboard, and public status flow passed");
+} catch (cause) {
+  if (!(cause instanceof SetupInspectionComplete)) throw cause;
 } finally {
   if (child) await stopServer(child);
   rmSync(temporary, { force: true, recursive: true });
