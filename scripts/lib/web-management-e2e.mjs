@@ -71,6 +71,11 @@ export async function runWebManagementE2e({
     {
       name: "Edge E2E",
       expectedHost: "192.0.2.10",
+      description: "Singapore edge gateway",
+      labels: "region=ap-southeast-1\nrole=gateway",
+      samplingIntervalSeconds: "15",
+      reportIntervalSeconds: "120",
+      offlineAfterSeconds: "300",
       containersEnabled: "on",
     },
     "administrator machine creation",
@@ -82,9 +87,25 @@ export async function runWebManagementE2e({
     throw new Error("machine creation did not return the one-time enrollment material");
   }
   const machine = onlyRow(
-    queryControlDb("SELECT id, telemetry_pk FROM machines WHERE name = 'Edge E2E'"),
+    queryControlDb(
+      `SELECT id, telemetry_pk, description, labels_json, sampling_interval_seconds,
+              report_interval_seconds, offline_after_seconds, container_monitoring_enabled,
+              desired_config_revision
+       FROM machines WHERE name = 'Edge E2E'`,
+    ),
     "created machine lookup",
   );
+  if (
+    machine.description !== "Singapore edge gateway" ||
+    machine.labels_json !== '{"region":"ap-southeast-1","role":"gateway"}' ||
+    machine.sampling_interval_seconds !== 15 ||
+    machine.report_interval_seconds !== 120 ||
+    machine.offline_after_seconds !== 300 ||
+    machine.container_monitoring_enabled !== 1 ||
+    machine.desired_config_revision !== 1
+  ) {
+    throw new Error("machine creation did not persist the requested configuration");
+  }
   const enrollment = onlyRow(
     queryControlDb(
       `SELECT COUNT(*) AS count FROM agent_enrollment_tokens WHERE machine_id = '${machine.id}'`,
@@ -92,6 +113,56 @@ export async function runWebManagementE2e({
     "machine enrollment lookup",
   );
   if (enrollment.count !== 1) throw new Error("machine enrollment token was not persisted once");
+  const maintenanceUntil = Date.now() + 2 * 60 * 60_000;
+  await submitAction(
+    baseUrl,
+    `/operations/machines/${machine.id}?/updateConfig`,
+    adminCookie,
+    {
+      name: "Edge E2E",
+      expectedHost: "edge-e2e.example.test",
+      description: "Updated edge gateway",
+      labels: "region=ap-southeast-1\nrole=ingress",
+      samplingIntervalSeconds: "30",
+      reportIntervalSeconds: "120",
+      offlineAfterSeconds: "420",
+      maintenanceUntil: dateTimeInput(maintenanceUntil),
+      timezoneOffsetMinutes: "0",
+      containersEnabled: "on",
+    },
+    "administrator machine configuration update",
+  );
+  const updatedMachine = onlyRow(
+    queryControlDb(
+      `SELECT expected_host, description, labels_json, sampling_interval_seconds,
+              report_interval_seconds, offline_after_seconds, maintenance_until,
+              desired_config_revision
+       FROM machines WHERE id = '${machine.id}'`,
+    ),
+    "updated machine configuration lookup",
+  );
+  if (
+    updatedMachine.expected_host !== "edge-e2e.example.test" ||
+    updatedMachine.description !== "Updated edge gateway" ||
+    updatedMachine.labels_json !== '{"region":"ap-southeast-1","role":"ingress"}' ||
+    updatedMachine.sampling_interval_seconds !== 30 ||
+    updatedMachine.report_interval_seconds !== 120 ||
+    updatedMachine.offline_after_seconds !== 420 ||
+    updatedMachine.maintenance_until !== Math.floor(maintenanceUntil / 60_000) * 60_000 ||
+    updatedMachine.desired_config_revision !== 2
+  ) {
+    throw new Error("machine configuration update did not persist or advance its revision");
+  }
+  const configurationAudit = onlyRow(
+    queryControlDb(
+      `SELECT before_digest, after_digest FROM audit_logs
+       WHERE resource_id = '${machine.id}' AND action = 'machine.configuration.update'`,
+    ),
+    "machine configuration audit lookup",
+  );
+  if (!configurationAudit.before_digest || !configurationAudit.after_digest) {
+    throw new Error("machine configuration update did not retain audit digests");
+  }
   const agentId = "018f5f7e-7d28-7e12-a521-100000000001";
   queryControlDb(
     `INSERT INTO agents
@@ -550,6 +621,24 @@ export async function runWebManagementE2e({
     memberCookie,
     { bypassRollout: "on" },
     "view-only member forced update check",
+    { type: "failure", actionStatus: 404 },
+  );
+  await submitAction(
+    baseUrl,
+    `/operations/machines/${machine.id}?/updateConfig`,
+    memberCookie,
+    {
+      name: "Unauthorized rename",
+      expectedHost: "",
+      description: "",
+      labels: "",
+      samplingIntervalSeconds: "10",
+      reportIntervalSeconds: "60",
+      offlineAfterSeconds: "150",
+      maintenanceUntil: "",
+      timezoneOffsetMinutes: "0",
+    },
+    "view-only member machine configuration update",
     { type: "failure", actionStatus: 404 },
   );
   await submitAction(

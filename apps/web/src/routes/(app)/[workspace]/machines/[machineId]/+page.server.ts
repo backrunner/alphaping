@@ -2,6 +2,7 @@ import { loadMachineDetail, MachineNotFoundError } from "@alphaping/db";
 import { error, fail, isHttpError, redirect } from "@sveltejs/kit";
 
 import { queueAgentCommand } from "$lib/server/agent-commands";
+import { updateMachineConfiguration } from "$lib/server/resources";
 
 import type { Actions, PageServerLoad } from "./$types";
 
@@ -48,6 +49,45 @@ async function commandAction(
 }
 
 export const actions: Actions = {
+  updateConfig: async ({ request, locals, params, platform }) => {
+    if (!locals.session || !platform)
+      return fail(401, { kind: "machineConfig", message: "Unauthorized" });
+    const form = await request.formData();
+    try {
+      const maintenanceValue = String(form.get("maintenanceUntil") ?? "");
+      const timezoneOffsetMinutes = Number(form.get("timezoneOffsetMinutes"));
+      let maintenanceUntil: number | null = null;
+      if (maintenanceValue) {
+        if (!Number.isInteger(timezoneOffsetMinutes) || Math.abs(timezoneOffsetMinutes) > 840) {
+          throw error(400, "Timezone offset is invalid");
+        }
+        const localWallClock = Date.parse(`${maintenanceValue}:00Z`);
+        if (!Number.isFinite(localWallClock)) throw error(400, "Maintenance end time is invalid");
+        maintenanceUntil = localWallClock + timezoneOffsetMinutes * 60_000;
+      }
+      const updated = await updateMachineConfiguration(
+        platform.env.CONTROL_DB,
+        params.workspace,
+        locals.session.user.id,
+        params.machineId,
+        {
+          name: String(form.get("name") ?? ""),
+          expectedHost: String(form.get("expectedHost") ?? ""),
+          description: String(form.get("description") ?? ""),
+          labels: String(form.get("labels") ?? ""),
+          samplingIntervalSeconds: Number(form.get("samplingIntervalSeconds")),
+          reportIntervalSeconds: Number(form.get("reportIntervalSeconds")),
+          offlineAfterSeconds: Number(form.get("offlineAfterSeconds")),
+          containersEnabled: form.get("containersEnabled") === "on",
+          maintenanceUntil,
+        },
+      );
+      return { kind: "machineConfig", saved: true, revision: updated.revision };
+    } catch (cause) {
+      const message = isHttpError(cause) ? cause.body.message : "Machine configuration failed";
+      return fail(isHttpError(cause) ? cause.status : 400, { kind: "machineConfig", message });
+    }
+  },
   checkUpdate: (event) => commandAction(event, "check_update"),
   installVersion: (event) => commandAction(event, "install_version"),
   redetectRuntimes: (event) => commandAction(event, "redetect_runtimes"),

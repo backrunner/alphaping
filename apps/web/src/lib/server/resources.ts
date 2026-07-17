@@ -1,14 +1,51 @@
 import { error } from "@sveltejs/kit";
 
-interface MembershipRow {
-  workspace_id: string;
-  workspace_pk: number;
-  default_dashboard_id: string;
-  role: "admin" | "member";
-}
+import {
+  loadMonitoringAccess,
+  requireAdmin,
+  requireResourceCapability,
+} from "./monitoring-access.js";
+import { prepareAuditStatement } from "./workspace-admin.js";
 
 interface SequenceRow {
   value: number;
+}
+
+interface MachineConfigurationRow {
+  name: string;
+  description: string;
+  expected_host: string | null;
+  labels_json: string;
+  sampling_interval_seconds: number;
+  report_interval_seconds: number;
+  offline_after_seconds: number;
+  container_monitoring_enabled: number;
+  maintenance_until: number | null;
+  desired_config_revision: number;
+}
+
+export interface MachineConfigurationInput {
+  name: string;
+  expectedHost: string;
+  description: string;
+  labels: string;
+  samplingIntervalSeconds: number;
+  reportIntervalSeconds: number;
+  offlineAfterSeconds: number;
+  containersEnabled: boolean;
+  maintenanceUntil: number | null;
+}
+
+interface NormalizedMachineConfiguration {
+  name: string;
+  expectedHost: string | null;
+  description: string;
+  labels: Readonly<Record<string, string>>;
+  samplingIntervalSeconds: number;
+  reportIntervalSeconds: number;
+  offlineAfterSeconds: number;
+  containersEnabled: boolean;
+  maintenanceUntil: number | null;
 }
 
 function randomToken(): string {
@@ -40,24 +77,6 @@ async function tokenDigest(token: string, pepper: string): Promise<ArrayBuffer> 
   return crypto.subtle.sign("HMAC", key, new TextEncoder().encode(token));
 }
 
-async function requireAdmin(
-  db: D1Database,
-  workspaceSlug: string,
-  userId: string,
-): Promise<MembershipRow> {
-  const membership = await db
-    .prepare(
-      `SELECT w.id AS workspace_id, w.telemetry_pk AS workspace_pk,
-              w.default_dashboard_id, m.role
-       FROM workspaces w JOIN memberships m ON m.workspace_id = w.id
-       WHERE w.slug = ? AND m.user_id = ? AND m.status = 'active' AND w.deleted_at IS NULL`,
-    )
-    .bind(workspaceSlug, userId)
-    .first<MembershipRow>();
-  if (!membership || membership.role !== "admin") throw error(404, "Workspace not found");
-  return membership;
-}
-
 async function nextSequence(db: D1Database, kind: "machine") {
   const row = await db
     .prepare(
@@ -70,38 +89,146 @@ async function nextSequence(db: D1Database, kind: "machine") {
   return row.value;
 }
 
+function boundedInteger(value: number, name: string, minimum: number, maximum: number): number {
+  if (!Number.isInteger(value) || value < minimum || value > maximum) {
+    throw error(400, `${name} must be between ${minimum} and ${maximum} seconds`);
+  }
+  return value;
+}
+
+export function parseMachineLabels(value: string): Readonly<Record<string, string>> {
+  const labels: Record<string, string> = {};
+  const entries = value
+    .split(/\r?\n|,/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  if (entries.length > 20) throw error(400, "A machine can have at most 20 labels");
+  for (const entry of entries) {
+    const separator = entry.indexOf("=");
+    if (separator <= 0) throw error(400, "Labels must use key=value format");
+    const key = entry.slice(0, separator).trim();
+    const labelValue = entry.slice(separator + 1).trim();
+    if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$/.test(key)) {
+      throw error(400, `Label key ${key || "(empty)"} is invalid`);
+    }
+    if (labelValue.length === 0 || labelValue.length > 128) {
+      throw error(400, `Label ${key} must have a value of at most 128 characters`);
+    }
+    if (Object.hasOwn(labels, key)) throw error(400, `Label ${key} is duplicated`);
+    labels[key] = labelValue;
+  }
+  if (new TextEncoder().encode(JSON.stringify(labels)).byteLength > 4_096) {
+    throw error(400, "Machine labels exceed the 4 KiB limit");
+  }
+  return labels;
+}
+
+export function normalizeMachineConfiguration(
+  input: MachineConfigurationInput,
+): NormalizedMachineConfiguration {
+  const name = input.name.trim();
+  const expectedHost = input.expectedHost.trim();
+  const description = input.description.trim();
+  if (name.length < 2 || name.length > 80) throw error(400, "Machine name is invalid");
+  if (expectedHost.length > 253) throw error(400, "Expected host is invalid");
+  if (description.length > 500) throw error(400, "Description is too long");
+  const samplingIntervalSeconds = boundedInteger(
+    input.samplingIntervalSeconds,
+    "Sampling interval",
+    5,
+    300,
+  );
+  const reportIntervalSeconds = boundedInteger(
+    input.reportIntervalSeconds,
+    "Report interval",
+    60,
+    900,
+  );
+  const offlineAfterSeconds = boundedInteger(
+    input.offlineAfterSeconds,
+    "Offline threshold",
+    60,
+    86_400,
+  );
+  if (reportIntervalSeconds % samplingIntervalSeconds !== 0) {
+    throw error(400, "Report interval must be divisible by the sampling interval");
+  }
+  if (offlineAfterSeconds < reportIntervalSeconds) {
+    throw error(400, "Offline threshold cannot be shorter than the report interval");
+  }
+  if (
+    input.maintenanceUntil !== null &&
+    (!Number.isInteger(input.maintenanceUntil) || input.maintenanceUntil < 0)
+  ) {
+    throw error(400, "Maintenance end time is invalid");
+  }
+  return {
+    name,
+    expectedHost: expectedHost || null,
+    description,
+    labels: parseMachineLabels(input.labels),
+    samplingIntervalSeconds,
+    reportIntervalSeconds,
+    offlineAfterSeconds,
+    containersEnabled: input.containersEnabled,
+    maintenanceUntil: input.maintenanceUntil,
+  };
+}
+
+function auditConfiguration(configuration: NormalizedMachineConfiguration, revision: number) {
+  return { ...configuration, desiredConfigRevision: revision };
+}
+
 export async function createMachine(
   db: D1Database,
   workspaceSlug: string,
   userId: string,
   enrollmentPepper: string,
-  input: { name: string; expectedHost: string; containersEnabled: boolean },
-): Promise<{ token: string; machineId: string; expiresAt: number }> {
-  const membership = await requireAdmin(db, workspaceSlug, userId);
-  if (input.name.length < 2 || input.name.length > 80) throw error(400, "Machine name is invalid");
-  if (input.expectedHost.length > 253) throw error(400, "Expected host is invalid");
+  input: MachineConfigurationInput,
+): Promise<{ token: string; tokenId: string; machineId: string; expiresAt: number }> {
+  const access = await loadMonitoringAccess(db, workspaceSlug, userId);
+  requireAdmin(access);
+  const configuration = normalizeMachineConfiguration(input);
   const telemetryPk = await nextSequence(db, "machine");
   const token = randomToken();
   const digest = await tokenDigest(token, enrollmentPepper);
   const now = Date.now();
   const expiresAt = now + 15 * 60_000;
   const machineId = crypto.randomUUID();
+  const tokenId = crypto.randomUUID();
+  const audit = await prepareAuditStatement(db, {
+    workspaceId: access.workspaceId,
+    actorUserId: userId,
+    action: "machine.create",
+    resourceType: "machine",
+    resourceId: machineId,
+    before: null,
+    after: auditConfiguration(configuration, 1),
+    now,
+  });
   await db.batch([
     db
       .prepare(
         `INSERT INTO machines
-          (id, telemetry_pk, workspace_id, name, expected_host, sampling_interval_seconds,
-           report_interval_seconds, offline_after_seconds, container_monitoring_enabled,
-           desired_config_revision, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, 10, 60, 150, ?, 1, ?, ?)`,
+          (id, telemetry_pk, workspace_id, name, description, expected_host, labels_json,
+           sampling_interval_seconds, report_interval_seconds, offline_after_seconds,
+           container_monitoring_enabled, maintenance_until, desired_config_revision,
+           created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
       )
       .bind(
         machineId,
         telemetryPk,
-        membership.workspace_id,
-        input.name,
-        input.expectedHost || null,
-        input.containersEnabled ? 1 : 0,
+        access.workspaceId,
+        configuration.name,
+        configuration.description,
+        configuration.expectedHost,
+        JSON.stringify(configuration.labels),
+        configuration.samplingIntervalSeconds,
+        configuration.reportIntervalSeconds,
+        configuration.offlineAfterSeconds,
+        configuration.containersEnabled ? 1 : 0,
+        configuration.maintenanceUntil,
         now,
         now,
       ),
@@ -111,29 +238,96 @@ export async function createMachine(
           (id, workspace_id, machine_id, token_digest, expires_at, created_by, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
       )
-      .bind(
-        crypto.randomUUID(),
-        membership.workspace_id,
-        machineId,
-        digest,
-        expiresAt,
-        userId,
-        now,
-      ),
+      .bind(tokenId, access.workspaceId, machineId, digest, expiresAt, userId, now),
     db
       .prepare(
         `INSERT INTO dashboard_resources
           (dashboard_id, resource_type, resource_id, sort_order, public_override)
          VALUES (?, 'machine', ?, ?, 'inherit')`,
       )
-      .bind(membership.default_dashboard_id, machineId, telemetryPk),
+      .bind(access.defaultDashboardId, machineId, telemetryPk),
     db
       .prepare(
         `INSERT INTO resource_public_policies
           (workspace_id, resource_type, resource_id, effect, projection_profile, updated_at)
          VALUES (?, 'machine', ?, 'deny', 'summary', ?)`,
       )
-      .bind(membership.workspace_id, machineId, now),
+      .bind(access.workspaceId, machineId, now),
+    audit,
   ]);
-  return { token, machineId, expiresAt };
+  return { token, tokenId, machineId, expiresAt };
+}
+
+function rowConfiguration(row: MachineConfigurationRow): NormalizedMachineConfiguration {
+  return {
+    name: row.name,
+    description: row.description,
+    expectedHost: row.expected_host,
+    labels: JSON.parse(row.labels_json) as Record<string, string>,
+    samplingIntervalSeconds: row.sampling_interval_seconds,
+    reportIntervalSeconds: row.report_interval_seconds,
+    offlineAfterSeconds: row.offline_after_seconds,
+    containersEnabled: row.container_monitoring_enabled === 1,
+    maintenanceUntil: row.maintenance_until,
+  };
+}
+
+export async function updateMachineConfiguration(
+  db: D1Database,
+  workspaceSlug: string,
+  userId: string,
+  machineId: string,
+  input: MachineConfigurationInput,
+): Promise<{ revision: number }> {
+  const access = await loadMonitoringAccess(db, workspaceSlug, userId);
+  requireResourceCapability(access, "machine", machineId, "manage");
+  const existing = await db
+    .prepare(
+      `SELECT name, description, expected_host, labels_json, sampling_interval_seconds,
+              report_interval_seconds, offline_after_seconds, container_monitoring_enabled,
+              maintenance_until, desired_config_revision
+       FROM machines WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL`,
+    )
+    .bind(machineId, access.workspaceId)
+    .first<MachineConfigurationRow>();
+  if (!existing) throw error(404, "Resource not found");
+  const configuration = normalizeMachineConfiguration(input);
+  const revision = existing.desired_config_revision + 1;
+  const now = Date.now();
+  const audit = await prepareAuditStatement(db, {
+    workspaceId: access.workspaceId,
+    actorUserId: userId,
+    action: "machine.configuration.update",
+    resourceType: "machine",
+    resourceId: machineId,
+    before: auditConfiguration(rowConfiguration(existing), existing.desired_config_revision),
+    after: auditConfiguration(configuration, revision),
+    now,
+  });
+  await db.batch([
+    db
+      .prepare(
+        `UPDATE machines SET name = ?, description = ?, expected_host = ?, labels_json = ?,
+            sampling_interval_seconds = ?, report_interval_seconds = ?, offline_after_seconds = ?,
+            container_monitoring_enabled = ?, maintenance_until = ?,
+            desired_config_revision = desired_config_revision + 1, updated_at = ?
+         WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL`,
+      )
+      .bind(
+        configuration.name,
+        configuration.description,
+        configuration.expectedHost,
+        JSON.stringify(configuration.labels),
+        configuration.samplingIntervalSeconds,
+        configuration.reportIntervalSeconds,
+        configuration.offlineAfterSeconds,
+        configuration.containersEnabled ? 1 : 0,
+        configuration.maintenanceUntil,
+        now,
+        machineId,
+        access.workspaceId,
+      ),
+    audit,
+  ]);
+  return { revision };
 }

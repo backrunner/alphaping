@@ -96,6 +96,53 @@
             placeholder="10.0.0.12"
           /></label
         >
+        <label
+          ><span>Description</span><textarea
+            name="description"
+            maxlength="500"
+            rows="3"
+            placeholder="Singapore edge gateway"
+          ></textarea></label
+        >
+        <label
+          ><span>Labels</span><textarea
+            name="labels"
+            rows="3"
+            placeholder="region=ap-southeast-1&#10;role=gateway"
+          ></textarea><small>One key=value label per line, up to 20.</small></label
+        >
+        <div class="intervals">
+          <label
+            ><span>Sample every</span><input
+              type="number"
+              name="samplingIntervalSeconds"
+              min="5"
+              max="300"
+              value="10"
+              required
+            /><small>seconds</small></label
+          >
+          <label
+            ><span>Report every</span><input
+              type="number"
+              name="reportIntervalSeconds"
+              min="60"
+              max="900"
+              value="60"
+              required
+            /><small>seconds</small></label
+          >
+          <label
+            ><span>Offline after</span><input
+              type="number"
+              name="offlineAfterSeconds"
+              min="60"
+              max="86400"
+              value="150"
+              required
+            /><small>seconds</small></label
+          >
+        </div>
         <label class="checkbox"
           ><input type="checkbox" name="containersEnabled" /><span>Enable container monitoring</span
           ></label
@@ -161,7 +208,8 @@
     font-weight: 600;
   }
 
-  input {
+  input,
+  textarea {
     width: 100%;
     height: 36px;
     padding: 0 10px;
@@ -172,7 +220,15 @@
     font: inherit;
   }
 
-  input:focus {
+  textarea {
+    height: auto;
+    min-height: 70px;
+    padding-block: 8px;
+    resize: vertical;
+  }
+
+  input:focus,
+  textarea:focus {
     border-color: var(--accent);
     outline: 2px solid color-mix(in srgb, var(--accent) 22%, transparent);
   }
@@ -190,6 +246,19 @@
 
   .checkbox span {
     margin: 0;
+  }
+
+  label small {
+    display: block;
+    margin-top: 4px;
+    color: var(--text-faint);
+    font-size: 10px;
+  }
+
+  .intervals {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
   }
 
   .form-error {
@@ -293,6 +362,12 @@
     .enrollment__command {
       grid-column: 1 / -1;
       grid-row: 2;
+    }
+  }
+
+  @media (max-width: 420px) {
+    .intervals {
+      grid-template-columns: 1fr;
     }
   }
 </style>

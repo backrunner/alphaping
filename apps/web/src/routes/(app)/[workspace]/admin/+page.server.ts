@@ -36,7 +36,13 @@ export const actions: Actions = {
         {
           name: String(form.get("name") ?? "").trim(),
           expectedHost: String(form.get("expectedHost") ?? "").trim(),
+          description: String(form.get("description") ?? "").trim(),
+          labels: String(form.get("labels") ?? ""),
+          samplingIntervalSeconds: Number(form.get("samplingIntervalSeconds")),
+          reportIntervalSeconds: Number(form.get("reportIntervalSeconds")),
+          offlineAfterSeconds: Number(form.get("offlineAfterSeconds")),
           containersEnabled: form.get("containersEnabled") === "on",
+          maintenanceUntil: null,
         },
       );
       return { kind: "machine", machine };

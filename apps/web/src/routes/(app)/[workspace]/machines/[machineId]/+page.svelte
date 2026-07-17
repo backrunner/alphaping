@@ -14,7 +14,13 @@
   import { formatRelativeTime } from "$lib/utils/format";
 
   let { data, form } = $props();
-  let activeTab = $state<"overview" | "probes" | "containers" | "events" | "config">("overview");
+  function initialTab(): "overview" | "config" {
+    return form?.kind === "machineConfig" ? "config" : "overview";
+  }
+
+  let activeTab = $state<"overview" | "probes" | "containers" | "events" | "config">(
+    initialTab(),
+  );
   function initialLatest(): DashboardMachine {
     return data.latest;
   }
@@ -116,7 +122,7 @@
     {:else if activeTab === "events"}
       <MachineEvents events={data.events} />
     {:else if activeTab === "config" && data.canManage}
-      <MachineConfig machine={data.machine} />
+      <MachineConfig machine={data.machine} result={form ?? null} />
       {#if data.agent}
         <AgentUpdateControls agent={data.agent} commands={data.agentCommands} result={form} />
       {/if}
