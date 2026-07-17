@@ -109,6 +109,7 @@ dependencies = [
 name = "alphaping-ingest"
 version = "0.1.0"
 dependencies = [
+ "alphaping-agent",
  "alphaping-crypto",
  "alphaping-protocol",
  "base64",
@@ -118,10 +119,13 @@ dependencies = [
  "hex",
  "hmac",
  "prost",
+ "reqwest",
+ "rustls",
  "serde",
  "serde_json",
  "sha2",
  "thiserror",
+ "tokio",
  "wasm-bindgen",
  "worker",
 ]

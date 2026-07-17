@@ -12,14 +12,12 @@ pub struct EnrollmentMaterial {
     pub identity_private_key: [u8; 32],
 }
 
-pub async fn enroll(
-    origin: &str,
-    token: &str,
-    machine_claim_id: &str,
-) -> Result<EnrollmentMaterial> {
-    if !origin.starts_with("https://") {
-        bail!("enrollment endpoint must use HTTPS");
-    }
+pub struct EnrollmentProof {
+    pub request: EnrollmentRequest,
+    pub identity_private_key: [u8; 32],
+}
+
+pub fn build_enrollment_proof(token: &str, machine_claim_id: &str) -> Result<EnrollmentProof> {
     if token.len() < 32 || token.len() > 256 {
         bail!("enrollment token has an invalid length");
     }
@@ -52,11 +50,44 @@ pub async fn enroll(
         .sign(&encode_message(&request))
         .to_bytes()
         .to_vec();
+    Ok(EnrollmentProof {
+        request,
+        identity_private_key,
+    })
+}
+
+pub fn validate_enrollment_response(
+    enrollment: &EnrollmentResponse,
+    machine_claim_id: &str,
+) -> Result<()> {
+    if enrollment.agent_id.is_empty()
+        || enrollment.data_key.len() != 32
+        || enrollment.nonce_prefix.len() != 4
+        || enrollment.sample_interval_seconds < 5
+        || enrollment.report_interval_seconds < 60
+        || enrollment.machine_claim_id != machine_claim_id
+        || enrollment.initial_client_sequence == 0
+        || enrollment.max_envelope_bytes as usize != MAX_ENVELOPE_BYTES
+    {
+        bail!("enrollment response is invalid");
+    }
+    Ok(())
+}
+
+pub async fn enroll(
+    origin: &str,
+    token: &str,
+    machine_claim_id: &str,
+) -> Result<EnrollmentMaterial> {
+    if !origin.starts_with("https://") {
+        bail!("enrollment endpoint must use HTTPS");
+    }
+    let proof = build_enrollment_proof(token, machine_claim_id)?;
     let endpoint = format!("{}/v1/enroll", origin.trim_end_matches('/'));
     let response = pq_client()?
         .post(endpoint)
         .header("content-type", "application/x-protobuf")
-        .body(encode_message(&request))
+        .body(encode_message(&proof.request))
         .send()
         .await
         .context("enrollment request failed")?;
@@ -74,19 +105,70 @@ pub async fn enroll(
         bail!("enrollment response is too large");
     }
     let enrollment: EnrollmentResponse = decode_message(&body)?;
-    if enrollment.agent_id.is_empty()
-        || enrollment.data_key.len() != 32
-        || enrollment.nonce_prefix.len() != 4
-        || enrollment.sample_interval_seconds < 5
-        || enrollment.report_interval_seconds < 60
-        || enrollment.machine_claim_id != machine_claim_id
-        || enrollment.initial_client_sequence == 0
-        || enrollment.max_envelope_bytes as usize != MAX_ENVELOPE_BYTES
-    {
-        bail!("enrollment response is invalid");
-    }
+    validate_enrollment_response(&enrollment, machine_claim_id)?;
     Ok(EnrollmentMaterial {
         response: enrollment,
-        identity_private_key,
+        identity_private_key: proof.identity_private_key,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use alphaping_protocol::{MAX_ENVELOPE_BYTES, encode_message, v1::EnrollmentResponse};
+    use ed25519_dalek::{Signature, VerifyingKey};
+
+    use super::{build_enrollment_proof, validate_enrollment_response};
+
+    #[test]
+    fn enrollment_proof_binds_the_token_and_machine_claim() {
+        let proof = build_enrollment_proof(
+            "abcdefghijklmnopqrstuvwxyzABCDEFGH012345678",
+            "018f5f7e-7d28-7e12-a521-23456789abcd",
+        )
+        .expect("proof should be constructed");
+        let key_bytes: [u8; 32] = proof
+            .request
+            .identity_public_key
+            .as_slice()
+            .try_into()
+            .expect("identity key length");
+        let key = VerifyingKey::from_bytes(&key_bytes).expect("identity key");
+        let signature = Signature::from_slice(&proof.request.signature).expect("signature");
+        let mut unsigned = proof.request.clone();
+        unsigned.signature.clear();
+        key.verify_strict(&encode_message(&unsigned), &signature)
+            .expect("proof signature");
+
+        unsigned.machine_claim_id = "018f5f7e-7d28-7e12-a521-000000000000".to_owned();
+        assert!(
+            key.verify_strict(&encode_message(&unsigned), &signature)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn enrollment_response_requires_safe_transport_limits() {
+        let machine_claim_id = "018f5f7e-7d28-7e12-a521-23456789abcd";
+        let mut response = EnrollmentResponse {
+            agent_id: "018f5f7e-7d28-7e12-a521-123456789abc".to_owned(),
+            machine_pk: 1,
+            workspace_pk: 1,
+            key_epoch: 1,
+            data_key: vec![1; 32],
+            nonce_prefix: vec![2; 4],
+            config_revision: 1,
+            sample_interval_seconds: 10,
+            report_interval_seconds: 60,
+            server_time_ms: 1,
+            max_clock_skew_ms: 300_000,
+            max_envelope_bytes: MAX_ENVELOPE_BYTES as u32,
+            initial_client_sequence: 1,
+            initial_server_sequence: 1,
+            machine_claim_id: machine_claim_id.to_owned(),
+            container_monitoring_enabled: true,
+        };
+        assert!(validate_enrollment_response(&response, machine_claim_id).is_ok());
+        response.initial_client_sequence = 0;
+        assert!(validate_enrollment_response(&response, machine_claim_id).is_err());
+    }
 }

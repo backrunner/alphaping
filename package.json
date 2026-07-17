@@ -27,7 +27,7 @@
     "format:check": "prettier --check .",
     "lint": "eslint . --max-warnings=0",
     "test": "pnpm test:scripts && turbo run test",
-    "test:e2e": "node scripts/test-web-e2e.mjs",
+    "test:e2e": "node scripts/test-web-e2e.mjs && node scripts/test-ingest-e2e.mjs",
     "test:scripts": "node --test scripts/*.test.mjs",
     "typecheck": "turbo run check",
     "verify": "node scripts/verify.mjs",

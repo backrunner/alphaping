@@ -5,7 +5,6 @@ use alphaping_protocol::{
     MAX_ENVELOPE_BYTES, PROTOCOL_VERSION, decode_message, encode_message,
     v1::{AckStatus, DurableAck, EncryptedEnvelope, EnvelopeHeader},
 };
-use prost::Message;
 use reqwest::Client;
 use rustls::{
     ClientConfig, RootCertStore,
@@ -37,6 +36,10 @@ pub enum UploadError {
 pub struct Uploader {
     client: Client,
     endpoint: String,
+    codec: EnvelopeCodec,
+}
+
+pub struct EnvelopeCodec {
     agent_id: Vec<u8>,
     key_epoch: u32,
     nonce_prefix: [u8; 4],
@@ -73,16 +76,11 @@ impl Uploader {
         root_key: [u8; 32],
         nonce_prefix: [u8; 4],
     ) -> Result<Self, UploadError> {
-        let keys = DirectionalKeys::derive(&root_key, &agent_id, key_epoch)
-            .map_err(|_| UploadError::Authentication)?;
         let client = pq_client()?;
         Ok(Self {
             client,
             endpoint,
-            agent_id,
-            key_epoch,
-            nonce_prefix,
-            keys,
+            codec: EnvelopeCodec::new(agent_id, key_epoch, root_key, nonce_prefix)?,
         })
     }
 
@@ -93,31 +91,9 @@ impl Uploader {
         now_ms: i64,
     ) -> Result<DurableAck, UploadError> {
         let sequence = spool.next_sequence().map_err(|_| UploadError::Sequence)?;
-        let header = EnvelopeHeader {
-            protocol_version: PROTOCOL_VERSION,
-            agent_id: self.agent_id.clone(),
-            key_epoch: self.key_epoch,
-            sequence,
-            sent_at_ms: now_ms,
-            report_id: delivery.report_id.clone(),
-        };
-        let aad = encode_message(&header);
-        let ciphertext = seal(
-            &self.keys.client_to_server,
-            self.nonce_prefix,
-            sequence,
-            &aad,
-            &delivery.payload,
-        )
-        .map_err(|_| UploadError::Authentication)?;
-        let envelope = EncryptedEnvelope {
-            header: Some(header),
-            ciphertext,
-        }
-        .encode_to_vec();
-        if envelope.len() > MAX_ENVELOPE_BYTES {
-            return Err(UploadError::Protocol);
-        }
+        let envelope =
+            self.codec
+                .encode_report(sequence, now_ms, &delivery.report_id, &delivery.payload)?;
 
         let response = self
             .client
@@ -139,16 +115,80 @@ impl Uploader {
             return Err(UploadError::ResponseTooLarge);
         }
         let body = response.bytes().await?;
+        self.codec.decode_ack(&body, sequence, &delivery.report_id)
+    }
+}
+
+impl EnvelopeCodec {
+    pub fn new(
+        agent_id: Vec<u8>,
+        key_epoch: u32,
+        root_key: [u8; 32],
+        nonce_prefix: [u8; 4],
+    ) -> Result<Self, UploadError> {
+        let keys = DirectionalKeys::derive(&root_key, &agent_id, key_epoch)
+            .map_err(|_| UploadError::Authentication)?;
+        Ok(Self {
+            agent_id,
+            key_epoch,
+            nonce_prefix,
+            keys,
+        })
+    }
+
+    pub fn encode_report(
+        &self,
+        sequence: u64,
+        sent_at_ms: i64,
+        report_id: &[u8],
+        compressed_payload: &[u8],
+    ) -> Result<Vec<u8>, UploadError> {
+        if sequence == 0 || report_id.is_empty() {
+            return Err(UploadError::Protocol);
+        }
+        let header = EnvelopeHeader {
+            protocol_version: PROTOCOL_VERSION,
+            agent_id: self.agent_id.clone(),
+            key_epoch: self.key_epoch,
+            sequence,
+            sent_at_ms,
+            report_id: report_id.to_vec(),
+        };
+        let aad = encode_message(&header);
+        let ciphertext = seal(
+            &self.keys.client_to_server,
+            self.nonce_prefix,
+            sequence,
+            &aad,
+            compressed_payload,
+        )
+        .map_err(|_| UploadError::Authentication)?;
+        let envelope = encode_message(&EncryptedEnvelope {
+            header: Some(header),
+            ciphertext,
+        });
+        if envelope.len() > MAX_ENVELOPE_BYTES {
+            return Err(UploadError::Protocol);
+        }
+        Ok(envelope)
+    }
+
+    pub fn decode_ack(
+        &self,
+        body: &[u8],
+        expected_sequence: u64,
+        expected_report_id: &[u8],
+    ) -> Result<DurableAck, UploadError> {
         if body.len() > MAX_ENVELOPE_BYTES {
             return Err(UploadError::ResponseTooLarge);
         }
         let response_envelope: EncryptedEnvelope =
-            decode_message(&body).map_err(|_| UploadError::Protocol)?;
+            decode_message(body).map_err(|_| UploadError::Protocol)?;
         let response_header = response_envelope.header.ok_or(UploadError::Protocol)?;
         if response_header.agent_id != self.agent_id
             || response_header.key_epoch != self.key_epoch
-            || response_header.sequence != sequence
-            || response_header.report_id != delivery.report_id
+            || response_header.sequence != expected_sequence
+            || response_header.report_id != expected_report_id
         {
             return Err(UploadError::Protocol);
         }
@@ -156,7 +196,7 @@ impl Uploader {
         let plaintext = open(
             &self.keys.server_to_client,
             self.nonce_prefix,
-            sequence,
+            expected_sequence,
             &response_aad,
             &response_envelope.ciphertext,
         )
@@ -165,11 +205,90 @@ impl Uploader {
             decode_message(&plaintext).map_err(|_| UploadError::Protocol)?;
         let status =
             AckStatus::try_from(acknowledgement.status).map_err(|_| UploadError::Protocol)?;
-        if acknowledgement.report_id != delivery.report_id
+        if acknowledgement.report_id != expected_report_id
             || !matches!(status, AckStatus::Committed | AckStatus::Duplicate)
         {
             return Err(UploadError::Protocol);
         }
         Ok(acknowledgement)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alphaping_crypto::{DirectionalKeys, open, seal};
+    use alphaping_protocol::{
+        PROTOCOL_VERSION, decode_message, encode_message,
+        v1::{AckStatus, DurableAck, EncryptedEnvelope, EnvelopeHeader},
+    };
+
+    use super::{EnvelopeCodec, UploadError};
+
+    #[test]
+    fn envelope_codec_round_trips_authenticated_report_and_ack() {
+        let agent_id = b"018f5f7e-7d28-7e12-a521-123456789abc".to_vec();
+        let root_key = [7; 32];
+        let nonce_prefix = [1, 2, 3, 4];
+        let codec = EnvelopeCodec::new(agent_id.clone(), 1, root_key, nonce_prefix)
+            .expect("codec should initialize");
+        let report_id = [9; 16];
+        let compressed = b"compressed protobuf";
+        let request = codec
+            .encode_report(4, 100, &report_id, compressed)
+            .expect("request envelope");
+        let request: EncryptedEnvelope = decode_message(&request).expect("request protobuf");
+        let request_header = request.header.expect("request header");
+        let keys = DirectionalKeys::derive(&root_key, &agent_id, 1).expect("keys");
+        assert_eq!(
+            open(
+                &keys.client_to_server,
+                nonce_prefix,
+                4,
+                &encode_message(&request_header),
+                &request.ciphertext,
+            )
+            .expect("authenticated request"),
+            compressed
+        );
+
+        let acknowledgement = DurableAck {
+            report_id: report_id.to_vec(),
+            status: AckStatus::Committed as i32,
+            committed_at_ms: 101,
+            config_revision: 1,
+            config: None,
+            commands: Vec::new(),
+            live_session: None,
+        };
+        let response_header = EnvelopeHeader {
+            protocol_version: PROTOCOL_VERSION,
+            agent_id,
+            key_epoch: 1,
+            sequence: 4,
+            sent_at_ms: 101,
+            report_id: report_id.to_vec(),
+        };
+        let ciphertext = seal(
+            &keys.server_to_client,
+            nonce_prefix,
+            4,
+            &encode_message(&response_header),
+            &encode_message(&acknowledgement),
+        )
+        .expect("response encryption");
+        let response = encode_message(&EncryptedEnvelope {
+            header: Some(response_header),
+            ciphertext,
+        });
+        assert_eq!(
+            codec
+                .decode_ack(&response, 4, &report_id)
+                .expect("authenticated ACK"),
+            acknowledgement
+        );
+        assert!(matches!(
+            codec.decode_ack(&response, 5, &report_id),
+            Err(UploadError::Protocol)
+        ));
     }
 }

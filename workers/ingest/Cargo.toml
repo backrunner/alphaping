@@ -28,3 +28,9 @@ thiserror.workspace = true
 getrandom_02 = { package = "getrandom", version = "0.2.17", features = ["js"] }
 wasm-bindgen = "=0.2.125"
 worker.workspace = true
+
+[dev-dependencies]
+alphaping-agent = { path = "../../crates/agent" }
+reqwest.workspace = true
+rustls.workspace = true
+tokio.workspace = true
