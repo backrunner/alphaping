@@ -58,6 +58,7 @@
 
 html {
   min-width: 320px;
+  overflow-x: clip;
   background: var(--bg);
   font-family: var(--font-sans);
   font-size: 13px;
@@ -66,6 +67,7 @@ html {
 
 body {
   min-height: 100dvh;
+  overflow-x: clip;
   margin: 0;
   color: var(--text);
   background: var(--bg);

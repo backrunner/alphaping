@@ -280,4 +280,48 @@
       justify-self: start;
     }
   }
+
+  @media (max-width: 480px) {
+    .table-wrap {
+      overflow-x: visible;
+    }
+
+    table,
+    tbody {
+      display: block;
+      width: 100%;
+    }
+
+    thead {
+      display: none;
+    }
+
+    tr {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 2px 8px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    td {
+      height: auto;
+      padding: 2px 8px;
+      border: 0;
+    }
+
+    td:last-child {
+      grid-column: 1 / -1;
+    }
+
+    td form {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 28px;
+      justify-content: stretch;
+    }
+
+    td select {
+      min-width: 0;
+      width: 100%;
+    }
+  }
 </style>
