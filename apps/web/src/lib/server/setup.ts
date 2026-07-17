@@ -54,54 +54,63 @@ export async function initializeInstallation(
   const dashboardId = crypto.randomUUID();
   const installationId = crypto.randomUUID();
   const passwordHash = await hashPassword(input.password);
-  await db.batch([
-    db
-      .prepare(
-        `INSERT INTO user (id, name, email, email_verified, created_at, updated_at)
+  try {
+    await db.batch([
+      db
+        .prepare(
+          `INSERT INTO user (id, name, email, email_verified, created_at, updated_at)
          VALUES (?, ?, ?, 1, ?, ?)`,
-      )
-      .bind(userId, input.name, input.email.toLowerCase(), now, now),
-    db
-      .prepare(
-        `INSERT INTO account
+        )
+        .bind(userId, input.name, input.email.toLowerCase(), now, now),
+      db
+        .prepare(
+          `INSERT INTO account
           (id, account_id, provider_id, user_id, password, created_at, updated_at)
          VALUES (?, ?, 'credential', ?, ?, ?, ?)`,
-      )
-      .bind(crypto.randomUUID(), userId, userId, passwordHash, now, now),
-    db
-      .prepare(
-        `INSERT INTO workspaces
+        )
+        .bind(crypto.randomUUID(), userId, userId, passwordHash, now, now),
+      db
+        .prepare(
+          `INSERT INTO workspaces
           (id, telemetry_pk, slug, name, default_dashboard_id, created_at, updated_at)
          VALUES (?, 1, ?, ?, ?, ?, ?)`,
-      )
-      .bind(workspaceId, input.workspaceSlug, input.workspaceName, dashboardId, now, now),
-    db
-      .prepare(
-        `INSERT INTO memberships
+        )
+        .bind(workspaceId, input.workspaceSlug, input.workspaceName, dashboardId, now, now),
+      db
+        .prepare(
+          `INSERT INTO memberships
           (workspace_id, user_id, role, status, created_at, updated_at)
          VALUES (?, ?, 'admin', 'active', ?, ?)`,
-      )
-      .bind(workspaceId, userId, now, now),
-    db
-      .prepare(
-        `INSERT INTO dashboards
+        )
+        .bind(workspaceId, userId, now, now),
+      db
+        .prepare(
+          `INSERT INTO dashboards
           (id, workspace_id, slug, name, description, visibility, created_by, created_at, updated_at)
          VALUES (?, ?, 'overview', 'Overview', '', 'private', ?, ?, ?)`,
-      )
-      .bind(dashboardId, workspaceId, userId, now, now),
-    db
-      .prepare(
-        `INSERT INTO retention_policies
+        )
+        .bind(dashboardId, workspaceId, userId, now, now),
+      db
+        .prepare(
+          `INSERT INTO retention_policies
           (workspace_id, raw_days, rollup_5m_days, rollup_1h_days, event_days, updated_at)
          VALUES (?, ?, 30, 365, 365, ?)`,
-      )
-      .bind(workspaceId, input.rawDays, now),
-    db
-      .prepare(
-        `INSERT INTO installations (id, state, schema_version, created_at, completed_at)
+        )
+        .bind(workspaceId, input.rawDays, now),
+      db
+        .prepare(
+          `INSERT INTO installations (id, state, schema_version, created_at, completed_at)
          VALUES (?, 'complete', 1, ?, ?)`,
-      )
-      .bind(installationId, now, now),
-  ]);
+        )
+        .bind(installationId, now, now),
+    ]);
+  } catch (cause) {
+    const completed = await db
+      .prepare("SELECT 1 AS installed FROM installations WHERE state = 'complete' LIMIT 1")
+      .first<{ installed: number }>()
+      .catch(() => null);
+    if (completed) throw error(409, "AlphaPing is already initialized");
+    throw cause;
+  }
   return { workspaceSlug: input.workspaceSlug };
 }

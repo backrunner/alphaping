@@ -274,17 +274,26 @@ try {
   assertResponse(response, 403, "invalid setup token");
 
   setupForm.token = setupToken;
-  response = await fetch(`${baseUrl}/setup`, {
-    method: "POST",
-    headers: {
-      accept: "text/html",
-      "content-type": "application/x-www-form-urlencoded",
-      origin: baseUrl,
-    },
-    body: form(setupForm),
-    redirect: "manual",
-  });
-  assertResponse(response, 303, "initialization");
+  const competingSetupResponses = await Promise.all(
+    Array.from({ length: 2 }, () =>
+      fetch(`${baseUrl}/setup`, {
+        method: "POST",
+        headers: {
+          accept: "text/html",
+          "content-type": "application/x-www-form-urlencoded",
+          origin: baseUrl,
+        },
+        body: form(setupForm),
+        redirect: "manual",
+      }),
+    ),
+  );
+  const setupStatuses = competingSetupResponses.map(({ status }) => status).sort();
+  if (setupStatuses[0] !== 303 || setupStatuses[1] !== 409) {
+    throw new Error(`concurrent setup returned ${setupStatuses.join(", ")}, expected 303, 409`);
+  }
+  response = competingSetupResponses.find(({ status }) => status === 303);
+  if (!response) throw new Error("concurrent setup omitted its successful response");
   if (response.headers.get("location") !== "/setup") {
     throw new Error("initialization did not redirect to the completion step");
   }
