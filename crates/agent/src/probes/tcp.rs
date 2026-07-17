@@ -4,17 +4,12 @@ use std::{
 };
 
 use alphaping_protocol::v1::TcpProbeRequest;
-use rustls::{
-    ClientConfig, RootCertStore,
-    crypto::{CryptoProvider, aws_lc_rs},
-    pki_types::ServerName,
-    version::TLS13,
-};
+use rustls::pki_types::ServerName;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio_rustls::TlsConnector;
 
-use super::{ProbeOutcome, elapsed_ms, require_nonempty};
+use super::{ProbeOutcome, elapsed_ms, require_nonempty, tls};
 
 pub async fn execute(request: &TcpProbeRequest, timeout: Duration) -> ProbeOutcome {
     if require_nonempty(&request.hostname, "TCP hostname").is_err() {
@@ -33,18 +28,17 @@ pub async fn execute(request: &TcpProbeRequest, timeout: Duration) -> ProbeOutco
     };
     let remaining = timeout.saturating_sub(started.elapsed());
     let result = if request.use_tls {
-        let roots = RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-        let provider = CryptoProvider {
-            kx_groups: vec![aws_lc_rs::kx_group::X25519MLKEM768],
-            ..aws_lc_rs::default_provider()
-        };
-        let config = match ClientConfig::builder_with_provider(Arc::new(provider))
-            .with_protocol_versions(&[&TLS13])
-        {
-            Ok(builder) => builder.with_root_certificates(roots).with_no_client_auth(),
+        let config = match tls::client_config(request.tls_verify.unwrap_or(true)) {
+            Ok(config) => config,
             Err(_) => return ProbeOutcome::failed("tls"),
         };
-        let server_name = match ServerName::try_from(request.hostname.clone()) {
+        let server_name = match ServerName::try_from(
+            request
+                .server_name
+                .clone()
+                .filter(|name| !name.is_empty())
+                .unwrap_or_else(|| request.hostname.clone()),
+        ) {
             Ok(name) => name,
             Err(_) => return ProbeOutcome::failed("invalid_config"),
         };

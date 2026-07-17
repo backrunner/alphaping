@@ -64,6 +64,15 @@
       /></label
     >
   </div>
+  <label
+    ><span>Redirect limit</span><input
+      type="number"
+      name="maxRedirects"
+      min="0"
+      max="3"
+      value="3"
+    /><small>0 to 3 hops</small></label
+  >
 {:else}
   <div class="fields two">
     <label
@@ -84,6 +93,15 @@
         /></label
       >{:else}<input type="hidden" name="port" value="" />{/if}
   </div>
+  {#if kind === "tcp" && executor === "agent"}
+    <label
+      ><span>TLS SNI</span><input
+        name="serverName"
+        maxlength="253"
+        placeholder="service.example.com"
+      /></label
+    >
+  {:else}<input type="hidden" name="serverName" value="" />{/if}
   {#if kind === "icmp"}<div class="fields two">
       <label
         ><span>Warn after, ms</span><input
@@ -122,6 +140,11 @@
       ></textarea></label
     >
   </div>
+  {#if executor === "agent"}
+    <label class="inline-check"
+      ><input type="checkbox" name="tlsVerify" checked /><span>Verify TLS certificates</span></label
+    >
+  {:else}<input type="hidden" name="tlsVerify" value="on" />{/if}
 {/if}
 
 <style>

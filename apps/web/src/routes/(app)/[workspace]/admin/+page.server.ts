@@ -85,7 +85,14 @@ export const actions: Actions = {
       return fail(401, { kind: "service", message: "Unauthorized" });
     const form = await request.formData();
     try {
-      const assertionSource = String(form.get("assertionSource") ?? "none");
+      const assertionSources = form
+        .getAll("assertionSource")
+        .map(String)
+        .filter((value) => value !== "none");
+      const assertionOperators = form.getAll("assertionOperator").map(String);
+      const assertionSelectors = form.getAll("assertionSelector").map(String);
+      const assertionExpected = form.getAll("assertionExpected").map(String);
+      const assertionSeverities = form.getAll("assertionSeverity").map(String);
       const result = await createServiceMonitor(
         platform.env.CONTROL_DB,
         params.workspace,
@@ -104,6 +111,8 @@ export const actions: Actions = {
           url: String(form.get("url") ?? "").trim(),
           method: String(form.get("method") ?? "GET"),
           expectedStatuses: String(form.get("expectedStatuses") ?? "200"),
+          maxRedirects: Number(form.get("maxRedirects") ?? 3),
+          tlsVerify: form.get("tlsVerify") === "on",
           degradedAfterMs: form.get("degradedAfterMs") ? Number(form.get("degradedAfterMs")) : null,
           downAfterMs: form.get("downAfterMs") ? Number(form.get("downAfterMs")) : null,
           maxResponseBytes: Number(form.get("maxResponseBytes")),
@@ -112,30 +121,26 @@ export const actions: Actions = {
           requestBody: String(form.get("requestBody") ?? ""),
           requestBodyIsSecret: form.get("requestBodyIsSecret") === "on",
           hostname: String(form.get("hostname") ?? "").trim(),
+          serverName: String(form.get("serverName") ?? "").trim(),
           port: form.get("port") ? Number(form.get("port")) : null,
           useTls: form.get("useTls") === "on",
           tcpPayload: String(form.get("tcpPayload") ?? ""),
           tcpPayloadIsSecret: form.get("tcpPayloadIsSecret") === "on",
           tcpResponsePrefix: String(form.get("tcpResponsePrefix") ?? ""),
-          assertions:
-            assertionSource === "none"
-              ? []
-              : [
-                  {
-                    source: assertionSource as "header" | "jsonpath" | "body",
-                    operator: String(form.get("assertionOperator")) as
-                      | "exists"
-                      | "equals"
-                      | "contains"
-                      | "matches"
-                      | "type"
-                      | "greater_than"
-                      | "less_than",
-                    selector: String(form.get("assertionSelector") ?? ""),
-                    expected: String(form.get("assertionExpected") ?? ""),
-                    severity: String(form.get("assertionSeverity")) as "degraded" | "down",
-                  },
-                ],
+          assertions: assertionSources.map((source, index) => ({
+            source: source as "header" | "jsonpath" | "body",
+            operator: String(assertionOperators[index] ?? "exists") as
+              | "exists"
+              | "equals"
+              | "contains"
+              | "matches"
+              | "type"
+              | "greater_than"
+              | "less_than",
+            selector: String(assertionSelectors[index] ?? ""),
+            expected: String(assertionExpected[index] ?? ""),
+            severity: String(assertionSeverities[index] ?? "down") as "degraded" | "down",
+          })),
         },
       );
       return { kind: "service", created: true, serviceId: result.serviceId };

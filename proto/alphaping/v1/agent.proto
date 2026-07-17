@@ -170,6 +170,7 @@ message HttpProbeRequest {
   uint32 max_redirects = 8;
   uint32 max_response_bytes = 9;
   repeated ProbeAssertion assertions = 10;
+  optional bool tls_verify = 11;
 }
 
 message TcpProbeRequest {
@@ -178,6 +179,8 @@ message TcpProbeRequest {
   bool use_tls = 3;
   bytes payload = 4;
   bytes response_prefix = 5;
+  optional string server_name = 6;
+  optional bool tls_verify = 7;
 }
 
 message IcmpProbeRequest {

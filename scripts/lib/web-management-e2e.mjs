@@ -364,6 +364,8 @@ export async function runWebManagementE2e({
       url: "https://example.com/health",
       method: "GET",
       expectedStatuses: "200, 204",
+      maxRedirects: "1",
+      tlsVerify: "on",
       degradedAfterMs: "1000",
       downAfterMs: "3000",
       maxResponseBytes: "65536",
@@ -415,11 +417,14 @@ export async function runWebManagementE2e({
     ),
     "compiled check lookup",
   );
+  const compiledRequest = JSON.parse(compiledCheck.request_json);
   if (
     compiledCheck.request_json.includes("e2e-private-value") ||
     compiledCheck.secret_refs_json.includes("e2e-private-value") ||
     compiledCheck.assertion_count !== 1 ||
-    compiledCheck.secret_count !== 1
+    compiledCheck.secret_count !== 1 ||
+    compiledRequest.maxRedirects !== 1 ||
+    compiledRequest.tlsVerify !== true
   ) {
     throw new Error("service secret wrapping or assertion persistence is incorrect");
   }
@@ -432,6 +437,7 @@ export async function runWebManagementE2e({
       hostname: "192.0.2.20",
       port: "443",
       useTls: "on",
+      serverName: "tcp.example.test",
       tcpPayload: "PING",
       tcpResponsePrefix: "PONG",
     },
@@ -464,6 +470,8 @@ export async function runWebManagementE2e({
         degradedAfterMs: "250",
         downAfterMs: "750",
         maxResponseBytes: "65536",
+        maxRedirects: "3",
+        tlsVerify: "on",
         requestHeaders: "",
         secretRequestHeaders: "",
         requestBody: "",
@@ -496,6 +504,7 @@ export async function runWebManagementE2e({
     ) ||
     agentChecks[0].assignment_revision >= agentChecks[1].assignment_revision ||
     !agentChecks[0].request_json.includes('"port":443') ||
+    !agentChecks[0].request_json.includes('"serverName":"tcp.example.test"') ||
     !agentChecks[1].request_json.includes('"hostname":"192.0.2.21"')
   ) {
     throw new Error("Agent TCP/ICMP checks did not persist their executor, period, or revision");

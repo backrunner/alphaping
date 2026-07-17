@@ -69,6 +69,8 @@ struct HttpConfig {
     down_after_ms: Option<u32>,
     max_redirects: u32,
     max_response_bytes: u32,
+    #[serde(default = "default_tls_verify")]
+    tls_verify: bool,
     #[serde(default)]
     assertions: Vec<AssertionConfig>,
 }
@@ -88,8 +90,16 @@ struct TcpConfig {
     hostname: String,
     port: u32,
     secure_transport: String,
+    #[serde(default)]
+    server_name: Option<String>,
+    #[serde(default = "default_tls_verify")]
+    tls_verify: bool,
     payload_base64: Option<String>,
     response_prefix_base64: Option<String>,
+}
+
+fn default_tls_verify() -> bool {
+    true
 }
 
 #[derive(Debug, Deserialize)]
@@ -338,6 +348,7 @@ fn compile_http(json: &str, secrets: BTreeMap<String, String>) -> worker::Result
         max_redirects: config.max_redirects,
         max_response_bytes: config.max_response_bytes,
         assertions,
+        tls_verify: Some(config.tls_verify),
     })
 }
 
@@ -358,6 +369,8 @@ fn compile_tcp(json: &str, secrets: BTreeMap<String, String>) -> worker::Result<
         hostname: config.hostname,
         port: config.port,
         use_tls: config.secure_transport == "on",
+        server_name: config.server_name,
+        tls_verify: Some(config.tls_verify),
         payload: secrets
             .get("tcpPayload")
             .map(|value| value.as_bytes().to_vec())

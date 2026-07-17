@@ -22,6 +22,8 @@ function serviceInput(
     url: "https://example.com/health",
     method: "GET",
     expectedStatuses: "200, 204",
+    maxRedirects: 3,
+    tlsVerify: true,
     degradedAfterMs: 1_000,
     downAfterMs: 3_000,
     maxResponseBytes: 65_536,
@@ -30,6 +32,7 @@ function serviceInput(
     requestBody: "",
     requestBodyIsSecret: false,
     hostname: "example.com",
+    serverName: "",
     port: null,
     useTls: false,
     tcpPayload: "",
@@ -71,6 +74,8 @@ describe("service configuration compiler", () => {
       headers: { Accept: "application/json" },
       body: null,
       expectedStatus: [200, 204],
+      maxRedirects: 3,
+      tlsVerify: true,
     });
     expect(JSON.stringify(config.request)).not.toContain("private-token");
     expect(JSON.stringify(config.request)).not.toContain("private");
@@ -137,6 +142,19 @@ describe("service configuration compiler", () => {
     ).rejects.toMatchObject({ status: 400 });
   });
 
+  it("keeps TLS verification and SNI scoped to Agent checks", async () => {
+    await expect(
+      compileServiceConfig(serviceInput({ tlsVerify: false }), WORKSPACE_ID, WRAPPING_KEY),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      compileServiceConfig(
+        serviceInput({ kind: "tcp", serverName: "db.example.com" }),
+        WORKSPACE_ID,
+        WRAPPING_KEY,
+      ),
+    ).rejects.toMatchObject({ status: 400 });
+  });
+
   it("wraps Agent TCP payloads and compiles bounded response prefixes", async () => {
     const config = await compileServiceConfig(
       serviceInput({
@@ -145,6 +163,7 @@ describe("service configuration compiler", () => {
         executorAgentId: "agent-test",
         intervalSeconds: 5,
         hostname: "db.internal",
+        serverName: "db.example.com",
         port: 5432,
         useTls: true,
         tcpPayload: "private probe",
@@ -159,6 +178,8 @@ describe("service configuration compiler", () => {
       hostname: "db.internal",
       port: 5432,
       secureTransport: "on",
+      serverName: "db.example.com",
+      tlsVerify: true,
       payloadBase64: null,
       responsePrefixBase64: "cmVhZHk=",
     });

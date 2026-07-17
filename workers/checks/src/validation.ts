@@ -177,6 +177,7 @@ export function parseHttpRequest(json: string): HttpCheckRequest {
   if (degradedAfterMs !== null && downAfterMs !== null && downAfterMs < degradedAfterMs) {
     throw new Error("invalid_latency_thresholds");
   }
+  if (data.tlsVerify === false) throw new Error("tls_verification_disabled");
 
   return {
     url: url.toString(),
@@ -188,6 +189,7 @@ export function parseHttpRequest(json: string): HttpCheckRequest {
     degradedAfterMs,
     downAfterMs,
     maxRedirects: boundedInteger(data.maxRedirects, 3, 0, 3),
+    tlsVerify: true,
     maxResponseBytes: boundedInteger(data.maxResponseBytes, 65_536, 1_024, 262_144),
     assertions: parseAssertions(data.assertions),
   };
@@ -202,10 +204,15 @@ export function parseTcpRequest(json: string): TcpCheckRequest {
   if (!Number.isInteger(data.port) || Number(data.port) < 1 || Number(data.port) > 65_535) {
     throw new Error("invalid_port");
   }
+  if (data.serverName !== undefined && data.serverName !== null) {
+    throw new Error("server_name_unsupported");
+  }
+  if (data.tlsVerify === false) throw new Error("tls_verification_disabled");
   return {
     hostname: data.hostname,
     port: Number(data.port),
     secureTransport: data.secureTransport === "on" ? "on" : "off",
+    tlsVerify: true,
     payload: decodeBase64(data.payloadBase64, "tcp_payload"),
     responsePrefix: decodeBase64(data.responsePrefixBase64, "tcp_response_prefix"),
   };

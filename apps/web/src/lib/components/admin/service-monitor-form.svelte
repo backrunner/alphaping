@@ -68,7 +68,7 @@
       >
     </div>
     <ServiceTargetFields {kind} bind:executor {agents} />
-    <ServiceRequestFields {kind} />
+    <ServiceRequestFields {kind} {executor} />
     <ServiceScheduleFields {executor} />
     <Button type="submit"><ShieldCheck size={14} />Create service</Button>
   </form>

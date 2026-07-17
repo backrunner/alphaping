@@ -1,6 +1,6 @@
 use std::{
     collections::HashSet,
-    sync::{Arc, OnceLock},
+    sync::OnceLock,
     time::{Duration, Instant},
 };
 
@@ -9,13 +9,8 @@ use reqwest::{
     Client, Method,
     header::{HeaderMap, HeaderName, HeaderValue},
 };
-use rustls::{
-    ClientConfig, RootCertStore,
-    crypto::{CryptoProvider, aws_lc_rs},
-    version::TLS13,
-};
 
-use super::{ProbeOutcome, assertions, elapsed_ms, parse_url, threshold_outcome};
+use super::{ProbeOutcome, assertions, elapsed_ms, parse_url, threshold_outcome, tls};
 
 const REDIRECT_SENSITIVE_HEADERS: &[&str] = &[
     "authorization",
@@ -25,7 +20,7 @@ const REDIRECT_SENSITIVE_HEADERS: &[&str] = &[
 ];
 
 pub async fn execute(request: &HttpProbeRequest, timeout: Duration) -> ProbeOutcome {
-    let client = match client() {
+    let client = match client(request.tls_verify.unwrap_or(true)) {
         Ok(client) => client,
         Err(_) => return ProbeOutcome::failed("invalid_config"),
     };
@@ -149,28 +144,21 @@ pub async fn execute(request: &HttpProbeRequest, timeout: Duration) -> ProbeOutc
     ProbeOutcome::failed("redirect_limit")
 }
 
-fn client() -> Result<&'static Client, ()> {
-    static CLIENT: OnceLock<Client> = OnceLock::new();
-    if let Some(client) = CLIENT.get() {
+fn client(verify: bool) -> Result<&'static Client, ()> {
+    static VERIFIED: OnceLock<Client> = OnceLock::new();
+    static INSECURE: OnceLock<Client> = OnceLock::new();
+    let slot = if verify { &VERIFIED } else { &INSECURE };
+    if let Some(client) = slot.get() {
         return Ok(client);
     }
-    let provider = CryptoProvider {
-        kx_groups: vec![aws_lc_rs::kx_group::X25519MLKEM768],
-        ..aws_lc_rs::default_provider()
-    };
-    let roots = RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-    let tls = ClientConfig::builder_with_provider(Arc::new(provider))
-        .with_protocol_versions(&[&TLS13])
-        .map_err(|_| ())?
-        .with_root_certificates(roots)
-        .with_no_client_auth();
+    let tls = tls::client_config(verify)?;
     let client = Client::builder()
         .use_preconfigured_tls(tls)
         .connect_timeout(Duration::from_secs(5))
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|_| ())?;
-    Ok(CLIENT.get_or_init(|| client))
+    Ok(slot.get_or_init(|| client))
 }
 
 fn request_headers(request: &HttpProbeRequest) -> Result<HeaderMap, ()> {

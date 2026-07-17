@@ -44,6 +44,7 @@ export interface HttpCheckRequest {
   degradedAfterMs: number | null;
   downAfterMs: number | null;
   maxRedirects: number;
+  tlsVerify: boolean;
   maxResponseBytes: number;
   assertions: readonly CheckAssertion[];
 }
@@ -52,6 +53,7 @@ export interface TcpCheckRequest {
   hostname: string;
   port: number;
   secureTransport: "off" | "on";
+  tlsVerify: boolean;
   payload: Uint8Array<ArrayBuffer> | null;
   responsePrefix: Uint8Array<ArrayBuffer> | null;
 }

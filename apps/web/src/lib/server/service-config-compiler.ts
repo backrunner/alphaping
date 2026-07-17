@@ -34,6 +34,8 @@ export interface CreateServiceMonitorInput {
   url: string;
   method: string;
   expectedStatuses: string;
+  maxRedirects: number;
+  tlsVerify: boolean;
   degradedAfterMs: number | null;
   downAfterMs: number | null;
   maxResponseBytes: number;
@@ -42,6 +44,7 @@ export interface CreateServiceMonitorInput {
   requestBody: string;
   requestBodyIsSecret: boolean;
   hostname: string;
+  serverName: string;
   port: number | null;
   useTls: boolean;
   tcpPayload: string;
@@ -257,9 +260,10 @@ function compileRequest(
       headers,
       body: input.requestBodyIsSecret || input.requestBody === "" ? null : input.requestBody,
       expectedStatus: expectedStatuses(input.expectedStatuses),
+      maxRedirects: boundedInteger(input.maxRedirects, 0, 3, "Redirect limit"),
+      tlsVerify: input.tlsVerify,
       degradedAfterMs: input.degradedAfterMs,
       downAfterMs: input.downAfterMs,
-      maxRedirects: 3,
       maxResponseBytes: boundedInteger(input.maxResponseBytes, 1_024, 262_144, "Response limit"),
       assertions,
     };
@@ -272,6 +276,8 @@ function compileRequest(
         hostname: input.hostname,
         port: boundedInteger(input.port ?? 0, 1, 65_535, "TCP port"),
         secureTransport: input.useTls ? "on" : "off",
+        serverName: input.serverName || null,
+        tlsVerify: input.tlsVerify,
         payloadBase64:
           input.tcpPayloadIsSecret || input.tcpPayload === "" ? null : base64Utf8(input.tcpPayload),
         responsePrefixBase64:
@@ -295,6 +301,12 @@ export async function compileServiceConfig(
   if (!CHECK_KINDS.includes(input.kind) || !EXECUTOR_KINDS.includes(input.executorKind)) {
     throw error(400, "Check type or executor is invalid");
   }
+  if (input.executorKind === "cloudflare" && !input.tlsVerify) {
+    throw error(400, "Cloudflare checks require TLS certificate verification");
+  }
+  if (input.executorKind === "cloudflare" && input.kind === "tcp" && input.serverName) {
+    throw error(400, "TCP SNI requires an Agent executor");
+  }
   boundedInteger(
     input.intervalSeconds,
     input.executorKind === "cloudflare" ? 60 : 5,
@@ -309,6 +321,9 @@ export async function compileServiceConfig(
   }
   if (input.kind === "http") boundedUtf8(input.requestBody, 16_384, "HTTP request body");
   if (input.kind === "tcp") boundedUtf8(input.tcpPayload, 4_096, "TCP payload");
+  if (input.serverName.length > 253 || /\s/.test(input.serverName)) {
+    throw error(400, "TLS server name is invalid");
+  }
   const assertions = compileAssertions(input.assertions);
   const publicHeaders = parseHeaderLines(input.requestHeaders);
   const secretHeaders = parseHeaderLines(input.secretRequestHeaders);

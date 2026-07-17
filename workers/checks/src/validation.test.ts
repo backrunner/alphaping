@@ -64,4 +64,18 @@ describe("central check validation", () => {
       ),
     ).toThrow("invalid_tcp_payload");
   });
+
+  it("keeps central TLS verification enabled and rejects custom SNI", () => {
+    expect(() =>
+      parseHttpRequest(JSON.stringify({ url: "https://example.com", tlsVerify: false })),
+    ).toThrow("tls_verification_disabled");
+    expect(() =>
+      parseTcpRequest(JSON.stringify({ hostname: "example.com", port: 443, tlsVerify: false })),
+    ).toThrow("tls_verification_disabled");
+    expect(() =>
+      parseTcpRequest(
+        JSON.stringify({ hostname: "example.com", port: 443, serverName: "edge.example.com" }),
+      ),
+    ).toThrow("server_name_unsupported");
+  });
 });

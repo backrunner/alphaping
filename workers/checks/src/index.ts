@@ -23,6 +23,8 @@ function configurationFailureSummary(cause: unknown): string {
       "invalid_url",
       "invalid_protocol",
       "blocked_target",
+      "tls_verification_disabled",
+      "server_name_unsupported",
     ]);
     if (allowed.has(cause.message)) return cause.message;
   }

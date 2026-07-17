@@ -2,6 +2,7 @@ mod assertions;
 mod http;
 mod icmp;
 mod tcp;
+mod tls;
 
 use std::{collections::HashMap, time::Duration};
 
@@ -118,9 +119,13 @@ pub fn validate_config(config: &AgentConfigSnapshot) -> Result<()> {
                     && request.headers.len() <= 32
                     && request.assertions.len() <= 20
                     && request.body.len() <= 16_384
+                    && request.max_redirects <= 3
                     && request.max_response_bytes <= 262_144 => {}
             Some(probe_task::Request::Tcp(request))
                 if request.hostname.len() <= 253
+                    && request.server_name.as_ref().is_none_or(|name| {
+                        name.len() <= 253 && !name.chars().any(char::is_whitespace)
+                    })
                     && (1..=65_535).contains(&request.port)
                     && request.payload.len() <= 4_096
                     && request.response_prefix.len() <= 4_096 => {}
