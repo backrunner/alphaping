@@ -20,7 +20,7 @@
   >
     <Menu size={17} />
   </button>
-  <a class="workspace-context" href={`/${shell.workspace.slug}`}>
+  <a class="workspace-context" href="/workspaces" title="Switch workspace">
     <span>{shell.workspace.name}</span>
   </a>
   <form class="search" method="GET" action={`/${shell.workspace.slug}/machines`}>

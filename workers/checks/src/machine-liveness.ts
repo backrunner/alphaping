@@ -116,9 +116,10 @@ export async function reconcileMachineLiveness(
 ): Promise<MachineLivenessResult> {
   const machines = await controlDb
     .prepare(
-      `SELECT telemetry_pk, offline_after_seconds, maintenance_until
-       FROM machines WHERE deleted_at IS NULL
-       ORDER BY telemetry_pk LIMIT ?`,
+      `SELECT m.telemetry_pk, m.offline_after_seconds, m.maintenance_until
+       FROM machines m JOIN workspaces w ON w.id = m.workspace_id
+       WHERE m.deleted_at IS NULL AND w.deleted_at IS NULL
+       ORDER BY m.telemetry_pk LIMIT ?`,
     )
     .bind(MAX_MACHINE_CANDIDATES)
     .all<MachineControlRow>();

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from "$app/state";
-  import { Database, ServerCog, ShieldCheck } from "lucide-svelte";
+  import { Database, FileClock, ServerCog, ShieldCheck } from "lucide-svelte";
 
   let { data, children } = $props();
   const root = $derived(`/${data.shell.workspace.slug}/admin`);
@@ -26,6 +26,9 @@
       >
       <a class:active={active(`${root}/settings`)} href={`${root}/settings`}
         ><Database size={15} />Data & visibility</a
+      >
+      <a class:active={active(`${root}/audit`)} href={`${root}/audit`}
+        ><FileClock size={15} />Audit log</a
       >
     </nav>
     <div class="admin-shell__content">{@render children()}</div>
@@ -126,6 +129,18 @@
 
     nav a {
       flex: 0 0 auto;
+    }
+  }
+
+  @media (max-width: 380px) {
+    nav {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      overflow-x: visible;
+    }
+
+    nav a {
+      min-width: 0;
     }
   }
 </style>

@@ -1027,4 +1027,97 @@ export async function runWebManagementE2e({
     );
     if (restored.deleted_at !== null) throw new Error(`${label} restore was not persisted`);
   }
+
+  response = await fetch(`${baseUrl}/operations/admin/audit`, {
+    headers: { cookie: adminCookie },
+  });
+  assertResponse(response, 200, "workspace audit log");
+  const auditPage = await response.text();
+  for (const action of ["machine.create", "service.create"]) {
+    if (!auditPage.includes(action)) {
+      throw new Error(`workspace audit log omitted ${action}`);
+    }
+  }
+  await submitAction(
+    baseUrl,
+    "/operations/admin/settings?/deleteWorkspace",
+    adminCookie,
+    { confirmation: "wrong-workspace" },
+    "workspace deletion confirmation",
+    { type: "failure", actionStatus: 400 },
+  );
+  const workspace = onlyRow(
+    queryControlDb("SELECT id, deleted_at FROM workspaces WHERE slug = 'operations'"),
+    "workspace lifecycle lookup",
+  );
+  if (workspace.deleted_at !== null) {
+    throw new Error("invalid workspace confirmation changed lifecycle state");
+  }
+  await submitAction(
+    baseUrl,
+    "/operations/admin/settings?/deleteWorkspace",
+    adminCookie,
+    { confirmation: "operations" },
+    "workspace soft deletion",
+    { type: "redirect", actionStatus: 303 },
+  );
+  const deletedWorkspace = onlyRow(
+    queryControlDb(`SELECT deleted_at FROM workspaces WHERE id = '${workspace.id}'`),
+    "deleted workspace lookup",
+  );
+  if (deletedWorkspace.deleted_at === null) {
+    throw new Error("workspace soft deletion was not persisted");
+  }
+  response = await fetch(`${baseUrl}/operations`, { headers: { cookie: adminCookie } });
+  assertResponse(response, 404, "deleted workspace access");
+  response = await fetch(`${baseUrl}/workspaces`, { headers: { cookie: adminCookie } });
+  assertResponse(response, 200, "workspace recovery view");
+  const recoveryPage = await response.text();
+  if (!recoveryPage.includes("Recovery window") && !recoveryPage.includes("Recoverable until")) {
+    throw new Error("workspace recovery view omitted the recovery state");
+  }
+  await submitAction(
+    baseUrl,
+    "/workspaces?/restore",
+    memberCookie,
+    { workspaceId: workspace.id },
+    "member workspace restoration",
+    { type: "failure", actionStatus: 404 },
+  );
+  await submitAction(
+    baseUrl,
+    "/workspaces?/restore",
+    adminCookie,
+    { workspaceId: workspace.id },
+    "administrator workspace restoration",
+    { type: "redirect", actionStatus: 303 },
+  );
+  const restoredWorkspace = onlyRow(
+    queryControlDb(`SELECT deleted_at FROM workspaces WHERE id = '${workspace.id}'`),
+    "restored workspace lookup",
+  );
+  if (restoredWorkspace.deleted_at !== null) {
+    throw new Error("workspace restoration was not persisted");
+  }
+  response = await fetch(`${baseUrl}/operations/admin/audit`, {
+    headers: { cookie: adminCookie },
+  });
+  assertResponse(response, 200, "restored workspace audit log");
+  const lifecycleAuditPage = await response.text();
+  for (const action of ["workspace.delete", "workspace.restore"]) {
+    if (!lifecycleAuditPage.includes(action)) {
+      throw new Error(`workspace audit log omitted ${action}`);
+    }
+  }
+  const lifecycleAudit = queryControlDb(
+    `SELECT action, before_digest, after_digest FROM audit_logs
+     WHERE workspace_id = '${workspace.id}' AND action IN ('workspace.delete', 'workspace.restore')
+     ORDER BY created_at`,
+  );
+  if (
+    lifecycleAudit.length !== 2 ||
+    lifecycleAudit.some((entry) => !entry.before_digest || !entry.after_digest)
+  ) {
+    throw new Error("workspace lifecycle did not retain one immutable audit entry per transition");
+  }
 }

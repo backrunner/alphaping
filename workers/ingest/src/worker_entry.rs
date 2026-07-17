@@ -481,7 +481,8 @@ async fn load_agent_key(
          JOIN workspaces w ON w.id = a.workspace_id
          JOIN agent_keys k ON k.agent_id = a.id
          WHERE a.id = ? AND a.status = 'active' AND k.key_epoch = ?
-           AND a.revoked_at IS NULL AND k.revoked_at IS NULL",
+           AND a.revoked_at IS NULL AND k.revoked_at IS NULL
+           AND m.deleted_at IS NULL AND w.deleted_at IS NULL",
     )
     .bind(&[text(agent_id), unsigned(u64::from(key_epoch))])?
     .first::<AgentKeyRow>(None)

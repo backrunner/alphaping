@@ -8,6 +8,7 @@ import {
   type DashboardVisibility,
   type ProjectionProfile,
 } from "$lib/server/workspace-settings";
+import { softDeleteWorkspace } from "$lib/server/workspace-lifecycle";
 
 import type { Actions, PageServerLoad } from "./$types";
 
@@ -91,5 +92,21 @@ export const actions: Actions = {
     } catch (cause) {
       return settingsFailure(cause, "retention");
     }
+  },
+  deleteWorkspace: async ({ request, locals, params, platform }) => {
+    if (!locals.session || !platform)
+      return fail(401, { kind: "workspaceDelete", message: "Unauthorized" });
+    const form = await request.formData();
+    try {
+      await softDeleteWorkspace(
+        platform.env.CONTROL_DB,
+        params.workspace,
+        locals.session.user.id,
+        String(form.get("confirmation") ?? ""),
+      );
+    } catch (cause) {
+      return settingsFailure(cause, "workspaceDelete");
+    }
+    throw redirect(303, "/workspaces");
   },
 };

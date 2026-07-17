@@ -135,10 +135,12 @@ async fn expect_enrollment_rejected(
     Ok(())
 }
 
-async fn verify_revoked_key(
+async fn verify_report_rejected(
     client: &Client,
     origin: &str,
     state_path: &str,
+    accepted_message: &str,
+    success_message: &str,
 ) -> Result<(), Box<dyn Error>> {
     let session: StoredSession = serde_json::from_slice(&fs::read(state_path)?)?;
     let root_key: [u8; 32] = hex::decode(&session.root_key_hex)?
@@ -158,9 +160,9 @@ async fn verify_revoked_key(
     let envelope = codec.encode_report(8, now_ms()?, &report_id, &compressed_payload)?;
     let response = post_protobuf(client, &format!("{origin}/v1/reports"), envelope).await?;
     if response.status() != StatusCode::NOT_FOUND {
-        return Err(invalid_data("revoked Agent key accepted a report").into());
+        return Err(invalid_data(accepted_message).into());
     }
-    println!("Ingest rejected the revoked Agent key");
+    println!("{success_message}");
     Ok(())
 }
 
@@ -339,17 +341,35 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
         return verify_config_delivery(&client, &origin, &state_path).await;
     }
-    if mode == "verify-revoked" {
+    if mode == "verify-revoked" || mode == "verify-workspace-deleted" {
         let state_path = arguments
             .next()
             .ok_or_else(|| invalid_data("missing E2E session path"))?;
         if arguments.next().is_some() || !origin.starts_with("http://127.0.0.1:") {
             return Err(invalid_data(
-                "usage: ingest_e2e_client verify-revoked LOCAL_ORIGIN SESSION_PATH",
+                "usage: ingest_e2e_client verify-revoked|verify-workspace-deleted LOCAL_ORIGIN SESSION_PATH",
             )
             .into());
         }
-        return verify_revoked_key(&client, &origin, &state_path).await;
+        let (accepted_message, success_message) = if mode == "verify-revoked" {
+            (
+                "revoked Agent key accepted a report",
+                "Ingest rejected the revoked Agent key",
+            )
+        } else {
+            (
+                "deleted workspace accepted an Agent report",
+                "Ingest rejected reports for a deleted workspace",
+            )
+        };
+        return verify_report_rejected(
+            &client,
+            &origin,
+            &state_path,
+            accepted_message,
+            success_message,
+        )
+        .await;
     }
     if mode != "run" {
         return Err(invalid_data("unknown E2E client mode").into());

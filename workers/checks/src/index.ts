@@ -86,7 +86,8 @@ async function runChecks(env: Env, scheduledAt: number): Promise<void> {
      FROM check_configs c
      JOIN workspaces w ON w.id = c.workspace_id
      JOIN services s ON s.id = c.service_id AND s.deleted_at IS NULL
-     WHERE c.enabled = 1 AND c.executor_kind = 'cloudflare' AND c.kind IN ('http', 'tcp')
+     WHERE w.deleted_at IS NULL AND c.enabled = 1 AND c.executor_kind = 'cloudflare'
+       AND c.kind IN ('http', 'tcp')
      LIMIT ?`,
   )
     .bind(MAX_CANDIDATES)

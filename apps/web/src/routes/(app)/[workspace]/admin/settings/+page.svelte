@@ -1,6 +1,7 @@
 <script lang="ts">
   import PublicAccessTable from "$components/admin/public-access-table.svelte";
   import RetentionSettingsForm from "$components/admin/retention-settings-form.svelte";
+  import WorkspaceDangerZone from "$components/admin/workspace-danger-zone.svelte";
 
   let { data, form } = $props();
 </script>
@@ -18,6 +19,7 @@
     retention={data.settings.retention}
     estimatedStorageGb={data.settings.estimatedStorageGb}
   />
+  <WorkspaceDangerZone name={data.shell.workspace.name} slug={data.workspace} />
 </main>
 
 <style>

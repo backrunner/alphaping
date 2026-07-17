@@ -23,7 +23,7 @@ export const load: PageServerLoad = async ({ platform }) => {
   const installed = Boolean(installation);
   const workspace = installed
     ? await platform.env.CONTROL_DB.prepare(
-        "SELECT slug FROM workspaces ORDER BY created_at ASC LIMIT 1",
+        "SELECT slug FROM workspaces WHERE deleted_at IS NULL ORDER BY created_at ASC LIMIT 1",
       ).first<{ slug: string }>()
     : null;
   return {
