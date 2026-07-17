@@ -27,12 +27,15 @@
         </a>
       </span>
       <span role="cell"><StatusLabel status={service.state} /></span>
-      <span class="number" role="cell"
-        >{service.latencyMs === null ? "—" : `${service.latencyMs} ms`}</span
+      <span
+        class="number"
+        role="cell"
+        title={service.latencyMs === null ? "Not measured" : undefined}
+        >{service.latencyMs === null ? "No data" : `${service.latencyMs} ms`}</span
       >
       <span class="number" role="cell"
         >{service.availability24hPermille === null
-          ? "—"
+          ? "No data"
           : `${(service.availability24hPermille / 10).toFixed(1)}%`}</span
       >
       <span class="muted" role="cell">{formatRelativeTime(service.lastCheckedAt)}</span>

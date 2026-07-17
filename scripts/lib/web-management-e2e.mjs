@@ -390,6 +390,23 @@ export async function runWebManagementE2e({
   ) {
     throw new Error("dashboard omitted the active incident filter metric");
   }
+  for (const [path, expected, label] of [
+    [
+      "/operations/machines?status=online&sort=download",
+      "Filter machine status",
+      "machine filters",
+    ],
+    ["/operations/services?status=down", "Filter service status", "service filters"],
+    ["/operations/incidents?state=active", "Active incidents", "incident filters"],
+  ]) {
+    const filteredResponse = await fetch(`${baseUrl}${path}`, {
+      headers: { cookie: adminCookie },
+    });
+    assertResponse(filteredResponse, 200, label);
+    if (!(await filteredResponse.text()).includes(expected)) {
+      throw new Error(`${label} did not render their URL-backed state`);
+    }
+  }
   await submitAction(
     baseUrl,
     "/operations/incidents?/update",

@@ -1,22 +1,78 @@
 <script lang="ts">
-  import { ArrowLeft, Plus, Search, SquareActivity } from "lucide-svelte";
+  import { page } from "$app/state";
+  import {
+    ArrowLeft,
+    ChevronLeft,
+    ChevronRight,
+    Plus,
+    Search,
+    SquareActivity,
+  } from "lucide-svelte";
 
   import ServiceMonitorTable from "$components/services/service-monitor-table.svelte";
   import Button from "$components/ui/button/button.svelte";
 
   let { data } = $props();
-  let query = $state("");
-  let status = $state<"all" | "healthy" | "impaired" | "maintenance" | "unknown">("all");
+  const pageSize = 100;
+  const statusOptions = [
+    "all",
+    "healthy",
+    "degraded",
+    "down",
+    "impaired",
+    "maintenance",
+    "unknown",
+  ] as const;
+  const statusFilters = [
+    ["all", "All"],
+    ["healthy", "Healthy"],
+    ["impaired", "Impaired"],
+    ["down", "Down"],
+    ["maintenance", "Maintenance"],
+    ["unknown", "Unknown"],
+  ] as const;
+  type StatusFilter = (typeof statusOptions)[number];
 
-  const filtered = $derived(
+  function filterHref(name: string, value: string): string {
+    const params = new URLSearchParams(page.url.searchParams);
+    if (value === "" || value === "all") params.delete(name);
+    else params.set(name, value);
+    params.delete("page");
+    const query = params.toString();
+    return `${page.url.pathname}${query ? `?${query}` : ""}`;
+  }
+
+  function paginationHref(value: number): string {
+    const params = new URLSearchParams(page.url.searchParams);
+    if (value <= 1) params.delete("page");
+    else params.set("page", String(value));
+    const query = params.toString();
+    return `${page.url.pathname}${query ? `?${query}` : ""}`;
+  }
+
+  const queryValue = $derived(page.url.searchParams.get("q")?.trim() ?? "");
+  const query = $derived(queryValue.toLowerCase());
+  const status = $derived.by<StatusFilter>(() => {
+    const value = page.url.searchParams.get("status");
+    return statusOptions.includes(value as StatusFilter) ? (value as StatusFilter) : "all";
+  });
+  const filtered = $derived.by(() =>
     data.services.filter((service) => {
-      const matchesName = service.name.toLowerCase().includes(query.trim().toLowerCase());
+      const matchesName = service.name.toLowerCase().includes(query);
       const matchesState =
         status === "all" ||
         service.state === status ||
         (status === "impaired" && (service.state === "degraded" || service.state === "down"));
       return matchesName && matchesState;
     }),
+  );
+  const requestedPage = $derived(Number(page.url.searchParams.get("page") ?? "1"));
+  const pageCount = $derived(Math.max(1, Math.ceil(filtered.length / pageSize)));
+  const currentPage = $derived(
+    Number.isInteger(requestedPage) && requestedPage > 0 ? Math.min(requestedPage, pageCount) : 1,
+  );
+  const visibleServices = $derived(
+    filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize),
   );
 </script>
 
@@ -40,25 +96,44 @@
 
   {#if data.services.length > 0}
     <div class="toolbar">
-      <label class="search">
+      <form class="search" method="GET">
+        {#if status !== "all"}<input type="hidden" name="status" value={status} />{/if}
         <Search size={14} /><input
-          bind:value={query}
+          name="q"
+          value={queryValue}
           aria-label="Search services"
           placeholder="Search services"
         />
-      </label>
-      <div class="segments" aria-label="Filter service status">
-        {#each [["all", "All"], ["healthy", "Healthy"], ["impaired", "Impaired"], ["maintenance", "Maintenance"], ["unknown", "Unknown"]] as option}
-          <button
+        <button type="submit">Search</button>
+      </form>
+      <nav class="segments" aria-label="Filter service status">
+        {#each statusFilters as option}
+          <a
             class:active={status === option[0]}
-            aria-pressed={status === option[0]}
-            onclick={() => (status = option[0] as typeof status)}>{option[1]}</button
+            aria-current={status === option[0] ? "page" : undefined}
+            href={filterHref("status", option[0])}>{option[1]}</a
           >
         {/each}
-      </div>
-      <span>{filtered.length} shown</span>
+      </nav>
+      <span>
+        {visibleServices.length === 0 ? 0 : (currentPage - 1) * pageSize + 1}-{Math.min(
+          currentPage * pageSize,
+          filtered.length,
+        )} of {filtered.length}
+      </span>
     </div>
-    <ServiceMonitorTable services={filtered} workspaceSlug={data.workspace.slug} />
+    <ServiceMonitorTable services={visibleServices} workspaceSlug={data.workspace.slug} />
+    {#if pageCount > 1}
+      <nav class="pagination" aria-label="Service pages">
+        {#if currentPage > 1}
+          <a href={paginationHref(currentPage - 1)}><ChevronLeft size={14} />Previous</a>
+        {:else}<span><ChevronLeft size={14} />Previous</span>{/if}
+        <strong>Page {currentPage} of {pageCount}</strong>
+        {#if currentPage < pageCount}
+          <a href={paginationHref(currentPage + 1)}>Next<ChevronRight size={14} /></a>
+        {:else}<span>Next<ChevronRight size={14} /></span>{/if}
+      </nav>
+    {/if}
   {:else}
     <section class="empty">
       <SquareActivity size={26} />
@@ -148,24 +223,37 @@
     font: inherit;
   }
 
+  .search button {
+    height: 22px;
+    padding: 0 7px;
+    border: 0;
+    border-radius: 4px;
+    color: var(--text-muted);
+    background: var(--surface-subtle);
+    font: inherit;
+    font-size: 9px;
+    cursor: pointer;
+  }
+
   .segments {
     display: flex;
     gap: 2px;
   }
 
-  .segments button {
+  .segments a {
+    display: inline-flex;
     height: 28px;
+    align-items: center;
     padding: 0 8px;
     border: 0;
     border-radius: 5px;
     color: var(--text-muted);
     background: transparent;
-    font: inherit;
     font-size: 10px;
-    cursor: pointer;
+    text-decoration: none;
   }
 
-  .segments button.active {
+  .segments a.active {
     color: var(--text);
     background: var(--surface-strong);
     font-weight: 650;
@@ -187,6 +275,38 @@
   .empty h2 {
     color: var(--text);
     font-size: 14px;
+  }
+
+  .pagination {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    margin-top: 16px;
+    color: var(--text-faint);
+    font-size: 10px;
+  }
+
+  .pagination a,
+  .pagination span {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .pagination a {
+    color: var(--accent);
+    text-decoration: none;
+  }
+
+  .pagination a:last-child,
+  .pagination span:last-child {
+    justify-self: end;
+  }
+
+  .pagination strong {
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-weight: 500;
   }
 
   @media (max-width: 680px) {

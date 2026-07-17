@@ -6,6 +6,7 @@
   import { formatBytes, formatPercent, formatRate, formatRelativeTime } from "$lib/utils/format";
 
   let { machine, workspaceSlug }: { machine: DashboardMachine; workspaceSlug: string } = $props();
+  const labels = $derived(Object.entries(machine.labels).slice(0, 2));
 </script>
 
 <article class="machine">
@@ -14,8 +15,15 @@
       <a href={`/${workspaceSlug}/machines/${machine.id}`} class="machine__name">{machine.name}</a>
       <span class="machine__meta">
         {machine.platform ?? "Unregistered"}
+        {#if machine.arch}
+          / {machine.arch}{/if}
         {#if machine.agentVersion}
           · Agent {machine.agentVersion}{/if}
+      </span>
+      <span class="machine__labels" aria-label="Machine labels">
+        {#each labels as label}
+          <span title={`${label[0]}=${label[1]}`}>{label[0]}={label[1]}</span>
+        {/each}
       </span>
     </div>
     <StatusLabel status={machine.state} />
@@ -45,6 +53,9 @@
     <div class="machine__network" aria-label="Current network throughput">
       <span><ArrowDown size={13} /> {formatRate(machine.networkRxBps)}</span>
       <span><ArrowUp size={13} /> {formatRate(machine.networkTxBps)}</span>
+      <small>
+        Total {formatBytes(machine.networkRxTotal)} down / {formatBytes(machine.networkTxTotal)} up
+      </small>
     </div>
     <div class="machine__last-seen">
       {#if machine.containersEnabled}<Box
@@ -75,6 +86,7 @@
 
   .machine__identity {
     min-width: 0;
+    flex: 1;
   }
 
   .machine__name {
@@ -98,6 +110,26 @@
     overflow: hidden;
     color: var(--text-faint);
     font-size: 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .machine__labels {
+    display: flex;
+    min-height: 16px;
+    gap: 4px;
+    margin-top: 4px;
+    overflow: hidden;
+  }
+
+  .machine__labels span {
+    max-width: 130px;
+    overflow: hidden;
+    padding: 1px 5px;
+    border-radius: 999px;
+    color: var(--text-muted);
+    background: var(--surface-subtle);
+    font-size: 9px;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -161,11 +193,20 @@
 
   .machine__network {
     min-width: 0;
-    gap: 10px;
+    display: grid;
+    grid-template-columns: repeat(2, max-content);
+    gap: 2px 10px;
   }
 
   .machine__network span {
     gap: 3px;
+    white-space: nowrap;
+  }
+
+  .machine__network small {
+    grid-column: 1 / -1;
+    color: var(--text-faint);
+    font-size: 9px;
     white-space: nowrap;
   }
 

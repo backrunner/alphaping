@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { page } from "$app/state";
   import { ArrowLeft, Bell, Megaphone, Plus } from "lucide-svelte";
 
   import AnnouncementCreateForm from "$components/incidents/announcement-create-form.svelte";
@@ -9,6 +10,12 @@
   let { data, form } = $props();
   let showCreateIncident = $state(false);
   let showCreateAnnouncement = $state(false);
+  const activeOnly = $derived(page.url.searchParams.get("state") === "active");
+  const visibleIncidents = $derived(
+    activeOnly
+      ? data.incidents.filter((incident) => incident.state !== "resolved")
+      : data.incidents,
+  );
 
   const timezoneOffsetMinutes = new Date().getTimezoneOffset();
   const localNow = new Date(Date.now() - timezoneOffsetMinutes * 60_000).toISOString().slice(0, 16);
@@ -94,11 +101,17 @@
     <header>
       <div>
         <h2>Incident timeline</h2>
-        <span>Newest incidents first</span>
+        <span>{activeOnly ? "Active incidents" : "Newest incidents first"}</span>
       </div>
+      <nav aria-label="Filter incidents">
+        <a class:active={!activeOnly} href={`/${data.workspace.slug}/incidents`}>All</a>
+        <a class:active={activeOnly} href={`/${data.workspace.slug}/incidents?state=active`}
+          >Active</a
+        >
+      </nav>
     </header>
-    {#if data.incidents.length > 0}
-      {#each data.incidents as incident (incident.id)}<IncidentItem {incident} />{/each}
+    {#if visibleIncidents.length > 0}
+      {#each visibleIncidents as incident (incident.id)}<IncidentItem {incident} />{/each}
     {:else}
       <div class="empty">
         <Bell size={24} />
@@ -169,6 +182,22 @@
   section header span {
     color: var(--text-faint);
     font-size: 10px;
+  }
+  section header nav {
+    display: flex;
+    gap: 2px;
+  }
+  section header nav a {
+    padding: 4px 7px;
+    border-radius: 5px;
+    color: var(--text-muted);
+    font-size: 10px;
+    text-decoration: none;
+  }
+  section header nav a.active {
+    color: var(--text);
+    background: var(--surface-strong);
+    font-weight: 650;
   }
   .announcements article {
     padding: 10px 0;

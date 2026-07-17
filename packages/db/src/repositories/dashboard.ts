@@ -24,10 +24,12 @@ interface MachineRow {
   id: string;
   telemetry_pk: number;
   name: string;
+  labels_json: string;
   offline_after_seconds: number;
   container_monitoring_enabled: number;
   agent_version: string | null;
   platform: string | null;
+  arch: string | null;
 }
 
 interface MachineLatestRow {
@@ -83,6 +85,7 @@ interface IncidentResourceRow {
 export interface DashboardMachine {
   id: string;
   name: string;
+  labels: Readonly<Record<string, string>>;
   state: "healthy" | "degraded" | "down" | "offline" | "maintenance" | "unknown";
   observedAt: number | null;
   cpuPermille: number;
@@ -96,6 +99,7 @@ export interface DashboardMachine {
   networkTxTotal: number;
   agentVersion: string | null;
   platform: string | null;
+  arch: string | null;
   containersEnabled: boolean;
 }
 
@@ -134,6 +138,20 @@ function placeholders(length: number): string {
   return Array.from({ length }, () => "?").join(", ");
 }
 
+function parseLabels(value: string): Readonly<Record<string, string>> {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed).filter(
+        (entry): entry is [string, string] => typeof entry[1] === "string",
+      ),
+    );
+  } catch {
+    return {};
+  }
+}
+
 function stateRank(state: DashboardService["state"]): number {
   return { unknown: 0, healthy: 1, degraded: 2, down: 3 }[state];
 }
@@ -170,8 +188,8 @@ export async function loadDashboardSnapshot(
   }));
   const machineRows = await controlDb
     .prepare(
-      `SELECT m.id, m.telemetry_pk, m.name, m.offline_after_seconds,
-              m.container_monitoring_enabled, a.agent_version, a.platform
+      `SELECT m.id, m.telemetry_pk, m.name, m.labels_json, m.offline_after_seconds,
+              m.container_monitoring_enabled, a.agent_version, a.platform, a.arch
        FROM machines m LEFT JOIN agents a ON a.machine_id = m.id AND a.status = 'active'
        WHERE m.workspace_id = ? AND m.deleted_at IS NULL ORDER BY m.name LIMIT 500`,
     )
@@ -215,6 +233,7 @@ export async function loadDashboardSnapshot(
     return {
       id: machine.id,
       name: machine.name,
+      labels: parseLabels(machine.labels_json),
       state,
       observedAt: latest?.observed_at ?? null,
       cpuPermille: latest?.cpu_permille ?? 0,
@@ -228,6 +247,7 @@ export async function loadDashboardSnapshot(
       networkTxTotal: latest?.network_tx_total ?? 0,
       agentVersion: machine.agent_version,
       platform: machine.platform,
+      arch: machine.arch,
       containersEnabled: machine.container_monitoring_enabled === 1,
     };
   });

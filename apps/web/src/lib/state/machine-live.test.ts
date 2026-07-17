@@ -20,6 +20,7 @@ describe("machine live browser boundaries", () => {
         latest: {
           id: "machine-1",
           name: "Build runner",
+          labels: { region: "sin" },
           state: "healthy",
           observedAt: 10_000,
           cpuPermille: 420,
@@ -33,6 +34,7 @@ describe("machine live browser boundaries", () => {
           networkTxTotal: 32_768,
           agentVersion: "0.1.0",
           platform: "linux",
+          arch: "x86_64",
           containersEnabled: true,
         },
       }),

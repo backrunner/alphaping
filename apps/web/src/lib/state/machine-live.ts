@@ -59,6 +59,18 @@ function metric(value: unknown): number | null {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
 }
 
+function labels(value: unknown): Readonly<Record<string, string>> | null {
+  if (!isRecord(value)) return null;
+  const entries = Object.entries(value);
+  if (entries.length > 32) return null;
+  const result: Record<string, string> = {};
+  for (const [key, item] of entries) {
+    if (key.length > 64 || typeof item !== "string" || item.length > 128) return null;
+    result[key] = item;
+  }
+  return result;
+}
+
 export function parseMachineLiveFallback(value: unknown): DashboardMachine {
   if (!isRecord(value) || !isRecord(value.latest)) throw new Error("invalid_live_fallback");
   const latest = value.latest;
@@ -72,9 +84,11 @@ export function parseMachineLiveFallback(value: unknown): DashboardMachine {
   const networkTxBps = metric(latest.networkTxBps);
   const networkRxTotal = metric(latest.networkRxTotal);
   const networkTxTotal = metric(latest.networkTxTotal);
+  const machineLabels = labels(latest.labels);
   if (
     typeof latest.id !== "string" ||
     typeof latest.name !== "string" ||
+    machineLabels === null ||
     !isMachineState(latest.state) ||
     (observedAt === null && latest.observedAt !== null) ||
     cpuPermille === null ||
@@ -89,6 +103,7 @@ export function parseMachineLiveFallback(value: unknown): DashboardMachine {
     networkTxTotal === null ||
     (latest.agentVersion !== null && typeof latest.agentVersion !== "string") ||
     (latest.platform !== null && typeof latest.platform !== "string") ||
+    (latest.arch !== null && typeof latest.arch !== "string") ||
     typeof latest.containersEnabled !== "boolean"
   ) {
     throw new Error("invalid_live_fallback");
@@ -96,6 +111,7 @@ export function parseMachineLiveFallback(value: unknown): DashboardMachine {
   return {
     id: latest.id,
     name: latest.name,
+    labels: machineLabels,
     state: latest.state,
     observedAt,
     cpuPermille,
@@ -109,6 +125,7 @@ export function parseMachineLiveFallback(value: unknown): DashboardMachine {
     networkTxTotal,
     agentVersion: latest.agentVersion,
     platform: latest.platform,
+    arch: latest.arch,
     containersEnabled: latest.containersEnabled,
   };
 }

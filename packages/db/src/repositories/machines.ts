@@ -371,6 +371,7 @@ function toDashboardMachine(
   return {
     id: machine.id,
     name: machine.name,
+    labels: parseLabels(machine.labels_json),
     state: !latest ? "unknown" : stale ? "offline" : normalizeState(latest.state),
     observedAt: latest?.observed_at ?? null,
     cpuPermille: latest?.cpu_permille ?? 0,
@@ -384,6 +385,7 @@ function toDashboardMachine(
     networkTxTotal: latest?.network_tx_total ?? 0,
     agentVersion: machine.agent_version,
     platform: machine.platform,
+    arch: machine.arch,
     containersEnabled: machine.container_monitoring_enabled === 1,
   };
 }

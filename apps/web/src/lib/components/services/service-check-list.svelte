@@ -38,7 +38,9 @@
           <StatusLabel status={check.state} compact />
           <div class="main"><strong>{check.name}</strong><code>{check.target}</code></div>
           <span class="type">{check.kind.toUpperCase()} · {check.executorKind}</span>
-          <span class="number">{check.latencyMs === null ? "—" : `${check.latencyMs} ms`}</span>
+          <span class="number"
+            >{check.latencyMs === null ? "No data" : `${check.latencyMs} ms`}</span
+          >
           <span class="muted">{formatRelativeTime(check.observedAt)}</span>
           <div class="detail">
             <span><Radio size={12} />every {check.intervalSeconds}s</span><span

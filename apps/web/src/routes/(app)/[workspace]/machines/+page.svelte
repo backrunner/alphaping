@@ -1,24 +1,124 @@
 <script lang="ts">
-  import { ArrowLeft, Plus, Search, Server } from "lucide-svelte";
+  import { page } from "$app/state";
+  import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Search, Server } from "lucide-svelte";
 
   import MachineCard from "$components/machines/machine-card.svelte";
   import Button from "$components/ui/button/button.svelte";
 
   let { data } = $props();
-  let query = $state("");
-  let status = $state<"all" | "online" | "impaired" | "offline" | "unknown">("all");
+  const pageSize = 60;
+  const statusOptions = ["all", "online", "impaired", "offline", "unknown"] as const;
+  const statusFilters = [
+    ["all", "All"],
+    ["online", "Online"],
+    ["impaired", "Impaired"],
+    ["offline", "Offline"],
+    ["unknown", "Unknown"],
+  ] as const;
+  const sortOptions = ["priority", "name", "download", "upload", "recent"] as const;
+  type StatusFilter = (typeof statusOptions)[number];
+  type SortOption = (typeof sortOptions)[number];
 
-  const filteredMachines = $derived(
-    data.machines.filter((machine) => {
-      const matchesQuery = machine.name.toLowerCase().includes(query.trim().toLowerCase());
+  function selected<T extends string>(name: string, options: readonly T[], fallback: T): T {
+    const value = page.url.searchParams.get(name);
+    return options.includes(value as T) ? (value as T) : fallback;
+  }
+
+  function labelTokens(machine: (typeof data.machines)[number]): string[] {
+    return Object.entries(machine.labels).map(([key, value]) => `${key}=${value}`);
+  }
+
+  function statePriority(state: (typeof data.machines)[number]["state"]): number {
+    return { down: 0, degraded: 1, offline: 2, unknown: 3, maintenance: 4, healthy: 5 }[state];
+  }
+
+  function submitFilters(event: Event): void {
+    const select = event.currentTarget;
+    if (select instanceof HTMLSelectElement) select.form?.requestSubmit();
+  }
+
+  function filterHref(name: string, value: string): string {
+    const params = new URLSearchParams(page.url.searchParams);
+    if (value === "" || value === "all" || value === "priority") params.delete(name);
+    else params.set(name, value);
+    params.delete("page");
+    const query = params.toString();
+    return `${page.url.pathname}${query ? `?${query}` : ""}`;
+  }
+
+  function paginationHref(value: number): string {
+    const params = new URLSearchParams(page.url.searchParams);
+    if (value <= 1) params.delete("page");
+    else params.set("page", String(value));
+    const query = params.toString();
+    return `${page.url.pathname}${query ? `?${query}` : ""}`;
+  }
+
+  const queryValue = $derived(page.url.searchParams.get("q")?.trim() ?? "");
+  const query = $derived(queryValue.toLowerCase());
+  const status = $derived(selected<StatusFilter>("status", statusOptions, "all"));
+  const platform = $derived(page.url.searchParams.get("platform") ?? "");
+  const version = $derived(page.url.searchParams.get("version") ?? "");
+  const tag = $derived(page.url.searchParams.get("tag") ?? "");
+  const container = $derived(page.url.searchParams.get("container") ?? "");
+  const sort = $derived(selected<SortOption>("sort", sortOptions, "priority"));
+  const platformOptions = $derived(
+    [
+      ...new Set(data.machines.flatMap((machine) => (machine.platform ? [machine.platform] : []))),
+    ].sort(),
+  );
+  const versionOptions = $derived(
+    [
+      ...new Set(
+        data.machines.flatMap((machine) => (machine.agentVersion ? [machine.agentVersion] : [])),
+      ),
+    ].sort(),
+  );
+  const tagOptions = $derived([...new Set(data.machines.flatMap(labelTokens))].sort());
+  const filteredMachines = $derived.by(() => {
+    const matches = data.machines.filter((machine) => {
+      const searchText = [
+        machine.name,
+        machine.platform ?? "",
+        machine.arch ?? "",
+        machine.agentVersion ?? "",
+        ...labelTokens(machine),
+      ]
+        .join(" ")
+        .toLowerCase();
       const matchesStatus =
         status === "all" ||
         (status === "online" && machine.state === "healthy") ||
         (status === "impaired" && (machine.state === "degraded" || machine.state === "down")) ||
         (status === "offline" && machine.state === "offline") ||
         (status === "unknown" && machine.state === "unknown");
-      return matchesQuery && matchesStatus;
-    }),
+      return (
+        searchText.includes(query) &&
+        matchesStatus &&
+        (platform === "" || machine.platform === platform) &&
+        (version === "" || machine.agentVersion === version) &&
+        (tag === "" || labelTokens(machine).includes(tag)) &&
+        (container === "" || machine.containersEnabled === (container === "enabled"))
+      );
+    });
+    return matches.toSorted((left, right) => {
+      if (sort === "name") return left.name.localeCompare(right.name);
+      if (sort === "download") return right.networkRxBps - left.networkRxBps;
+      if (sort === "upload") return right.networkTxBps - left.networkTxBps;
+      if (sort === "recent") return (right.observedAt ?? 0) - (left.observedAt ?? 0);
+      return (
+        statePriority(left.state) - statePriority(right.state) ||
+        left.name.localeCompare(right.name)
+      );
+    });
+  });
+  const requestedPage = $derived(Number(page.url.searchParams.get("page") ?? "1"));
+  const pageCount = $derived(Math.max(1, Math.ceil(filteredMachines.length / pageSize)));
+  const currentPage = $derived(
+    Number.isInteger(requestedPage) && requestedPage > 0 ? Math.min(requestedPage, pageCount) : 1,
+  );
+  const visibleMachines = $derived(
+    filteredMachines.slice((currentPage - 1) * pageSize, currentPage * pageSize),
   );
 </script>
 
@@ -40,28 +140,97 @@
 
   {#if data.machines.length > 0}
     <div class="toolbar">
-      <label class="search">
-        <Search size={14} />
-        <input bind:value={query} aria-label="Search machines" placeholder="Search machines" />
-      </label>
-      <div class="segments" aria-label="Filter machine status">
-        {#each [["all", "All"], ["online", "Online"], ["impaired", "Impaired"], ["offline", "Offline"], ["unknown", "Unknown"]] as option}
-          <button
+      <form class="filters" method="GET">
+        {#if status !== "all"}<input type="hidden" name="status" value={status} />{/if}
+        <label class="search">
+          <Search size={14} />
+          <input
+            name="q"
+            value={queryValue}
+            aria-label="Search machines"
+            placeholder="Search machines"
+          />
+        </label>
+        <select
+          name="platform"
+          aria-label="Filter by operating system"
+          value={platform}
+          onchange={submitFilters}
+        >
+          <option value="">All systems</option>
+          {#each platformOptions as option}<option value={option}>{option}</option>{/each}
+        </select>
+        <select
+          name="version"
+          aria-label="Filter by Agent version"
+          value={version}
+          onchange={submitFilters}
+        >
+          <option value="">All versions</option>
+          {#each versionOptions as option}<option value={option}>{option}</option>{/each}
+        </select>
+        <select
+          name="tag"
+          aria-label="Filter by machine label"
+          value={tag}
+          onchange={submitFilters}
+        >
+          <option value="">All labels</option>
+          {#each tagOptions as option}<option value={option}>{option}</option>{/each}
+        </select>
+        <select
+          name="container"
+          aria-label="Filter by container monitoring"
+          value={container}
+          onchange={submitFilters}
+        >
+          <option value="">All container states</option>
+          <option value="enabled">Containers enabled</option>
+          <option value="disabled">Containers disabled</option>
+        </select>
+        <select name="sort" aria-label="Sort machines" value={sort} onchange={submitFilters}>
+          <option value="priority">Problems first</option>
+          <option value="name">Name</option>
+          <option value="download">Download rate</option>
+          <option value="upload">Upload rate</option>
+          <option value="recent">Last report</option>
+        </select>
+        <button class="search-submit" type="submit">Search</button>
+      </form>
+      <nav class="segments" aria-label="Filter machine status">
+        {#each statusFilters as option}
+          <a
             class:active={status === option[0]}
-            aria-pressed={status === option[0]}
-            onclick={() => (status = option[0] as typeof status)}>{option[1]}</button
+            aria-current={status === option[0] ? "page" : undefined}
+            href={filterHref("status", option[0])}>{option[1]}</a
           >
         {/each}
-      </div>
-      <span class="result-count">{filteredMachines.length} shown</span>
+      </nav>
+      <span class="result-count">
+        {visibleMachines.length === 0 ? 0 : (currentPage - 1) * pageSize + 1}-{Math.min(
+          currentPage * pageSize,
+          filteredMachines.length,
+        )} of {filteredMachines.length}
+      </span>
     </div>
 
     {#if filteredMachines.length > 0}
       <section class="machine-grid" aria-label="Machines">
-        {#each filteredMachines as machine (machine.id)}
+        {#each visibleMachines as machine (machine.id)}
           <MachineCard {machine} workspaceSlug={data.workspace.slug} />
         {/each}
       </section>
+      {#if pageCount > 1}
+        <nav class="pagination" aria-label="Machine pages">
+          {#if currentPage > 1}
+            <a href={paginationHref(currentPage - 1)}><ChevronLeft size={14} />Previous</a>
+          {:else}<span><ChevronLeft size={14} />Previous</span>{/if}
+          <strong>Page {currentPage} of {pageCount}</strong>
+          {#if currentPage < pageCount}
+            <a href={paginationHref(currentPage + 1)}>Next<ChevronRight size={14} /></a>
+          {:else}<span>Next<ChevronRight size={14} /></span>{/if}
+        </nav>
+      {/if}
     {:else}
       <section class="empty compact">
         <Search size={22} />
@@ -122,10 +291,18 @@
   }
 
   .toolbar {
-    display: flex;
-    min-height: 54px;
-    align-items: center;
+    display: grid;
+    min-height: 94px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-content: center;
     gap: 12px;
+  }
+
+  .filters {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 6px;
   }
 
   .search {
@@ -151,31 +328,58 @@
     font: inherit;
   }
 
+  .filters select,
+  .search-submit {
+    height: 30px;
+    min-width: 0;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    color: var(--text-muted);
+    background: var(--surface);
+    font: inherit;
+    font-size: 10px;
+  }
+
+  .filters select {
+    max-width: 132px;
+    padding: 0 22px 0 7px;
+  }
+
+  .search-submit {
+    padding: 0 9px;
+    color: var(--text);
+    cursor: pointer;
+  }
+
   .segments {
     display: flex;
+    grid-column: 1;
     gap: 2px;
   }
 
-  .segments button {
+  .segments a {
+    display: inline-flex;
     height: 28px;
+    align-items: center;
     padding: 0 8px;
     border: 0;
     border-radius: 5px;
     color: var(--text-muted);
     background: transparent;
-    font: inherit;
     font-size: 10px;
-    cursor: pointer;
+    text-decoration: none;
   }
 
-  .segments button.active {
+  .segments a.active {
     color: var(--text);
     background: var(--surface-strong);
     font-weight: 650;
   }
 
   .result-count {
-    margin-left: auto;
+    grid-column: 2;
+    grid-row: 2;
+    align-self: center;
     color: var(--text-faint);
     font-family: var(--font-mono);
     font-size: 10px;
@@ -185,6 +389,38 @@
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 350px), 1fr));
     gap: 10px;
+  }
+
+  .pagination {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    margin-top: 16px;
+    color: var(--text-faint);
+    font-size: 10px;
+  }
+
+  .pagination a,
+  .pagination span {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .pagination a {
+    color: var(--accent);
+    text-decoration: none;
+  }
+
+  .pagination a:last-child,
+  .pagination span:last-child {
+    justify-self: end;
+  }
+
+  .pagination strong {
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-weight: 500;
   }
 
   .empty {
@@ -216,17 +452,26 @@
 
     .toolbar {
       align-items: stretch;
-      flex-wrap: wrap;
+      grid-template-columns: 1fr auto;
       padding: 12px 0;
+    }
+
+    .filters {
+      grid-column: 1 / -1;
+      flex-wrap: wrap;
     }
 
     .search {
       width: 100%;
     }
 
-    .result-count {
-      display: flex;
-      align-items: center;
+    .filters select {
+      max-width: none;
+      flex: 1 1 140px;
+    }
+
+    .segments {
+      overflow-x: auto;
     }
   }
 </style>
