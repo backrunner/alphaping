@@ -31,6 +31,7 @@ pub struct UpdateClient {
     http: Client,
     root: TrustedRoot,
     agent_id: String,
+    base_url: String,
     metadata_cache: Mutex<BTreeMap<String, CacheEntry>>,
 }
 
@@ -42,10 +43,20 @@ struct CacheEntry {
 
 impl UpdateClient {
     pub fn new(http: Client, root: TrustedRoot, agent_id: String) -> Self {
+        Self::with_base_url(http, root, agent_id, RELEASE_BASE_URL.to_owned())
+    }
+
+    pub(super) fn with_base_url(
+        http: Client,
+        root: TrustedRoot,
+        agent_id: String,
+        base_url: String,
+    ) -> Self {
         Self {
             http,
             root,
             agent_id,
+            base_url,
             metadata_cache: Mutex::new(BTreeMap::new()),
         }
     }
@@ -189,7 +200,7 @@ impl UpdateClient {
         };
         let mut request = self
             .http
-            .get(format!("{RELEASE_BASE_URL}/{path}"))
+            .get(format!("{}/{path}", self.base_url.trim_end_matches('/')))
             .header("accept", "application/octet-stream");
         if let Some(cached) = &cached {
             request = request.header("if-none-match", &cached.etag);
