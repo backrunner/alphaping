@@ -75,7 +75,7 @@
               name="samplingIntervalSeconds"
               min="5"
               max="300"
-              value="10"
+              value={data.defaultSamplingIntervalSeconds}
               required
             /><small>seconds</small></label
           >

@@ -50,6 +50,10 @@
         {
           "file": "0012_agent_system_info.sql",
           "sha256": "7cd577dc60834eaab74cbf936a94eff035f083fb586ffc34518ea0aeb824eba3"
+        },
+        {
+          "file": "0013_workspace_defaults.sql",
+          "sha256": "42e9a7548a47b55695cca9208388f3bf11607c4d86e6068b54197b3065200345"
         }
       ],
       "objects": [
@@ -369,7 +373,7 @@
           "type": "table",
           "name": "telemetry_resource_sequences",
           "table": "telemetry_resource_sequences",
-          "sql": "CREATE TABLE telemetry_resource_sequences (\n  kind TEXT PRIMARY KEY NOT NULL CHECK (kind IN ('machine', 'service', 'check')),\n  value INTEGER NOT NULL CHECK (value >= 0)\n) WITHOUT ROWID, STRICT"
+          "sql": "CREATE TABLE \"telemetry_resource_sequences\" (\n  kind TEXT PRIMARY KEY NOT NULL CHECK (kind IN ('workspace', 'machine', 'service', 'check')),\n  value INTEGER NOT NULL CHECK (value >= 0)\n) WITHOUT ROWID, STRICT"
         },
         {
           "type": "table",
@@ -393,7 +397,7 @@
           "type": "table",
           "name": "workspaces",
           "table": "workspaces",
-          "sql": "CREATE TABLE workspaces (\n  id TEXT PRIMARY KEY NOT NULL,\n  telemetry_pk INTEGER NOT NULL UNIQUE,\n  slug TEXT NOT NULL UNIQUE,\n  name TEXT NOT NULL,\n  default_dashboard_id TEXT,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  deleted_at INTEGER\n) STRICT"
+          "sql": "CREATE TABLE workspaces (\n  id TEXT PRIMARY KEY NOT NULL,\n  telemetry_pk INTEGER NOT NULL UNIQUE,\n  slug TEXT NOT NULL UNIQUE,\n  name TEXT NOT NULL,\n  default_dashboard_id TEXT,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  deleted_at INTEGER\n, default_sampling_interval_seconds INTEGER NOT NULL DEFAULT 10\n  CHECK (default_sampling_interval_seconds BETWEEN 5 AND 300)) STRICT"
         },
         {
           "type": "trigger",
@@ -847,7 +851,7 @@
           "type": "table",
           "name": "telemetry_resource_sequences",
           "table": "telemetry_resource_sequences",
-          "sql": "CREATE TABLE telemetry_resource_sequences (\n  kind TEXT PRIMARY KEY NOT NULL CHECK (kind IN ('machine', 'service', 'check')),\n  value INTEGER NOT NULL CHECK (value >= 0)\n) WITHOUT ROWID, STRICT"
+          "sql": "CREATE TABLE \"telemetry_resource_sequences\" (\n  kind TEXT PRIMARY KEY NOT NULL CHECK (kind IN ('workspace', 'machine', 'service', 'check')),\n  value INTEGER NOT NULL CHECK (value >= 0)\n) WITHOUT ROWID, STRICT"
         },
         {
           "type": "table",
@@ -877,7 +881,7 @@
           "type": "table",
           "name": "workspaces",
           "table": "workspaces",
-          "sql": "CREATE TABLE workspaces (\n  id TEXT PRIMARY KEY NOT NULL,\n  telemetry_pk INTEGER NOT NULL UNIQUE,\n  slug TEXT NOT NULL UNIQUE,\n  name TEXT NOT NULL,\n  default_dashboard_id TEXT,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  deleted_at INTEGER\n) STRICT"
+          "sql": "CREATE TABLE workspaces (\n  id TEXT PRIMARY KEY NOT NULL,\n  telemetry_pk INTEGER NOT NULL UNIQUE,\n  slug TEXT NOT NULL UNIQUE,\n  name TEXT NOT NULL,\n  default_dashboard_id TEXT,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  deleted_at INTEGER\n, default_sampling_interval_seconds INTEGER NOT NULL DEFAULT 10\n  CHECK (default_sampling_interval_seconds BETWEEN 5 AND 300)) STRICT"
         },
         {
           "type": "trigger",

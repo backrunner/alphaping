@@ -265,6 +265,8 @@ try {
     workspaceName: "Operations",
     workspaceSlug: "operations",
     rawDays: "7",
+    defaultSamplingIntervalSeconds: "15",
+    dashboardVisibility: "private",
   };
   response = await fetch(`${baseUrl}/setup`, {
     method: "POST",

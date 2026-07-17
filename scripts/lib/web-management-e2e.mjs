@@ -104,6 +104,68 @@ export async function runWebManagementE2e({
   queryControlDb,
   queryTelemetryDb,
 }) {
+  const initializedDefaults = onlyRow(
+    queryControlDb(
+      `SELECT w.default_sampling_interval_seconds, d.visibility
+       FROM workspaces w JOIN dashboards d ON d.id = w.default_dashboard_id
+       WHERE w.slug = 'operations'`,
+    ),
+    "initialized workspace defaults lookup",
+  );
+  if (
+    initializedDefaults.default_sampling_interval_seconds !== 15 ||
+    initializedDefaults.visibility !== "private"
+  ) {
+    throw new Error("setup did not persist workspace sampling and access defaults");
+  }
+  const secondWorkspace = await submitAction(
+    baseUrl,
+    "/workspaces?/create",
+    adminCookie,
+    {
+      name: "Platform E2E",
+      slug: "platform-e2e",
+      rawDays: "14",
+      defaultSamplingIntervalSeconds: "30",
+      dashboardVisibility: "authenticated",
+    },
+    "second workspace creation",
+    { type: "redirect", actionStatus: 303 },
+  );
+  if (!secondWorkspace.serialized.includes("/platform-e2e")) {
+    throw new Error("workspace creation did not redirect to the new tenant");
+  }
+  const createdWorkspace = onlyRow(
+    queryControlDb(
+      `SELECT w.id, w.telemetry_pk, w.default_sampling_interval_seconds,
+              d.visibility, p.raw_days, m.role
+       FROM workspaces w JOIN dashboards d ON d.id = w.default_dashboard_id
+       JOIN retention_policies p ON p.workspace_id = w.id
+       JOIN memberships m ON m.workspace_id = w.id
+       WHERE w.slug = 'platform-e2e'`,
+    ),
+    "created workspace lookup",
+  );
+  if (
+    createdWorkspace.telemetry_pk !== 2 ||
+    createdWorkspace.default_sampling_interval_seconds !== 30 ||
+    createdWorkspace.visibility !== "authenticated" ||
+    createdWorkspace.raw_days !== 14 ||
+    createdWorkspace.role !== "admin"
+  ) {
+    throw new Error("workspace creation did not persist its isolated defaults and ownership");
+  }
+  const workspaceAudit = onlyRow(
+    queryControlDb(
+      `SELECT action FROM audit_logs
+       WHERE workspace_id = '${createdWorkspace.id}' AND action = 'workspace.create'`,
+    ),
+    "workspace creation audit lookup",
+  );
+  if (workspaceAudit.action !== "workspace.create") {
+    throw new Error("workspace creation did not write its audit record");
+  }
+
   const machineAction = await submitAction(
     baseUrl,
     "/operations/admin?/machine",

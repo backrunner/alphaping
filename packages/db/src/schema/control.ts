@@ -17,6 +17,9 @@ export const workspaces = sqliteTable(
     slug: text("slug").notNull(),
     name: text("name").notNull(),
     defaultDashboardId: text("default_dashboard_id"),
+    defaultSamplingIntervalSeconds: integer("default_sampling_interval_seconds")
+      .notNull()
+      .default(10),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
     deletedAt: integer("deleted_at"),

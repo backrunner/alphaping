@@ -26,13 +26,15 @@
   let workspaceName = $state("Operations");
   let workspaceSlug = $state("operations");
   let rawDays = $state("7");
+  let defaultSamplingIntervalSeconds = $state("10");
+  let dashboardVisibility = $state("private");
 
   const steps: ReadonlyArray<{ number: SetupStep; label: string }> = [
     { number: 1, label: "Environment" },
     { number: 2, label: "Verification" },
     { number: 3, label: "Administrator" },
     { number: 4, label: "Workspace" },
-    { number: 5, label: "Retention" },
+    { number: 5, label: "Defaults" },
   ];
 
   $effect(() => {
@@ -72,7 +74,7 @@
     <section class="setup__installed">
       <ShieldCheck size={28} />
       <h1>Initialization complete</h1>
-      <p>The administrator and private workspace are ready. Choose what to monitor first.</p>
+      <p>The administrator and workspace are ready. Choose what to monitor first.</p>
       {#if data.workspaceSlug}
         <div class="setup__next-actions">
           <a class="primary" href={loginPath(`/${data.workspaceSlug}/admin`)}>
@@ -221,7 +223,7 @@
             <Clock3 size={18} />
             <div>
               <h2>Retention and review</h2>
-              <p>Choose raw history retention and confirm the installation</p>
+              <p>Set workspace defaults and confirm the installation</p>
             </div>
           </header>
           <label>
@@ -230,6 +232,27 @@
               <option value="7">7 days · recommended</option>
               <option value="14">14 days</option>
               <option value="30">30 days</option>
+            </select>
+          </label>
+          <label>
+            <span>Default machine sampling</span>
+            <select
+              name="defaultSamplingIntervalSeconds"
+              bind:value={defaultSamplingIntervalSeconds}
+            >
+              <option value="5">5 seconds</option>
+              <option value="10">10 seconds · recommended</option>
+              <option value="15">15 seconds</option>
+              <option value="30">30 seconds</option>
+              <option value="60">60 seconds</option>
+            </select>
+          </label>
+          <label>
+            <span>Dashboard access</span>
+            <select name="dashboardVisibility" bind:value={dashboardVisibility}>
+              <option value="private">Private</option>
+              <option value="authenticated">Authenticated members</option>
+              <option value="public">Public status enabled</option>
             </select>
           </label>
           <dl class="review-list">
@@ -250,8 +273,12 @@
               <dd>{rawDays} days</dd>
             </div>
             <div>
+              <dt>Default sampling</dt>
+              <dd>{defaultSamplingIntervalSeconds} seconds</dd>
+            </div>
+            <div>
               <dt>Dashboard access</dt>
-              <dd>Private by default</dd>
+              <dd>{dashboardVisibility}</dd>
             </div>
           </dl>
         </section>

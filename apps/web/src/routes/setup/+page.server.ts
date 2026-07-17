@@ -58,6 +58,11 @@ export const actions: Actions = {
         workspaceName: String(form.get("workspaceName") ?? "").trim(),
         workspaceSlug: String(form.get("workspaceSlug") ?? "").trim(),
         rawDays,
+        defaultSamplingIntervalSeconds: Number(form.get("defaultSamplingIntervalSeconds")),
+        dashboardVisibility: String(form.get("dashboardVisibility")) as
+          | "private"
+          | "authenticated"
+          | "public",
       });
     } catch (cause) {
       if (isHttpError(cause)) {

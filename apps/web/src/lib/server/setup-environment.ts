@@ -36,6 +36,7 @@ const CONTROL_TABLES = [
   "installations",
   "memberships",
   "retention_policies",
+  "telemetry_resource_sequences",
   "user",
   "workspaces",
 ] as const;

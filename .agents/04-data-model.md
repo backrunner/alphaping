@@ -40,6 +40,7 @@ Better Auth 核心表由其 schema 生成并纳入统一 migration：
 - `id`, `slug`, `name`
 - `created_at`, `updated_at`, `deleted_at`
 - `default_dashboard_id`
+- `default_sampling_interval_seconds`，新机器表单的 workspace 默认值
 
 索引：唯一 `slug`，`deleted_at`。
 

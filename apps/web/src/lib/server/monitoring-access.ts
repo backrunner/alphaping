@@ -11,6 +11,7 @@ interface WorkspaceRow {
   id: string;
   telemetry_pk: number;
   default_dashboard_id: string;
+  default_sampling_interval_seconds: number;
   role: WorkspaceRole;
 }
 
@@ -25,12 +26,14 @@ export interface MonitoringAccess {
   workspaceId: string;
   workspacePk: number;
   defaultDashboardId: string;
+  defaultSamplingIntervalSeconds: number;
   role: WorkspaceRole;
   grants: readonly ResourceGrant[];
 }
 
 export interface DeveloperPanelData {
   agents: readonly { id: string; name: string }[];
+  defaultSamplingIntervalSeconds: number;
 }
 
 export async function loadMonitoringAccess(
@@ -40,7 +43,8 @@ export async function loadMonitoringAccess(
 ): Promise<MonitoringAccess> {
   const workspace = await db
     .prepare(
-      `SELECT w.id, w.telemetry_pk, w.default_dashboard_id, m.role
+      `SELECT w.id, w.telemetry_pk, w.default_dashboard_id,
+            w.default_sampling_interval_seconds, m.role
      FROM workspaces w JOIN memberships m ON m.workspace_id = w.id
      WHERE w.slug = ? AND w.deleted_at IS NULL AND m.user_id = ? AND m.status = 'active'`,
     )
@@ -58,6 +62,7 @@ export async function loadMonitoringAccess(
     workspaceId: workspace.id,
     workspacePk: workspace.telemetry_pk,
     defaultDashboardId: workspace.default_dashboard_id,
+    defaultSamplingIntervalSeconds: workspace.default_sampling_interval_seconds,
     role: workspace.role,
     grants: grants.results.map((grant) => ({
       resourceType: grant.resource_type,
@@ -101,5 +106,6 @@ export async function loadDeveloperPanel(
     .all<{ id: string; machine_name: string }>();
   return {
     agents: agents.results.map((agent) => ({ id: agent.id, name: agent.machine_name })),
+    defaultSamplingIntervalSeconds: access.defaultSamplingIntervalSeconds,
   };
 }

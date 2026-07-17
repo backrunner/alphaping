@@ -9,6 +9,7 @@ const readySnapshot: SetupEnvironmentSnapshot = {
     "installations",
     "memberships",
     "retention_policies",
+    "telemetry_resource_sequences",
     "user",
     "workspaces",
   ],

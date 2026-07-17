@@ -2,6 +2,134 @@ import { error } from "@sveltejs/kit";
 
 import { prepareAuditStatement } from "./workspace-admin.js";
 
+export interface CreateWorkspaceInput {
+  name: string;
+  slug: string;
+  rawDays: number;
+  defaultSamplingIntervalSeconds: number;
+  dashboardVisibility: "private" | "authenticated" | "public";
+}
+
+function normalizeWorkspaceInput(input: CreateWorkspaceInput): CreateWorkspaceInput {
+  const name = input.name.trim();
+  const slug = input.slug.trim();
+  if (name.length < 2 || name.length > 80) throw error(400, "Workspace name is invalid");
+  if (!/^[a-z0-9][a-z0-9-]{1,46}[a-z0-9]$/.test(slug)) {
+    throw error(400, "Workspace slug is invalid");
+  }
+  if (!Number.isInteger(input.rawDays) || input.rawDays < 1 || input.rawDays > 90) {
+    throw error(400, "Raw retention must be between 1 and 90 days");
+  }
+  if (
+    !Number.isInteger(input.defaultSamplingIntervalSeconds) ||
+    input.defaultSamplingIntervalSeconds < 5 ||
+    input.defaultSamplingIntervalSeconds > 300 ||
+    60 % input.defaultSamplingIntervalSeconds !== 0
+  ) {
+    throw error(400, "Default sampling interval must divide the 60 second report period");
+  }
+  if (!(["private", "authenticated", "public"] as const).includes(input.dashboardVisibility)) {
+    throw error(400, "Dashboard visibility is invalid");
+  }
+  return { ...input, name, slug };
+}
+
+export async function createWorkspace(
+  db: D1Database,
+  actorUserId: string,
+  input: CreateWorkspaceInput,
+): Promise<{ id: string; slug: string }> {
+  const normalized = normalizeWorkspaceInput(input);
+  const actor = await db
+    .prepare(`SELECT id FROM user WHERE id = ?`)
+    .bind(actorUserId)
+    .first<{ id: string }>();
+  if (!actor) throw error(404, "Account not found");
+  const existing = await db
+    .prepare(`SELECT 1 AS present FROM workspaces WHERE slug = ?`)
+    .bind(normalized.slug)
+    .first<{ present: number }>();
+  if (existing) throw error(409, "Workspace slug is already in use");
+  const sequence = await db
+    .prepare(
+      `UPDATE telemetry_resource_sequences SET value = value + 1
+       WHERE kind = 'workspace' RETURNING value`,
+    )
+    .first<{ value: number }>();
+  if (!sequence) throw error(500, "Workspace sequence is unavailable");
+  const workspaceId = crypto.randomUUID();
+  const dashboardId = crypto.randomUUID();
+  const now = Date.now();
+  const statements: D1PreparedStatement[] = [
+    db
+      .prepare(
+        `INSERT INTO workspaces
+          (id, telemetry_pk, slug, name, default_dashboard_id,
+           default_sampling_interval_seconds, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        workspaceId,
+        sequence.value,
+        normalized.slug,
+        normalized.name,
+        dashboardId,
+        normalized.defaultSamplingIntervalSeconds,
+        now,
+        now,
+      ),
+    db
+      .prepare(
+        `INSERT INTO memberships
+          (workspace_id, user_id, role, status, created_at, updated_at)
+         VALUES (?, ?, 'admin', 'active', ?, ?)`,
+      )
+      .bind(workspaceId, actorUserId, now, now),
+    db
+      .prepare(
+        `INSERT INTO dashboards
+          (id, workspace_id, slug, name, description, visibility, created_by, created_at, updated_at)
+         VALUES (?, ?, 'overview', 'Overview', '', ?, ?, ?, ?)`,
+      )
+      .bind(dashboardId, workspaceId, normalized.dashboardVisibility, actorUserId, now, now),
+    db
+      .prepare(
+        `INSERT INTO retention_policies
+          (workspace_id, raw_days, rollup_5m_days, rollup_1h_days, event_days, updated_at)
+         VALUES (?, ?, 30, 365, 365, ?)`,
+      )
+      .bind(workspaceId, normalized.rawDays, now),
+    await prepareAuditStatement(db, {
+      workspaceId,
+      actorUserId,
+      action: "workspace.create",
+      resourceType: "workspace",
+      resourceId: workspaceId,
+      before: null,
+      after: {
+        name: normalized.name,
+        slug: normalized.slug,
+        defaultSamplingIntervalSeconds: normalized.defaultSamplingIntervalSeconds,
+        dashboardVisibility: normalized.dashboardVisibility,
+        rawDays: normalized.rawDays,
+      },
+      now,
+    }),
+  ];
+  try {
+    await db.batch(statements);
+  } catch (cause) {
+    const collision = await db
+      .prepare(`SELECT 1 AS present FROM workspaces WHERE slug = ?`)
+      .bind(normalized.slug)
+      .first<{ present: number }>()
+      .catch(() => null);
+    if (collision) throw error(409, "Workspace slug is already in use");
+    throw cause;
+  }
+  return { id: workspaceId, slug: normalized.slug };
+}
+
 interface WorkspaceMembershipRow {
   id: string;
   name: string;

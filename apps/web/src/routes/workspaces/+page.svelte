@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ArrowRight, Building2, Clock3, LogOut, RotateCcw } from "lucide-svelte";
+  import { ArrowRight, Building2, Clock3, LogOut, Plus, RotateCcw } from "lucide-svelte";
 
   import Button from "$components/ui/button/button.svelte";
 
@@ -28,12 +28,60 @@
         <h1 id="workspace-heading">Workspaces</h1>
         <p>Select an operations workspace or recover one pending deletion.</p>
       </div>
-      <span
-        >{data.workspaces.filter((workspace) => workspace.deletedAt === null).length} active</span
-      >
+      <div class="workspace-count">
+        <span
+          >{data.workspaces.filter((workspace) => workspace.deletedAt === null).length} active</span
+        >
+        <details class="create-workspace" open={form?.kind === "create"}>
+          <summary><Plus size={13} />New workspace</summary>
+          <form method="POST" action="?/create">
+            {#if form?.kind === "create" && form.message}<p class="error" role="alert">
+                {form.message}
+              </p>{/if}
+            <div class="create-fields">
+              <label
+                ><span>Name</span><input name="name" required minlength="2" maxlength="80" /></label
+              >
+              <label
+                ><span>URL slug</span><input
+                  name="slug"
+                  pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
+                  minlength="3"
+                  maxlength="48"
+                  required
+                /></label
+              >
+              <label
+                ><span>Default sampling</span><select name="defaultSamplingIntervalSeconds">
+                  <option value="5">5 seconds</option><option value="10" selected>10 seconds</option
+                  ><option value="15">15 seconds</option><option value="30">30 seconds</option
+                  ><option value="60">60 seconds</option>
+                </select></label
+              >
+              <label
+                ><span>Dashboard access</span><select name="dashboardVisibility">
+                  <option value="private">Private</option><option value="authenticated"
+                    >Authenticated</option
+                  ><option value="public">Public status</option>
+                </select></label
+              >
+              <label
+                ><span>Raw retention</span><select name="rawDays">
+                  <option value="7">7 days</option><option value="14">14 days</option><option
+                    value="30">30 days</option
+                  >
+                </select></label
+              >
+            </div>
+            <Button type="submit"><Plus size={13} />Create workspace</Button>
+          </form>
+        </details>
+      </div>
     </header>
 
-    {#if form?.message}<p class="error" role="alert">{form.message}</p>{/if}
+    {#if form?.kind === "restore" && form.message}<p class="error" role="alert">
+        {form.message}
+      </p>{/if}
 
     <div class="rows">
       {#each data.workspaces as workspace (workspace.id)}
@@ -115,6 +163,7 @@
   }
 
   .workspace-list > header {
+    align-items: flex-start;
     justify-content: space-between;
     gap: 16px;
     margin-bottom: 14px;
@@ -130,12 +179,91 @@
   }
 
   .workspace-list header p,
-  .workspace-list header > span,
+  .workspace-count > span,
   .identity span,
   .recovery > span,
   .empty {
     color: var(--text-muted);
     font-size: 10px;
+  }
+
+  .workspace-count {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .create-workspace {
+    position: relative;
+  }
+
+  .create-workspace summary {
+    display: inline-flex;
+    height: 30px;
+    align-items: center;
+    gap: 5px;
+    padding: 0 9px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    color: var(--text);
+    background: var(--surface);
+    font-size: 10px;
+    font-weight: 650;
+    list-style: none;
+    cursor: pointer;
+  }
+
+  .create-workspace summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .create-workspace form {
+    position: absolute;
+    z-index: 4;
+    top: 36px;
+    right: 0;
+    display: grid;
+    width: min(520px, calc(100vw - 24px));
+    gap: 12px;
+    padding: 14px;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    background: var(--surface);
+    box-shadow: 0 12px 32px color-mix(in srgb, var(--text) 12%, transparent);
+  }
+
+  .create-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .create-fields label:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .create-fields span {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--text-muted);
+    font-size: 9px;
+  }
+
+  .create-fields input,
+  .create-fields select {
+    width: 100%;
+    height: 32px;
+    padding: 0 8px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    color: var(--text);
+    background: var(--surface);
+    font: inherit;
+    font-size: 10px;
+  }
+
+  .create-workspace form > :global(button) {
+    justify-self: end;
   }
 
   .workspace-list header p {
@@ -219,6 +347,35 @@
   }
 
   @media (max-width: 560px) {
+    .workspace-list > header,
+    .workspace-count {
+      width: 100%;
+      align-items: flex-start;
+      flex-direction: column;
+    }
+
+    .create-workspace,
+    .create-workspace summary {
+      width: 100%;
+    }
+
+    .create-workspace summary {
+      justify-content: center;
+    }
+
+    .create-workspace form {
+      right: auto;
+      left: 0;
+    }
+
+    .create-fields {
+      grid-template-columns: 1fr;
+    }
+
+    .create-fields label:first-child {
+      grid-column: auto;
+    }
+
     article {
       align-items: flex-start;
       flex-wrap: wrap;

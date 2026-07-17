@@ -22,6 +22,7 @@ export const load: PageServerLoad = async ({ locals, params, platform, url }) =>
     installOrigin: url.origin,
     installerChecksums: await installerChecksums(),
     agents: panel.agents,
+    defaultSamplingIntervalSeconds: panel.defaultSamplingIntervalSeconds,
     deletedResources: await listDeletedResources(
       platform.env.CONTROL_DB,
       params.workspace,
