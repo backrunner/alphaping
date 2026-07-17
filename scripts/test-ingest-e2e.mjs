@@ -90,6 +90,7 @@ const machineId = "018f5f7e-7d28-7e12-a521-000000000003";
 const enrollmentId = "018f5f7e-7d28-7e12-a521-000000000004";
 const expiredEnrollmentId = "018f5f7e-7d28-7e12-a521-000000000005";
 const revokedEnrollmentId = "018f5f7e-7d28-7e12-a521-000000000006";
+const commandId = "018f5f7e-7d28-7e12-a521-000000000007";
 let child = null;
 
 try {
@@ -292,6 +293,48 @@ try {
   } catch (cause) {
     throw new Error(`${cause.message}\n${processOutput.text}`.trim(), { cause });
   }
+  const commandNow = Date.now();
+  run(
+    pnpm,
+    [
+      "exec",
+      "wrangler",
+      "d1",
+      "execute",
+      "CONTROL_DB",
+      "--local",
+      "--config",
+      config,
+      "--persist-to",
+      persistTo,
+      "--command",
+      `INSERT INTO agent_commands
+        (id, workspace_id, agent_id, type, payload_json, state, not_before, expires_at,
+         attempt_limit, payload_schema_version, created_by, created_at)
+       SELECT '${commandId}', '${workspaceId}', id, 'check_update', '{"bypassRollout":true}',
+         'pending', ${commandNow}, ${commandNow + 30 * 60_000}, 3, 1, '${userId}', ${commandNow}
+       FROM agents WHERE status = 'active' LIMIT 1`,
+    ],
+    "Agent command seed",
+    { quiet: true },
+  );
+  run(
+    process.execPath,
+    [
+      resolve(root, "scripts/run-cargo.mjs"),
+      "run",
+      "--quiet",
+      "-p",
+      "alphaping-ingest",
+      "--example",
+      "ingest_e2e_client",
+      "--",
+      "verify-command",
+      origin,
+      sessionPath,
+    ],
+    "Agent command protocol client",
+  );
   run(
     pnpm,
     [
@@ -360,7 +403,10 @@ try {
   const [agent] = query(
     "CONTROL_DB",
     `SELECT a.status, a.agent_version, a.last_seen_at, t.used_at, k.revoked_at,
-      LENGTH(k.wrapped_data_key) AS wrapped_key_bytes
+      LENGTH(k.wrapped_data_key) AS wrapped_key_bytes,
+      (SELECT state FROM agent_commands WHERE id = '${commandId}') AS command_state,
+      (SELECT result_code FROM agent_commands WHERE id = '${commandId}') AS command_result,
+      (SELECT delivery_count FROM agent_commands WHERE id = '${commandId}') AS command_deliveries
      FROM agents a JOIN agent_keys k ON k.agent_id = a.id
      JOIN agent_enrollment_tokens t ON t.used_by_agent_id = a.id`,
   );
@@ -370,7 +416,10 @@ try {
     !Number.isInteger(agent.last_seen_at) ||
     !Number.isInteger(agent.used_at) ||
     !Number.isInteger(agent.revoked_at) ||
-    agent.wrapped_key_bytes !== 60
+    agent.wrapped_key_bytes !== 60 ||
+    agent.command_state !== "succeeded" ||
+    agent.command_result !== "no_update_available" ||
+    agent.command_deliveries !== 1
   ) {
     throw new Error("enrollment key wrapping or Agent latest state was not persisted");
   }
@@ -391,10 +440,10 @@ try {
   );
   if (
     ![1, 2].includes(telemetry?.block_count) ||
-    telemetry.populated_slots !== 2 ||
+    telemetry.populated_slots !== 3 ||
     telemetry.cpu_permille !== 980 ||
     telemetry.machine_state !== "down" ||
-    telemetry.highest_sequence !== 3 ||
+    telemetry.highest_sequence !== 5 ||
     telemetry.recovery_events !== 1 ||
     telemetry.threshold_events !== 1
   ) {

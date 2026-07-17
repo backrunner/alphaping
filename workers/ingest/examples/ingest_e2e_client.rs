@@ -10,8 +10,11 @@ use alphaping_agent::{
     uploader::EnvelopeCodec,
 };
 use alphaping_protocol::{
-    compress_message, decode_message, encode_message,
-    v1::{AckStatus, EncryptedEnvelope, EnrollmentResponse, MachineReport, MetricSample},
+    compress_message, decode_message, decompress_message, encode_message,
+    v1::{
+        AckStatus, AgentCommandResult, AgentCommandResultStatus, AgentCommandType,
+        EncryptedEnvelope, EnrollmentResponse, MachineReport, MetricSample,
+    },
 };
 use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
@@ -83,12 +86,83 @@ async fn verify_revoked_key(
         root_key,
         nonce_prefix,
     )?;
-    let envelope = codec.encode_report(4, now_ms()?, &report_id, &compressed_payload)?;
+    let envelope = codec.encode_report(6, now_ms()?, &report_id, &compressed_payload)?;
     let response = post_protobuf(client, &format!("{origin}/v1/reports"), envelope).await?;
     if response.status() != StatusCode::NOT_FOUND {
         return Err(invalid_data("revoked Agent key accepted a report").into());
     }
     println!("Ingest rejected the revoked Agent key");
+    Ok(())
+}
+
+async fn verify_command_delivery(
+    client: &Client,
+    origin: &str,
+    state_path: &str,
+) -> Result<(), Box<dyn Error>> {
+    let session: StoredSession = serde_json::from_slice(&fs::read(state_path)?)?;
+    let root_key: [u8; 32] = hex::decode(&session.root_key_hex)?
+        .try_into()
+        .map_err(|_| invalid_data("stored E2E root key length changed"))?;
+    let nonce_prefix: [u8; 4] = hex::decode(&session.nonce_prefix_hex)?
+        .try_into()
+        .map_err(|_| invalid_data("stored E2E nonce prefix length changed"))?;
+    let report_id = hex::decode(&session.report_id_hex)?;
+    let compressed_payload = hex::decode(&session.compressed_payload_hex)?;
+    let codec = EnvelopeCodec::new(
+        session.agent_id.into_bytes(),
+        session.key_epoch,
+        root_key,
+        nonce_prefix,
+    )?;
+    let endpoint = format!("{origin}/v1/reports");
+    let envelope = codec.encode_report(4, now_ms()?, &report_id, &compressed_payload)?;
+    let response = post_protobuf(client, &endpoint, envelope).await?;
+    if response.status() != StatusCode::OK {
+        return Err(invalid_data("command delivery report was rejected").into());
+    }
+    let acknowledgement = codec.decode_ack(&response.bytes().await?, 4, &report_id)?;
+    if AckStatus::try_from(acknowledgement.status)? != AckStatus::Duplicate
+        || acknowledgement.commands.len() != 1
+    {
+        return Err(invalid_data("pending command was not delivered in the encrypted ACK").into());
+    }
+    let command = &acknowledgement.commands[0];
+    if AgentCommandType::try_from(command.r#type)? != AgentCommandType::CheckUpdate
+        || command.payload_schema_version != 1
+        || !command.bypass_rollout
+        || !command.requested_version.is_empty()
+    {
+        return Err(
+            invalid_data("delivered update command exceeded its allowlisted schema").into(),
+        );
+    }
+
+    let mut result_report: MachineReport = decompress_message(&compressed_payload)?;
+    result_report.report_id = vec![0x7c; 16];
+    result_report.nominal_minute_ms += 60_000;
+    for sample in &mut result_report.samples {
+        sample.observed_at_ms += 60_000;
+    }
+    result_report.command_results = vec![AgentCommandResult {
+        command_id: command.id.clone(),
+        status: AgentCommandResultStatus::Succeeded as i32,
+        completed_at_ms: now_ms()?,
+        result_code: "no_update_available".to_owned(),
+        installed_version: "0.1.0".to_owned(),
+    }];
+    let result_payload = compress_message(&result_report)?;
+    let envelope = codec.encode_report(5, now_ms()?, &result_report.report_id, &result_payload)?;
+    let response = post_protobuf(client, &endpoint, envelope).await?;
+    if response.status() != StatusCode::OK {
+        return Err(invalid_data("command result report was rejected").into());
+    }
+    let acknowledgement =
+        codec.decode_ack(&response.bytes().await?, 5, &result_report.report_id)?;
+    if AckStatus::try_from(acknowledgement.status)? != AckStatus::Committed {
+        return Err(invalid_data("command result report was not committed").into());
+    }
+    println!("Ingest delivered and persisted an allowlisted Agent update command");
     Ok(())
 }
 
@@ -105,6 +179,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .install_default()
         .map_err(|_| invalid_data("failed to install the E2E rustls provider"))?;
     let client = Client::builder().build()?;
+    if mode == "verify-command" {
+        let state_path = arguments
+            .next()
+            .ok_or_else(|| invalid_data("missing E2E session path"))?;
+        if arguments.next().is_some() || !origin.starts_with("http://127.0.0.1:") {
+            return Err(invalid_data(
+                "usage: ingest_e2e_client verify-command LOCAL_ORIGIN SESSION_PATH",
+            )
+            .into());
+        }
+        return verify_command_delivery(&client, &origin, &state_path).await;
+    }
     if mode == "verify-revoked" {
         let state_path = arguments
             .next()
@@ -282,8 +368,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             key_epoch: enrollment.key_epoch,
             root_key_hex: hex::encode(root_key),
             nonce_prefix_hex: hex::encode(nonce_prefix),
-            report_id_hex: hex::encode(report_id),
-            compressed_payload_hex: hex::encode(compressed),
+            report_id_hex: hex::encode(threshold_report_id),
+            compressed_payload_hex: hex::encode(threshold_payload),
         })?,
     )?;
 

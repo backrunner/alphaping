@@ -83,6 +83,38 @@ export async function runWebManagementE2e({ baseUrl, adminCookie, queryControlDb
     "machine enrollment lookup",
   );
   if (enrollment.count !== 1) throw new Error("machine enrollment token was not persisted once");
+  const agentId = "018f5f7e-7d28-7e12-a521-100000000001";
+  queryControlDb(
+    `INSERT INTO agents
+      (id, workspace_id, machine_id, identity_public_key, platform, arch, agent_version,
+       protocol_version, status, applied_config_revision, created_at)
+     SELECT '${agentId}', workspace_id, id, X'${"01".repeat(32)}', 'linux', 'x86_64',
+       '0.1.0', 1, 'active', 1, ${Date.now()} FROM machines WHERE id = '${machine.id}'`,
+  );
+  await submitAction(
+    baseUrl,
+    `/operations/machines/${machine.id}?/checkUpdate`,
+    adminCookie,
+    { bypassRollout: "on" },
+    "administrator forced update check",
+    { type: "redirect", actionStatus: 303 },
+  );
+  const queuedCommand = onlyRow(
+    queryControlDb(
+      `SELECT type, payload_json, state, attempt_limit, payload_schema_version
+       FROM agent_commands WHERE agent_id = '${agentId}'`,
+    ),
+    "queued Agent command lookup",
+  );
+  if (
+    queuedCommand.type !== "check_update" ||
+    queuedCommand.payload_json !== '{"bypassRollout":true}' ||
+    queuedCommand.state !== "pending" ||
+    queuedCommand.attempt_limit !== 3 ||
+    queuedCommand.payload_schema_version !== 1
+  ) {
+    throw new Error("forced update check was not queued with the allowlisted command schema");
+  }
 
   await submitAction(
     baseUrl,
@@ -295,6 +327,14 @@ export async function runWebManagementE2e({ baseUrl, adminCookie, queryControlDb
     headers: { cookie: memberCookie },
   });
   assertResponse(response, 200, "managed member service detail");
+  await submitAction(
+    baseUrl,
+    `/operations/machines/${machine.id}?/checkUpdate`,
+    memberCookie,
+    { bypassRollout: "on" },
+    "view-only member forced update check",
+    { type: "failure", actionStatus: 404 },
+  );
   await submitAction(
     baseUrl,
     "/operations/incidents?/incident",
