@@ -1,6 +1,5 @@
 <script lang="ts">
-  import { Bell, ChevronDown, Menu, Search } from "lucide-svelte";
-  import { Tooltip } from "bits-ui";
+  import { Menu, Search } from "lucide-svelte";
   import type { WorkspaceShellData } from "@alphaping/db";
 
   let {
@@ -21,22 +20,13 @@
   >
     <Menu size={17} />
   </button>
-  <button class="workspace-switcher">
-    <span>{shell.workspace.name}</span><ChevronDown size={14} />
-  </button>
-  <label class="search">
+  <a class="workspace-context" href={`/${shell.workspace.slug}`}>
+    <span>{shell.workspace.name}</span>
+  </a>
+  <form class="search" method="GET" action={`/${shell.workspace.slug}/machines`}>
     <Search size={14} />
-    <input placeholder="Search resources" aria-label="Search resources" />
-  </label>
-  <button class="range">Last 3 hours <ChevronDown size={13} /></button>
-  <Tooltip.Root>
-    <Tooltip.Trigger class="icon-button" aria-label="Notifications"
-      ><Bell size={14} /></Tooltip.Trigger
-    >
-    <Tooltip.Portal>
-      <Tooltip.Content class="tooltip-content" sideOffset={6}>Notifications</Tooltip.Content>
-    </Tooltip.Portal>
-  </Tooltip.Root>
+    <input name="q" placeholder="Search machines" aria-label="Search machines" />
+  </form>
   <span class="role">{shell.workspace.role}</span>
 </header>
 
@@ -55,8 +45,7 @@
     backdrop-filter: blur(10px);
   }
 
-  .workspace-switcher,
-  .range,
+  .workspace-context,
   .icon-button {
     display: inline-flex;
     height: 28px;
@@ -70,6 +59,19 @@
     background: var(--surface);
     font: inherit;
     font-size: 11px;
+  }
+
+  .workspace-context {
+    max-width: 220px;
+    overflow: hidden;
+    flex: none;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-decoration: none;
+  }
+
+  .workspace-context:hover {
+    color: var(--accent);
   }
 
   .search {
@@ -110,16 +112,6 @@
     display: none;
   }
 
-  :global(.tooltip-content) {
-    z-index: 50;
-    padding: 5px 7px;
-    border: 1px solid var(--border-strong);
-    border-radius: 4px;
-    color: var(--text);
-    background: var(--surface);
-    font-size: 10px;
-  }
-
   @media (max-width: 780px) {
     .mobile-menu {
       display: inline-flex;
@@ -127,26 +119,25 @@
       padding: 0;
     }
 
-    .search,
     .role {
       display: none;
+    }
+
+    .search {
+      width: min(280px, 44vw);
     }
 
     .topbar {
       padding: 0 12px;
     }
-
-    .range {
-      margin-left: auto;
-    }
   }
 
   @media (max-width: 420px) {
-    .range {
+    .search {
       display: none;
     }
 
-    .workspace-switcher {
+    .workspace-context {
       margin-right: auto;
     }
   }
