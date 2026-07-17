@@ -7,6 +7,7 @@ const steps = [
   ["typecheck", pnpm, ["typecheck"]],
   ["tests", pnpm, ["test"]],
   ["D1 migrations", pnpm, ["db:validate"]],
+  ["D1 schema manifest", pnpm, ["db:generate:check"]],
   ["cost model", pnpm, ["cost:check"]],
   ["Rust format", "node", ["scripts/run-cargo.mjs", "fmt", "--all", "--check"]],
   [
@@ -25,6 +26,7 @@ const steps = [
   ],
   ["Rust tests", "node", ["scripts/run-cargo.mjs", "test", "--workspace"]],
   ["build", pnpm, ["build"]],
+  ["web E2E", "node", ["scripts/test-web-e2e.mjs", "--skip-build"]],
   ["Worker dry-run", pnpm, ["workers:deploy", "--all", "--env", "production", "--dry-run"]],
   ["whitespace", "git", ["diff", "--check"]],
 ];

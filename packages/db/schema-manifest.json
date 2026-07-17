@@ -1,0 +1,871 @@
+{
+  "formatVersion": 1,
+  "databases": {
+    "CONTROL_DB": {
+      "migrations": [
+        {
+          "file": "0001_control.sql",
+          "sha256": "5e3611931cb5e2c47f040f6eb02428c6c789fa12bc3b10a806870ba0c4192d81"
+        },
+        {
+          "file": "0002_resource_sequences.sql",
+          "sha256": "64ccefc8a90feb8ef722c41454603824b6eef4a9bea6b6d59f592c4921d0fc10"
+        },
+        {
+          "file": "0003_enrollment_owner.sql",
+          "sha256": "32dfa2e2419f66150a9d4072d5bc0690a049cc2ccf0084b4e8191ea6ce4404e4"
+        },
+        {
+          "file": "0004_service_monitoring.sql",
+          "sha256": "276f6b0d6a7831defde52284eb0eb2d8ee1d7ff8bc15c56c6eb4c62ad3629f3f"
+        },
+        {
+          "file": "0005_container_catalog.sql",
+          "sha256": "d03187b7d2d723bf97231eade5cc587552ac97dd1577c78677578db25b7261fe"
+        },
+        {
+          "file": "0006_agent_probe_assignments.sql",
+          "sha256": "b9d1d90be0351ef8d33c90a3002d9fa55901aaa12d42cbb8fb5db4c937cb803a"
+        },
+        {
+          "file": "0007_agent_update_commands.sql",
+          "sha256": "18aa253fe3ac810f01cc8f39e9b73ed5f115a050f40f22eafc36f49740544a0c"
+        },
+        {
+          "file": "0008_agent_command_retention.sql",
+          "sha256": "e29e6060c53f1ebb19f174baf36e027a9acd5f5d5892b503d769eaae1daf3f79"
+        },
+        {
+          "file": "0009_workspace_access.sql",
+          "sha256": "95c3137ade4b41608c1a5e36056b7e5d089a9ab49a981dc5012577bbd3d6100b"
+        },
+        {
+          "file": "0010_active_admin_guard.sql",
+          "sha256": "970c313c3731be2cf9c0c4ab1a19b48944e590b8241bdf06c81dcce18f311a6e"
+        }
+      ],
+      "objects": [
+        {
+          "type": "index",
+          "name": "account_provider_uq",
+          "table": "account",
+          "sql": "CREATE UNIQUE INDEX account_provider_uq ON account (provider_id, account_id)"
+        },
+        {
+          "type": "index",
+          "name": "account_user_id_idx",
+          "table": "account",
+          "sql": "CREATE INDEX account_user_id_idx ON account (user_id)"
+        },
+        {
+          "type": "index",
+          "name": "agent_commands_completion_idx",
+          "table": "agent_commands",
+          "sql": "CREATE INDEX agent_commands_completion_idx\n  ON agent_commands (completed_at)\n  WHERE completed_at IS NOT NULL"
+        },
+        {
+          "type": "index",
+          "name": "agent_commands_delivery_idx",
+          "table": "agent_commands",
+          "sql": "CREATE INDEX agent_commands_delivery_idx ON agent_commands (agent_id, state, not_before)"
+        },
+        {
+          "type": "index",
+          "name": "agent_commands_expiry_idx",
+          "table": "agent_commands",
+          "sql": "CREATE INDEX agent_commands_expiry_idx\n  ON agent_commands (expires_at)\n  WHERE state IN ('pending', 'delivered')"
+        },
+        {
+          "type": "index",
+          "name": "agent_commands_result_idx",
+          "table": "agent_commands",
+          "sql": "CREATE INDEX agent_commands_result_idx\n  ON agent_commands (agent_id, completed_at DESC)\n  WHERE completed_at IS NOT NULL"
+        },
+        {
+          "type": "index",
+          "name": "agent_enrollment_expiry_idx",
+          "table": "agent_enrollment_tokens",
+          "sql": "CREATE INDEX agent_enrollment_expiry_idx ON agent_enrollment_tokens (expires_at)"
+        },
+        {
+          "type": "index",
+          "name": "agent_enrollment_used_by_uq",
+          "table": "agent_enrollment_tokens",
+          "sql": "CREATE UNIQUE INDEX agent_enrollment_used_by_uq\n  ON agent_enrollment_tokens (used_by_agent_id)\n  WHERE used_by_agent_id IS NOT NULL"
+        },
+        {
+          "type": "index",
+          "name": "agents_one_active_machine_uq",
+          "table": "agents",
+          "sql": "CREATE UNIQUE INDEX agents_one_active_machine_uq\n  ON agents (machine_id)\n  WHERE status = 'active'"
+        },
+        {
+          "type": "index",
+          "name": "announcements_visibility_idx",
+          "table": "announcements",
+          "sql": "CREATE INDEX announcements_visibility_idx ON announcements (workspace_id, starts_at, expires_at)"
+        },
+        {
+          "type": "index",
+          "name": "audit_logs_workspace_time_idx",
+          "table": "audit_logs",
+          "sql": "CREATE INDEX audit_logs_workspace_time_idx\n  ON audit_logs (workspace_id, created_at DESC)"
+        },
+        {
+          "type": "index",
+          "name": "check_configs_agent_assignment_idx",
+          "table": "check_configs",
+          "sql": "CREATE INDEX check_configs_agent_assignment_idx\n  ON check_configs (executor_agent_id, enabled, assignment_revision)"
+        },
+        {
+          "type": "index",
+          "name": "check_configs_service_idx",
+          "table": "check_configs",
+          "sql": "CREATE INDEX check_configs_service_idx ON check_configs (workspace_id, service_id)"
+        },
+        {
+          "type": "index",
+          "name": "check_secrets_workspace_idx",
+          "table": "check_secrets",
+          "sql": "CREATE INDEX check_secrets_workspace_idx ON check_secrets (workspace_id, id)"
+        },
+        {
+          "type": "index",
+          "name": "containers_machine_idx",
+          "table": "containers",
+          "sql": "CREATE INDEX containers_machine_idx ON containers (workspace_id, machine_id, deleted_at)"
+        },
+        {
+          "type": "index",
+          "name": "incident_resources_resource_idx",
+          "table": "incident_resources",
+          "sql": "CREATE INDEX incident_resources_resource_idx\n  ON incident_resources (resource_type, resource_id, incident_id)"
+        },
+        {
+          "type": "index",
+          "name": "incident_updates_timeline_idx",
+          "table": "incident_updates",
+          "sql": "CREATE INDEX incident_updates_timeline_idx ON incident_updates (incident_id, created_at)"
+        },
+        {
+          "type": "index",
+          "name": "installations_complete_uq",
+          "table": "installations",
+          "sql": "CREATE UNIQUE INDEX installations_complete_uq\n  ON installations (state)\n  WHERE state = 'complete'"
+        },
+        {
+          "type": "index",
+          "name": "machines_workspace_idx",
+          "table": "machines",
+          "sql": "CREATE INDEX machines_workspace_idx ON machines (workspace_id, deleted_at)"
+        },
+        {
+          "type": "index",
+          "name": "resource_grants_subject_idx",
+          "table": "resource_grants",
+          "sql": "CREATE INDEX resource_grants_subject_idx\n  ON resource_grants (workspace_id, subject_user_id, resource_type)"
+        },
+        {
+          "type": "index",
+          "name": "services_workspace_idx",
+          "table": "services",
+          "sql": "CREATE INDEX services_workspace_idx ON services (workspace_id, deleted_at)"
+        },
+        {
+          "type": "index",
+          "name": "services_workspace_slug_uq",
+          "table": "services",
+          "sql": "CREATE UNIQUE INDEX services_workspace_slug_uq\n  ON services (workspace_id, slug)\n  WHERE deleted_at IS NULL"
+        },
+        {
+          "type": "index",
+          "name": "session_token_uq",
+          "table": "session",
+          "sql": "CREATE UNIQUE INDEX session_token_uq ON session (token)"
+        },
+        {
+          "type": "index",
+          "name": "session_user_id_idx",
+          "table": "session",
+          "sql": "CREATE INDEX session_user_id_idx ON session (user_id)"
+        },
+        {
+          "type": "index",
+          "name": "user_email_uq",
+          "table": "user",
+          "sql": "CREATE UNIQUE INDEX user_email_uq ON user (email)"
+        },
+        {
+          "type": "index",
+          "name": "verification_identifier_idx",
+          "table": "verification",
+          "sql": "CREATE INDEX verification_identifier_idx ON verification (identifier)"
+        },
+        {
+          "type": "index",
+          "name": "workspace_invitations_expiry_idx",
+          "table": "workspace_invitations",
+          "sql": "CREATE INDEX workspace_invitations_expiry_idx\n  ON workspace_invitations (workspace_id, expires_at)\n  WHERE accepted_at IS NULL AND revoked_at IS NULL"
+        },
+        {
+          "type": "index",
+          "name": "workspace_invitations_pending_email_uq",
+          "table": "workspace_invitations",
+          "sql": "CREATE UNIQUE INDEX workspace_invitations_pending_email_uq\n  ON workspace_invitations (workspace_id, email)\n  WHERE accepted_at IS NULL AND revoked_at IS NULL"
+        },
+        {
+          "type": "table",
+          "name": "account",
+          "table": "account",
+          "sql": "CREATE TABLE account (\n  id TEXT PRIMARY KEY NOT NULL,\n  account_id TEXT NOT NULL,\n  provider_id TEXT NOT NULL,\n  user_id TEXT NOT NULL REFERENCES user (id) ON DELETE CASCADE,\n  access_token TEXT,\n  refresh_token TEXT,\n  id_token TEXT,\n  access_token_expires_at INTEGER,\n  refresh_token_expires_at INTEGER,\n  scope TEXT,\n  password TEXT,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL\n) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "agent_commands",
+          "table": "agent_commands",
+          "sql": "CREATE TABLE agent_commands (\n  id TEXT PRIMARY KEY NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  agent_id TEXT NOT NULL REFERENCES agents (id) ON DELETE CASCADE,\n  type TEXT NOT NULL CHECK (type IN (\n    'refresh_config', 'check_update', 'install_version', 'redetect_runtimes'\n  )),\n  payload_json TEXT NOT NULL DEFAULT '{}',\n  state TEXT NOT NULL CHECK (state IN (\n    'pending', 'delivered', 'succeeded', 'failed', 'expired'\n  )),\n  not_before INTEGER NOT NULL,\n  expires_at INTEGER NOT NULL,\n  created_by TEXT NOT NULL REFERENCES user (id),\n  created_at INTEGER NOT NULL,\n  delivered_at INTEGER,\n  completed_at INTEGER\n, attempt_limit INTEGER NOT NULL DEFAULT 3, payload_schema_version INTEGER NOT NULL DEFAULT 1, delivery_count INTEGER NOT NULL DEFAULT 0, result_code TEXT, result_json TEXT) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "agent_enrollment_tokens",
+          "table": "agent_enrollment_tokens",
+          "sql": "CREATE TABLE agent_enrollment_tokens (\n  id TEXT PRIMARY KEY NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  machine_id TEXT NOT NULL REFERENCES machines (id) ON DELETE CASCADE,\n  token_digest BLOB NOT NULL UNIQUE,\n  expires_at INTEGER NOT NULL,\n  used_at INTEGER,\n  revoked_at INTEGER,\n  created_by TEXT NOT NULL REFERENCES user (id),\n  created_at INTEGER NOT NULL\n, used_by_agent_id TEXT) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "agent_keys",
+          "table": "agent_keys",
+          "sql": "CREATE TABLE agent_keys (\n  agent_id TEXT NOT NULL REFERENCES agents (id) ON DELETE CASCADE,\n  key_epoch INTEGER NOT NULL,\n  wrapped_data_key BLOB NOT NULL,\n  wrapping_key_id TEXT NOT NULL,\n  nonce_prefix BLOB NOT NULL,\n  valid_from INTEGER NOT NULL,\n  valid_until INTEGER NOT NULL,\n  revoked_at INTEGER,\n  PRIMARY KEY (agent_id, key_epoch)\n) WITHOUT ROWID, STRICT"
+        },
+        {
+          "type": "table",
+          "name": "agents",
+          "table": "agents",
+          "sql": "CREATE TABLE agents (\n  id TEXT PRIMARY KEY NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  machine_id TEXT NOT NULL REFERENCES machines (id) ON DELETE CASCADE,\n  identity_public_key BLOB NOT NULL,\n  platform TEXT NOT NULL,\n  arch TEXT NOT NULL,\n  agent_version TEXT NOT NULL,\n  protocol_version INTEGER NOT NULL,\n  status TEXT NOT NULL CHECK (status IN ('active', 'revoked')),\n  applied_config_revision INTEGER NOT NULL DEFAULT 0,\n  created_at INTEGER NOT NULL,\n  last_seen_at INTEGER,\n  revoked_at INTEGER\n) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "announcements",
+          "table": "announcements",
+          "sql": "CREATE TABLE announcements (\n  id TEXT PRIMARY KEY NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  title TEXT NOT NULL,\n  body TEXT NOT NULL,\n  starts_at INTEGER NOT NULL,\n  expires_at INTEGER NOT NULL,\n  created_by TEXT NOT NULL REFERENCES user (id),\n  created_at INTEGER NOT NULL\n, severity TEXT NOT NULL DEFAULT 'info'\n  CHECK (severity IN ('info', 'maintenance', 'minor', 'major', 'critical')), visibility TEXT NOT NULL DEFAULT 'authenticated'\n  CHECK (visibility IN ('private', 'authenticated', 'public')), updated_at INTEGER, deleted_at INTEGER) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "audit_logs",
+          "table": "audit_logs",
+          "sql": "CREATE TABLE audit_logs (\n  id TEXT PRIMARY KEY NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  actor_user_id TEXT REFERENCES user (id) ON DELETE SET NULL,\n  action TEXT NOT NULL,\n  resource_type TEXT NOT NULL,\n  resource_id TEXT NOT NULL,\n  before_digest TEXT,\n  after_digest TEXT,\n  metadata_json TEXT NOT NULL DEFAULT '{}',\n  created_at INTEGER NOT NULL\n) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "check_assertions",
+          "table": "check_assertions",
+          "sql": "CREATE TABLE check_assertions (\n  id TEXT PRIMARY KEY NOT NULL,\n  check_id TEXT NOT NULL REFERENCES check_configs (id) ON DELETE CASCADE,\n  sort_order INTEGER NOT NULL,\n  source TEXT NOT NULL CHECK (source IN ('status', 'latency', 'header', 'jsonpath', 'body')),\n  operator TEXT NOT NULL CHECK (operator IN (\n    'exists', 'equals', 'contains', 'matches', 'type', 'greater_than', 'less_than'\n  )),\n  selector TEXT,\n  expected_json TEXT,\n  severity TEXT NOT NULL CHECK (severity IN ('degraded', 'down')),\n  created_at INTEGER NOT NULL,\n  UNIQUE (check_id, sort_order)\n) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "check_configs",
+          "table": "check_configs",
+          "sql": "CREATE TABLE check_configs (\n  id TEXT PRIMARY KEY NOT NULL,\n  telemetry_pk INTEGER NOT NULL UNIQUE,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  service_id TEXT NOT NULL REFERENCES services (id) ON DELETE CASCADE,\n  name TEXT NOT NULL,\n  kind TEXT NOT NULL CHECK (kind IN ('http', 'tcp', 'icmp')),\n  executor_kind TEXT NOT NULL CHECK (executor_kind IN ('cloudflare', 'agent')),\n  executor_agent_id TEXT REFERENCES agents (id),\n  enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),\n  interval_seconds INTEGER NOT NULL DEFAULT 60 CHECK (interval_seconds BETWEEN 5 AND 86400),\n  phase_seconds INTEGER NOT NULL DEFAULT 0 CHECK (phase_seconds BETWEEN 0 AND 86399),\n  timeout_ms INTEGER NOT NULL DEFAULT 5000 CHECK (timeout_ms BETWEEN 100 AND 30000),\n  request_json TEXT NOT NULL,\n  last_claimed_slot INTEGER NOT NULL DEFAULT 0,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL\n, failure_confirmations INTEGER NOT NULL DEFAULT 3\n  CHECK (failure_confirmations BETWEEN 1 AND 20), recovery_confirmations INTEGER NOT NULL DEFAULT 2\n  CHECK (recovery_confirmations BETWEEN 1 AND 20), secret_refs_json TEXT NOT NULL DEFAULT '{}', assignment_revision INTEGER NOT NULL DEFAULT 0, config_bytes INTEGER NOT NULL DEFAULT 0) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "check_secrets",
+          "table": "check_secrets",
+          "sql": "CREATE TABLE check_secrets (\n  id TEXT PRIMARY KEY NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  name TEXT NOT NULL,\n  wrapped_value BLOB NOT NULL,\n  wrapping_key_id TEXT NOT NULL,\n  nonce BLOB NOT NULL,\n  created_at INTEGER NOT NULL,\n  rotated_at INTEGER\n) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "containers",
+          "table": "containers",
+          "sql": "CREATE TABLE containers (\n  id TEXT PRIMARY KEY NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  machine_id TEXT NOT NULL REFERENCES machines (id) ON DELETE CASCADE,\n  runtime TEXT NOT NULL CHECK (runtime IN (\n    'docker', 'colima-docker', 'colima-containerd', 'apple-container', 'unknown'\n  )),\n  runtime_instance TEXT NOT NULL,\n  runtime_container_id TEXT NOT NULL,\n  name TEXT NOT NULL,\n  image TEXT NOT NULL,\n  first_seen_at INTEGER NOT NULL,\n  last_seen_at INTEGER NOT NULL,\n  deleted_at INTEGER,\n  UNIQUE (machine_id, runtime, runtime_instance, runtime_container_id)\n) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "dashboard_resources",
+          "table": "dashboard_resources",
+          "sql": "CREATE TABLE dashboard_resources (\n  dashboard_id TEXT NOT NULL REFERENCES dashboards (id) ON DELETE CASCADE,\n  resource_type TEXT NOT NULL CHECK (resource_type IN ('machine', 'service')),\n  resource_id TEXT NOT NULL,\n  sort_order INTEGER NOT NULL DEFAULT 0,\n  public_override TEXT NOT NULL DEFAULT 'inherit'\n    CHECK (public_override IN ('inherit', 'allow', 'deny')),\n  PRIMARY KEY (dashboard_id, resource_type, resource_id)\n) WITHOUT ROWID, STRICT"
+        },
+        {
+          "type": "table",
+          "name": "dashboards",
+          "table": "dashboards",
+          "sql": "CREATE TABLE dashboards (\n  id TEXT PRIMARY KEY NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  slug TEXT NOT NULL,\n  name TEXT NOT NULL,\n  description TEXT NOT NULL DEFAULT '',\n  visibility TEXT NOT NULL CHECK (visibility IN ('private', 'authenticated', 'public')),\n  created_by TEXT NOT NULL REFERENCES user (id),\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  deleted_at INTEGER,\n  UNIQUE (workspace_id, slug)\n) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "incident_resources",
+          "table": "incident_resources",
+          "sql": "CREATE TABLE incident_resources (\n  incident_id TEXT NOT NULL REFERENCES incidents (id) ON DELETE CASCADE,\n  resource_type TEXT NOT NULL CHECK (resource_type IN ('machine', 'service')),\n  resource_id TEXT NOT NULL,\n  impact TEXT NOT NULL CHECK (impact IN ('degraded', 'down')),\n  PRIMARY KEY (incident_id, resource_type, resource_id)\n) WITHOUT ROWID, STRICT"
+        },
+        {
+          "type": "table",
+          "name": "incident_updates",
+          "table": "incident_updates",
+          "sql": "CREATE TABLE incident_updates (\n  id TEXT PRIMARY KEY NOT NULL,\n  incident_id TEXT NOT NULL REFERENCES incidents (id) ON DELETE CASCADE,\n  state TEXT NOT NULL,\n  body TEXT NOT NULL,\n  created_by TEXT NOT NULL REFERENCES user (id),\n  created_at INTEGER NOT NULL\n, published_at INTEGER) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "incidents",
+          "table": "incidents",
+          "sql": "CREATE TABLE incidents (\n  id TEXT PRIMARY KEY NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  title TEXT NOT NULL,\n  severity TEXT NOT NULL CHECK (severity IN ('minor', 'major', 'critical')),\n  state TEXT NOT NULL CHECK (state IN ('investigating', 'identified', 'monitoring', 'resolved')),\n  starts_at INTEGER NOT NULL,\n  resolved_at INTEGER,\n  created_by TEXT NOT NULL REFERENCES user (id),\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL\n, summary TEXT NOT NULL DEFAULT '', deleted_at INTEGER) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "installations",
+          "table": "installations",
+          "sql": "CREATE TABLE installations (\n  id TEXT PRIMARY KEY NOT NULL,\n  state TEXT NOT NULL CHECK (state IN ('pending', 'complete')),\n  schema_version INTEGER NOT NULL,\n  created_at INTEGER NOT NULL,\n  completed_at INTEGER\n) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "machines",
+          "table": "machines",
+          "sql": "CREATE TABLE machines (\n  id TEXT PRIMARY KEY NOT NULL,\n  telemetry_pk INTEGER NOT NULL UNIQUE,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  name TEXT NOT NULL,\n  description TEXT NOT NULL DEFAULT '',\n  expected_host TEXT,\n  labels_json TEXT NOT NULL DEFAULT '{}',\n  sampling_interval_seconds INTEGER NOT NULL DEFAULT 10\n    CHECK (sampling_interval_seconds BETWEEN 5 AND 300),\n  report_interval_seconds INTEGER NOT NULL DEFAULT 60\n    CHECK (report_interval_seconds BETWEEN 60 AND 900),\n  offline_after_seconds INTEGER NOT NULL DEFAULT 150\n    CHECK (offline_after_seconds BETWEEN 60 AND 86400),\n  container_monitoring_enabled INTEGER NOT NULL DEFAULT 0 CHECK (container_monitoring_enabled IN (0, 1)),\n  maintenance_until INTEGER,\n  desired_config_revision INTEGER NOT NULL DEFAULT 1,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  deleted_at INTEGER\n, container_catalog_digest BLOB) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "memberships",
+          "table": "memberships",
+          "sql": "CREATE TABLE memberships (\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  user_id TEXT NOT NULL REFERENCES user (id) ON DELETE CASCADE,\n  role TEXT NOT NULL CHECK (role IN ('admin', 'member')),\n  status TEXT NOT NULL CHECK (status IN ('invited', 'active', 'suspended')),\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  PRIMARY KEY (workspace_id, user_id)\n) WITHOUT ROWID, STRICT"
+        },
+        {
+          "type": "table",
+          "name": "resource_grants",
+          "table": "resource_grants",
+          "sql": "CREATE TABLE resource_grants (\n  id TEXT PRIMARY KEY NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  subject_user_id TEXT NOT NULL REFERENCES user (id) ON DELETE CASCADE,\n  resource_type TEXT NOT NULL\n    CHECK (resource_type IN ('dashboard', 'machine', 'container', 'service', 'incident')),\n  resource_id TEXT NOT NULL,\n  capability TEXT NOT NULL CHECK (capability IN ('view', 'manage')),\n  effect TEXT NOT NULL CHECK (effect IN ('allow', 'deny')),\n  created_by TEXT NOT NULL REFERENCES user (id),\n  created_at INTEGER NOT NULL,\n  UNIQUE (subject_user_id, resource_type, resource_id, capability)\n) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "resource_public_policies",
+          "table": "resource_public_policies",
+          "sql": "CREATE TABLE resource_public_policies (\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  resource_type TEXT NOT NULL CHECK (resource_type IN ('machine', 'container', 'service')),\n  resource_id TEXT NOT NULL,\n  effect TEXT NOT NULL CHECK (effect IN ('allow', 'deny')),\n  projection_profile TEXT NOT NULL CHECK (projection_profile IN ('summary', 'detailed')),\n  updated_at INTEGER NOT NULL,\n  PRIMARY KEY (workspace_id, resource_type, resource_id)\n) WITHOUT ROWID, STRICT"
+        },
+        {
+          "type": "table",
+          "name": "retention_policies",
+          "table": "retention_policies",
+          "sql": "CREATE TABLE retention_policies (\n  workspace_id TEXT PRIMARY KEY NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  raw_days INTEGER NOT NULL DEFAULT 7 CHECK (raw_days BETWEEN 1 AND 90),\n  rollup_5m_days INTEGER NOT NULL DEFAULT 30 CHECK (rollup_5m_days BETWEEN 7 AND 365),\n  rollup_1h_days INTEGER NOT NULL DEFAULT 365 CHECK (rollup_1h_days BETWEEN 30 AND 3650),\n  event_days INTEGER NOT NULL DEFAULT 365 CHECK (event_days BETWEEN 30 AND 3650),\n  updated_at INTEGER NOT NULL\n, audit_log_days INTEGER NOT NULL DEFAULT 365\n  CHECK (audit_log_days BETWEEN 30 AND 3650), expired_announcement_grace_days INTEGER NOT NULL DEFAULT 7\n  CHECK (expired_announcement_grace_days BETWEEN 1 AND 90), soft_delete_grace_days INTEGER NOT NULL DEFAULT 7\n  CHECK (soft_delete_grace_days BETWEEN 1 AND 90)) WITHOUT ROWID, STRICT"
+        },
+        {
+          "type": "table",
+          "name": "services",
+          "table": "services",
+          "sql": "CREATE TABLE services (\n  id TEXT PRIMARY KEY NOT NULL,\n  telemetry_pk INTEGER NOT NULL UNIQUE,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  name TEXT NOT NULL,\n  description TEXT NOT NULL DEFAULT '',\n  status_rule_json TEXT NOT NULL DEFAULT '{}',\n  maintenance_until INTEGER,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  deleted_at INTEGER\n, slug TEXT) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "session",
+          "table": "session",
+          "sql": "CREATE TABLE session (\n  id TEXT PRIMARY KEY NOT NULL,\n  expires_at INTEGER NOT NULL,\n  token TEXT NOT NULL,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  ip_address TEXT,\n  user_agent TEXT,\n  user_id TEXT NOT NULL REFERENCES user (id) ON DELETE CASCADE\n) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "telemetry_resource_sequences",
+          "table": "telemetry_resource_sequences",
+          "sql": "CREATE TABLE telemetry_resource_sequences (\n  kind TEXT PRIMARY KEY NOT NULL CHECK (kind IN ('machine', 'service', 'check')),\n  value INTEGER NOT NULL CHECK (value >= 0)\n) WITHOUT ROWID, STRICT"
+        },
+        {
+          "type": "table",
+          "name": "user",
+          "table": "user",
+          "sql": "CREATE TABLE user (\n  id TEXT PRIMARY KEY NOT NULL,\n  name TEXT NOT NULL,\n  email TEXT NOT NULL,\n  email_verified INTEGER NOT NULL DEFAULT 0,\n  image TEXT,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL\n) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "verification",
+          "table": "verification",
+          "sql": "CREATE TABLE verification (\n  id TEXT PRIMARY KEY NOT NULL,\n  identifier TEXT NOT NULL,\n  value TEXT NOT NULL,\n  expires_at INTEGER NOT NULL,\n  created_at INTEGER,\n  updated_at INTEGER\n) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "workspace_invitations",
+          "table": "workspace_invitations",
+          "sql": "CREATE TABLE workspace_invitations (\n  id TEXT PRIMARY KEY NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  email TEXT NOT NULL,\n  role TEXT NOT NULL CHECK (role IN ('admin', 'member')),\n  token_digest BLOB NOT NULL UNIQUE,\n  expires_at INTEGER NOT NULL,\n  accepted_at INTEGER,\n  revoked_at INTEGER,\n  created_by TEXT NOT NULL REFERENCES user (id),\n  created_at INTEGER NOT NULL\n) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "workspaces",
+          "table": "workspaces",
+          "sql": "CREATE TABLE workspaces (\n  id TEXT PRIMARY KEY NOT NULL,\n  telemetry_pk INTEGER NOT NULL UNIQUE,\n  slug TEXT NOT NULL UNIQUE,\n  name TEXT NOT NULL,\n  default_dashboard_id TEXT,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  deleted_at INTEGER\n) STRICT"
+        },
+        {
+          "type": "trigger",
+          "name": "memberships_keep_active_admin_on_delete",
+          "table": "memberships",
+          "sql": "CREATE TRIGGER memberships_keep_active_admin_on_delete\nBEFORE DELETE ON memberships\nWHEN OLD.role = 'admin'\n  AND OLD.status = 'active'\n  AND NOT EXISTS (\n    SELECT 1 FROM memberships\n    WHERE workspace_id = OLD.workspace_id\n      AND user_id != OLD.user_id\n      AND role = 'admin'\n      AND status = 'active'\n  )\nBEGIN\n  SELECT RAISE(ABORT, 'workspace requires an active administrator');\nEND"
+        },
+        {
+          "type": "trigger",
+          "name": "memberships_keep_active_admin_on_update",
+          "table": "memberships",
+          "sql": "CREATE TRIGGER memberships_keep_active_admin_on_update\nBEFORE UPDATE OF role, status ON memberships\nWHEN OLD.role = 'admin'\n  AND OLD.status = 'active'\n  AND (NEW.role != 'admin' OR NEW.status != 'active')\n  AND NOT EXISTS (\n    SELECT 1 FROM memberships\n    WHERE workspace_id = OLD.workspace_id\n      AND user_id != OLD.user_id\n      AND role = 'admin'\n      AND status = 'active'\n  )\nBEGIN\n  SELECT RAISE(ABORT, 'workspace requires an active administrator');\nEND"
+        }
+      ]
+    },
+    "TELEMETRY_DB": {
+      "migrations": [
+        {
+          "file": "0001_telemetry.sql",
+          "sha256": "db9eb1b89ee6cca2733d1766cd232530b61f09af01db0926501c538e504d1e9c"
+        },
+        {
+          "file": "0002_service_monitoring.sql",
+          "sha256": "b216ed28dd347808e691370f0b4c208274569abb251fa667ad4e997c797adc3c"
+        },
+        {
+          "file": "0003_status_retention_cursor.sql",
+          "sha256": "f2f2380a70c93b012a4571fafd37ad41131f9e9f64dbe909b7b3a8eb38e01645"
+        },
+        {
+          "file": "0004_container_inventory.sql",
+          "sha256": "26bce98bcea4351b8126cb54ceb3a8926a90d5617ddc48d0b45b213768cf53c0"
+        }
+      ],
+      "objects": [
+        {
+          "type": "index",
+          "name": "account_provider_uq",
+          "table": "account",
+          "sql": "CREATE UNIQUE INDEX account_provider_uq ON account (provider_id, account_id)"
+        },
+        {
+          "type": "index",
+          "name": "account_user_id_idx",
+          "table": "account",
+          "sql": "CREATE INDEX account_user_id_idx ON account (user_id)"
+        },
+        {
+          "type": "index",
+          "name": "agent_commands_completion_idx",
+          "table": "agent_commands",
+          "sql": "CREATE INDEX agent_commands_completion_idx\n  ON agent_commands (completed_at)\n  WHERE completed_at IS NOT NULL"
+        },
+        {
+          "type": "index",
+          "name": "agent_commands_delivery_idx",
+          "table": "agent_commands",
+          "sql": "CREATE INDEX agent_commands_delivery_idx ON agent_commands (agent_id, state, not_before)"
+        },
+        {
+          "type": "index",
+          "name": "agent_commands_expiry_idx",
+          "table": "agent_commands",
+          "sql": "CREATE INDEX agent_commands_expiry_idx\n  ON agent_commands (expires_at)\n  WHERE state IN ('pending', 'delivered')"
+        },
+        {
+          "type": "index",
+          "name": "agent_commands_result_idx",
+          "table": "agent_commands",
+          "sql": "CREATE INDEX agent_commands_result_idx\n  ON agent_commands (agent_id, completed_at DESC)\n  WHERE completed_at IS NOT NULL"
+        },
+        {
+          "type": "index",
+          "name": "agent_enrollment_expiry_idx",
+          "table": "agent_enrollment_tokens",
+          "sql": "CREATE INDEX agent_enrollment_expiry_idx ON agent_enrollment_tokens (expires_at)"
+        },
+        {
+          "type": "index",
+          "name": "agent_enrollment_used_by_uq",
+          "table": "agent_enrollment_tokens",
+          "sql": "CREATE UNIQUE INDEX agent_enrollment_used_by_uq\n  ON agent_enrollment_tokens (used_by_agent_id)\n  WHERE used_by_agent_id IS NOT NULL"
+        },
+        {
+          "type": "index",
+          "name": "agents_one_active_machine_uq",
+          "table": "agents",
+          "sql": "CREATE UNIQUE INDEX agents_one_active_machine_uq\n  ON agents (machine_id)\n  WHERE status = 'active'"
+        },
+        {
+          "type": "index",
+          "name": "announcements_visibility_idx",
+          "table": "announcements",
+          "sql": "CREATE INDEX announcements_visibility_idx ON announcements (workspace_id, starts_at, expires_at)"
+        },
+        {
+          "type": "index",
+          "name": "audit_logs_workspace_time_idx",
+          "table": "audit_logs",
+          "sql": "CREATE INDEX audit_logs_workspace_time_idx\n  ON audit_logs (workspace_id, created_at DESC)"
+        },
+        {
+          "type": "index",
+          "name": "check_configs_agent_assignment_idx",
+          "table": "check_configs",
+          "sql": "CREATE INDEX check_configs_agent_assignment_idx\n  ON check_configs (executor_agent_id, enabled, assignment_revision)"
+        },
+        {
+          "type": "index",
+          "name": "check_configs_service_idx",
+          "table": "check_configs",
+          "sql": "CREATE INDEX check_configs_service_idx ON check_configs (workspace_id, service_id)"
+        },
+        {
+          "type": "index",
+          "name": "check_secrets_workspace_idx",
+          "table": "check_secrets",
+          "sql": "CREATE INDEX check_secrets_workspace_idx ON check_secrets (workspace_id, id)"
+        },
+        {
+          "type": "index",
+          "name": "containers_machine_idx",
+          "table": "containers",
+          "sql": "CREATE INDEX containers_machine_idx ON containers (workspace_id, machine_id, deleted_at)"
+        },
+        {
+          "type": "index",
+          "name": "incident_resources_resource_idx",
+          "table": "incident_resources",
+          "sql": "CREATE INDEX incident_resources_resource_idx\n  ON incident_resources (resource_type, resource_id, incident_id)"
+        },
+        {
+          "type": "index",
+          "name": "incident_updates_timeline_idx",
+          "table": "incident_updates",
+          "sql": "CREATE INDEX incident_updates_timeline_idx ON incident_updates (incident_id, created_at)"
+        },
+        {
+          "type": "index",
+          "name": "installations_complete_uq",
+          "table": "installations",
+          "sql": "CREATE UNIQUE INDEX installations_complete_uq\n  ON installations (state)\n  WHERE state = 'complete'"
+        },
+        {
+          "type": "index",
+          "name": "machines_workspace_idx",
+          "table": "machines",
+          "sql": "CREATE INDEX machines_workspace_idx ON machines (workspace_id, deleted_at)"
+        },
+        {
+          "type": "index",
+          "name": "resource_grants_subject_idx",
+          "table": "resource_grants",
+          "sql": "CREATE INDEX resource_grants_subject_idx\n  ON resource_grants (workspace_id, subject_user_id, resource_type)"
+        },
+        {
+          "type": "index",
+          "name": "services_workspace_idx",
+          "table": "services",
+          "sql": "CREATE INDEX services_workspace_idx ON services (workspace_id, deleted_at)"
+        },
+        {
+          "type": "index",
+          "name": "services_workspace_slug_uq",
+          "table": "services",
+          "sql": "CREATE UNIQUE INDEX services_workspace_slug_uq\n  ON services (workspace_id, slug)\n  WHERE deleted_at IS NULL"
+        },
+        {
+          "type": "index",
+          "name": "session_token_uq",
+          "table": "session",
+          "sql": "CREATE UNIQUE INDEX session_token_uq ON session (token)"
+        },
+        {
+          "type": "index",
+          "name": "session_user_id_idx",
+          "table": "session",
+          "sql": "CREATE INDEX session_user_id_idx ON session (user_id)"
+        },
+        {
+          "type": "index",
+          "name": "user_email_uq",
+          "table": "user",
+          "sql": "CREATE UNIQUE INDEX user_email_uq ON user (email)"
+        },
+        {
+          "type": "index",
+          "name": "verification_identifier_idx",
+          "table": "verification",
+          "sql": "CREATE INDEX verification_identifier_idx ON verification (identifier)"
+        },
+        {
+          "type": "index",
+          "name": "workspace_invitations_expiry_idx",
+          "table": "workspace_invitations",
+          "sql": "CREATE INDEX workspace_invitations_expiry_idx\n  ON workspace_invitations (workspace_id, expires_at)\n  WHERE accepted_at IS NULL AND revoked_at IS NULL"
+        },
+        {
+          "type": "index",
+          "name": "workspace_invitations_pending_email_uq",
+          "table": "workspace_invitations",
+          "sql": "CREATE UNIQUE INDEX workspace_invitations_pending_email_uq\n  ON workspace_invitations (workspace_id, email)\n  WHERE accepted_at IS NULL AND revoked_at IS NULL"
+        },
+        {
+          "type": "table",
+          "name": "account",
+          "table": "account",
+          "sql": "CREATE TABLE account (\n  id TEXT PRIMARY KEY NOT NULL,\n  account_id TEXT NOT NULL,\n  provider_id TEXT NOT NULL,\n  user_id TEXT NOT NULL REFERENCES user (id) ON DELETE CASCADE,\n  access_token TEXT,\n  refresh_token TEXT,\n  id_token TEXT,\n  access_token_expires_at INTEGER,\n  refresh_token_expires_at INTEGER,\n  scope TEXT,\n  password TEXT,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL\n) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "agent_commands",
+          "table": "agent_commands",
+          "sql": "CREATE TABLE agent_commands (\n  id TEXT PRIMARY KEY NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  agent_id TEXT NOT NULL REFERENCES agents (id) ON DELETE CASCADE,\n  type TEXT NOT NULL CHECK (type IN (\n    'refresh_config', 'check_update', 'install_version', 'redetect_runtimes'\n  )),\n  payload_json TEXT NOT NULL DEFAULT '{}',\n  state TEXT NOT NULL CHECK (state IN (\n    'pending', 'delivered', 'succeeded', 'failed', 'expired'\n  )),\n  not_before INTEGER NOT NULL,\n  expires_at INTEGER NOT NULL,\n  created_by TEXT NOT NULL REFERENCES user (id),\n  created_at INTEGER NOT NULL,\n  delivered_at INTEGER,\n  completed_at INTEGER\n, attempt_limit INTEGER NOT NULL DEFAULT 3, payload_schema_version INTEGER NOT NULL DEFAULT 1, delivery_count INTEGER NOT NULL DEFAULT 0, result_code TEXT, result_json TEXT) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "agent_enrollment_tokens",
+          "table": "agent_enrollment_tokens",
+          "sql": "CREATE TABLE agent_enrollment_tokens (\n  id TEXT PRIMARY KEY NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  machine_id TEXT NOT NULL REFERENCES machines (id) ON DELETE CASCADE,\n  token_digest BLOB NOT NULL UNIQUE,\n  expires_at INTEGER NOT NULL,\n  used_at INTEGER,\n  revoked_at INTEGER,\n  created_by TEXT NOT NULL REFERENCES user (id),\n  created_at INTEGER NOT NULL\n, used_by_agent_id TEXT) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "agent_keys",
+          "table": "agent_keys",
+          "sql": "CREATE TABLE agent_keys (\n  agent_id TEXT NOT NULL REFERENCES agents (id) ON DELETE CASCADE,\n  key_epoch INTEGER NOT NULL,\n  wrapped_data_key BLOB NOT NULL,\n  wrapping_key_id TEXT NOT NULL,\n  nonce_prefix BLOB NOT NULL,\n  valid_from INTEGER NOT NULL,\n  valid_until INTEGER NOT NULL,\n  revoked_at INTEGER,\n  PRIMARY KEY (agent_id, key_epoch)\n) WITHOUT ROWID, STRICT"
+        },
+        {
+          "type": "table",
+          "name": "agent_replay_state",
+          "table": "agent_replay_state",
+          "sql": "CREATE TABLE agent_replay_state (\n  agent_id TEXT NOT NULL,\n  key_epoch INTEGER NOT NULL,\n  highest_sequence INTEGER NOT NULL,\n  window_bitmap BLOB NOT NULL,\n  updated_at INTEGER NOT NULL,\n  PRIMARY KEY (agent_id, key_epoch)\n) WITHOUT ROWID, STRICT"
+        },
+        {
+          "type": "table",
+          "name": "agents",
+          "table": "agents",
+          "sql": "CREATE TABLE agents (\n  id TEXT PRIMARY KEY NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  machine_id TEXT NOT NULL REFERENCES machines (id) ON DELETE CASCADE,\n  identity_public_key BLOB NOT NULL,\n  platform TEXT NOT NULL,\n  arch TEXT NOT NULL,\n  agent_version TEXT NOT NULL,\n  protocol_version INTEGER NOT NULL,\n  status TEXT NOT NULL CHECK (status IN ('active', 'revoked')),\n  applied_config_revision INTEGER NOT NULL DEFAULT 0,\n  created_at INTEGER NOT NULL,\n  last_seen_at INTEGER,\n  revoked_at INTEGER\n) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "announcements",
+          "table": "announcements",
+          "sql": "CREATE TABLE announcements (\n  id TEXT PRIMARY KEY NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  title TEXT NOT NULL,\n  body TEXT NOT NULL,\n  starts_at INTEGER NOT NULL,\n  expires_at INTEGER NOT NULL,\n  created_by TEXT NOT NULL REFERENCES user (id),\n  created_at INTEGER NOT NULL\n, severity TEXT NOT NULL DEFAULT 'info'\n  CHECK (severity IN ('info', 'maintenance', 'minor', 'major', 'critical')), visibility TEXT NOT NULL DEFAULT 'authenticated'\n  CHECK (visibility IN ('private', 'authenticated', 'public')), updated_at INTEGER, deleted_at INTEGER) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "audit_logs",
+          "table": "audit_logs",
+          "sql": "CREATE TABLE audit_logs (\n  id TEXT PRIMARY KEY NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  actor_user_id TEXT REFERENCES user (id) ON DELETE SET NULL,\n  action TEXT NOT NULL,\n  resource_type TEXT NOT NULL,\n  resource_id TEXT NOT NULL,\n  before_digest TEXT,\n  after_digest TEXT,\n  metadata_json TEXT NOT NULL DEFAULT '{}',\n  created_at INTEGER NOT NULL\n) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "check_assertions",
+          "table": "check_assertions",
+          "sql": "CREATE TABLE check_assertions (\n  id TEXT PRIMARY KEY NOT NULL,\n  check_id TEXT NOT NULL REFERENCES check_configs (id) ON DELETE CASCADE,\n  sort_order INTEGER NOT NULL,\n  source TEXT NOT NULL CHECK (source IN ('status', 'latency', 'header', 'jsonpath', 'body')),\n  operator TEXT NOT NULL CHECK (operator IN (\n    'exists', 'equals', 'contains', 'matches', 'type', 'greater_than', 'less_than'\n  )),\n  selector TEXT,\n  expected_json TEXT,\n  severity TEXT NOT NULL CHECK (severity IN ('degraded', 'down')),\n  created_at INTEGER NOT NULL,\n  UNIQUE (check_id, sort_order)\n) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "check_configs",
+          "table": "check_configs",
+          "sql": "CREATE TABLE check_configs (\n  id TEXT PRIMARY KEY NOT NULL,\n  telemetry_pk INTEGER NOT NULL UNIQUE,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  service_id TEXT NOT NULL REFERENCES services (id) ON DELETE CASCADE,\n  name TEXT NOT NULL,\n  kind TEXT NOT NULL CHECK (kind IN ('http', 'tcp', 'icmp')),\n  executor_kind TEXT NOT NULL CHECK (executor_kind IN ('cloudflare', 'agent')),\n  executor_agent_id TEXT REFERENCES agents (id),\n  enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),\n  interval_seconds INTEGER NOT NULL DEFAULT 60 CHECK (interval_seconds BETWEEN 5 AND 86400),\n  phase_seconds INTEGER NOT NULL DEFAULT 0 CHECK (phase_seconds BETWEEN 0 AND 86399),\n  timeout_ms INTEGER NOT NULL DEFAULT 5000 CHECK (timeout_ms BETWEEN 100 AND 30000),\n  request_json TEXT NOT NULL,\n  last_claimed_slot INTEGER NOT NULL DEFAULT 0,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL\n, failure_confirmations INTEGER NOT NULL DEFAULT 3\n  CHECK (failure_confirmations BETWEEN 1 AND 20), recovery_confirmations INTEGER NOT NULL DEFAULT 2\n  CHECK (recovery_confirmations BETWEEN 1 AND 20), secret_refs_json TEXT NOT NULL DEFAULT '{}', assignment_revision INTEGER NOT NULL DEFAULT 0, config_bytes INTEGER NOT NULL DEFAULT 0) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "check_latest",
+          "table": "check_latest",
+          "sql": "CREATE TABLE check_latest (\n  check_pk INTEGER PRIMARY KEY NOT NULL,\n  workspace_pk INTEGER NOT NULL,\n  observed_at INTEGER NOT NULL,\n  state TEXT NOT NULL CHECK (state IN ('healthy', 'degraded', 'down', 'unknown')),\n  latency_ms INTEGER,\n  failure_code TEXT,\n  result_id BLOB NOT NULL\n, service_pk INTEGER, failure_summary TEXT, consecutive_failures INTEGER NOT NULL DEFAULT 0, consecutive_successes INTEGER NOT NULL DEFAULT 0) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "check_result_blocks_5m",
+          "table": "check_result_blocks_5m",
+          "sql": "CREATE TABLE check_result_blocks_5m (\n  check_pk INTEGER NOT NULL,\n  workspace_pk INTEGER NOT NULL,\n  block_start INTEGER NOT NULL,\n  result_0 BLOB,\n  result_id_0 BLOB,\n  payload_hash_0 BLOB,\n  result_1 BLOB,\n  result_id_1 BLOB,\n  payload_hash_1 BLOB,\n  result_2 BLOB,\n  result_id_2 BLOB,\n  payload_hash_2 BLOB,\n  result_3 BLOB,\n  result_id_3 BLOB,\n  payload_hash_3 BLOB,\n  result_4 BLOB,\n  result_id_4 BLOB,\n  payload_hash_4 BLOB,\n  schema_version INTEGER NOT NULL,\n  flags INTEGER NOT NULL DEFAULT 0,\n  PRIMARY KEY (check_pk, block_start)\n) WITHOUT ROWID, STRICT"
+        },
+        {
+          "type": "table",
+          "name": "check_rollups_1h",
+          "table": "check_rollups_1h",
+          "sql": "CREATE TABLE check_rollups_1h (\n  check_pk INTEGER NOT NULL,\n  workspace_pk INTEGER NOT NULL,\n  bucket_start INTEGER NOT NULL,\n  total_count INTEGER NOT NULL,\n  healthy_count INTEGER NOT NULL,\n  degraded_count INTEGER NOT NULL,\n  down_count INTEGER NOT NULL,\n  latency_avg_ms INTEGER,\n  latency_max_ms INTEGER,\n  PRIMARY KEY (check_pk, bucket_start)\n) WITHOUT ROWID, STRICT"
+        },
+        {
+          "type": "table",
+          "name": "check_rollups_5m",
+          "table": "check_rollups_5m",
+          "sql": "CREATE TABLE check_rollups_5m (\n  check_pk INTEGER NOT NULL,\n  workspace_pk INTEGER NOT NULL,\n  bucket_start INTEGER NOT NULL,\n  total_count INTEGER NOT NULL,\n  healthy_count INTEGER NOT NULL,\n  degraded_count INTEGER NOT NULL,\n  down_count INTEGER NOT NULL,\n  latency_avg_ms INTEGER,\n  latency_max_ms INTEGER,\n  PRIMARY KEY (check_pk, bucket_start)\n) WITHOUT ROWID, STRICT"
+        },
+        {
+          "type": "table",
+          "name": "check_secrets",
+          "table": "check_secrets",
+          "sql": "CREATE TABLE check_secrets (\n  id TEXT PRIMARY KEY NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  name TEXT NOT NULL,\n  wrapped_value BLOB NOT NULL,\n  wrapping_key_id TEXT NOT NULL,\n  nonce BLOB NOT NULL,\n  created_at INTEGER NOT NULL,\n  rotated_at INTEGER\n) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "containers",
+          "table": "containers",
+          "sql": "CREATE TABLE containers (\n  id TEXT PRIMARY KEY NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  machine_id TEXT NOT NULL REFERENCES machines (id) ON DELETE CASCADE,\n  runtime TEXT NOT NULL CHECK (runtime IN (\n    'docker', 'colima-docker', 'colima-containerd', 'apple-container', 'unknown'\n  )),\n  runtime_instance TEXT NOT NULL,\n  runtime_container_id TEXT NOT NULL,\n  name TEXT NOT NULL,\n  image TEXT NOT NULL,\n  first_seen_at INTEGER NOT NULL,\n  last_seen_at INTEGER NOT NULL,\n  deleted_at INTEGER,\n  UNIQUE (machine_id, runtime, runtime_instance, runtime_container_id)\n) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "dashboard_resources",
+          "table": "dashboard_resources",
+          "sql": "CREATE TABLE dashboard_resources (\n  dashboard_id TEXT NOT NULL REFERENCES dashboards (id) ON DELETE CASCADE,\n  resource_type TEXT NOT NULL CHECK (resource_type IN ('machine', 'service')),\n  resource_id TEXT NOT NULL,\n  sort_order INTEGER NOT NULL DEFAULT 0,\n  public_override TEXT NOT NULL DEFAULT 'inherit'\n    CHECK (public_override IN ('inherit', 'allow', 'deny')),\n  PRIMARY KEY (dashboard_id, resource_type, resource_id)\n) WITHOUT ROWID, STRICT"
+        },
+        {
+          "type": "table",
+          "name": "dashboards",
+          "table": "dashboards",
+          "sql": "CREATE TABLE dashboards (\n  id TEXT PRIMARY KEY NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  slug TEXT NOT NULL,\n  name TEXT NOT NULL,\n  description TEXT NOT NULL DEFAULT '',\n  visibility TEXT NOT NULL CHECK (visibility IN ('private', 'authenticated', 'public')),\n  created_by TEXT NOT NULL REFERENCES user (id),\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  deleted_at INTEGER,\n  UNIQUE (workspace_id, slug)\n) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "incident_resources",
+          "table": "incident_resources",
+          "sql": "CREATE TABLE incident_resources (\n  incident_id TEXT NOT NULL REFERENCES incidents (id) ON DELETE CASCADE,\n  resource_type TEXT NOT NULL CHECK (resource_type IN ('machine', 'service')),\n  resource_id TEXT NOT NULL,\n  impact TEXT NOT NULL CHECK (impact IN ('degraded', 'down')),\n  PRIMARY KEY (incident_id, resource_type, resource_id)\n) WITHOUT ROWID, STRICT"
+        },
+        {
+          "type": "table",
+          "name": "incident_updates",
+          "table": "incident_updates",
+          "sql": "CREATE TABLE incident_updates (\n  id TEXT PRIMARY KEY NOT NULL,\n  incident_id TEXT NOT NULL REFERENCES incidents (id) ON DELETE CASCADE,\n  state TEXT NOT NULL,\n  body TEXT NOT NULL,\n  created_by TEXT NOT NULL REFERENCES user (id),\n  created_at INTEGER NOT NULL\n, published_at INTEGER) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "incidents",
+          "table": "incidents",
+          "sql": "CREATE TABLE incidents (\n  id TEXT PRIMARY KEY NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  title TEXT NOT NULL,\n  severity TEXT NOT NULL CHECK (severity IN ('minor', 'major', 'critical')),\n  state TEXT NOT NULL CHECK (state IN ('investigating', 'identified', 'monitoring', 'resolved')),\n  starts_at INTEGER NOT NULL,\n  resolved_at INTEGER,\n  created_by TEXT NOT NULL REFERENCES user (id),\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL\n, summary TEXT NOT NULL DEFAULT '', deleted_at INTEGER) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "installations",
+          "table": "installations",
+          "sql": "CREATE TABLE installations (\n  id TEXT PRIMARY KEY NOT NULL,\n  state TEXT NOT NULL CHECK (state IN ('pending', 'complete')),\n  schema_version INTEGER NOT NULL,\n  created_at INTEGER NOT NULL,\n  completed_at INTEGER\n) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "machine_latest",
+          "table": "machine_latest",
+          "sql": "CREATE TABLE machine_latest (\n  machine_pk INTEGER PRIMARY KEY NOT NULL,\n  workspace_pk INTEGER NOT NULL,\n  agent_id TEXT NOT NULL,\n  observed_at INTEGER NOT NULL,\n  received_at INTEGER NOT NULL,\n  state TEXT NOT NULL CHECK (state IN (\n    'healthy', 'degraded', 'down', 'offline', 'maintenance', 'unknown'\n  )),\n  cpu_permille INTEGER NOT NULL,\n  memory_used_bytes INTEGER NOT NULL,\n  memory_total_bytes INTEGER NOT NULL,\n  storage_used_bytes INTEGER NOT NULL,\n  storage_total_bytes INTEGER NOT NULL,\n  network_rx_bps INTEGER NOT NULL,\n  network_tx_bps INTEGER NOT NULL,\n  network_rx_total INTEGER NOT NULL,\n  network_tx_total INTEGER NOT NULL,\n  report_id BLOB NOT NULL\n, container_inventory_json TEXT) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "machine_rollups_1h",
+          "table": "machine_rollups_1h",
+          "sql": "CREATE TABLE machine_rollups_1h (\n  machine_pk INTEGER NOT NULL,\n  workspace_pk INTEGER NOT NULL,\n  bucket_start INTEGER NOT NULL,\n  sample_count INTEGER NOT NULL,\n  cpu_avg_permille INTEGER NOT NULL,\n  cpu_max_permille INTEGER NOT NULL,\n  memory_avg_bytes INTEGER NOT NULL,\n  storage_max_bytes INTEGER NOT NULL,\n  network_rx_bytes INTEGER NOT NULL,\n  network_tx_bytes INTEGER NOT NULL,\n  PRIMARY KEY (machine_pk, bucket_start)\n) WITHOUT ROWID, STRICT"
+        },
+        {
+          "type": "table",
+          "name": "machine_rollups_5m",
+          "table": "machine_rollups_5m",
+          "sql": "CREATE TABLE machine_rollups_5m (\n  machine_pk INTEGER NOT NULL,\n  workspace_pk INTEGER NOT NULL,\n  bucket_start INTEGER NOT NULL,\n  sample_count INTEGER NOT NULL,\n  cpu_avg_permille INTEGER NOT NULL,\n  cpu_max_permille INTEGER NOT NULL,\n  memory_avg_bytes INTEGER NOT NULL,\n  storage_max_bytes INTEGER NOT NULL,\n  network_rx_bytes INTEGER NOT NULL,\n  network_tx_bytes INTEGER NOT NULL,\n  PRIMARY KEY (machine_pk, bucket_start)\n) WITHOUT ROWID, STRICT"
+        },
+        {
+          "type": "table",
+          "name": "machines",
+          "table": "machines",
+          "sql": "CREATE TABLE machines (\n  id TEXT PRIMARY KEY NOT NULL,\n  telemetry_pk INTEGER NOT NULL UNIQUE,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  name TEXT NOT NULL,\n  description TEXT NOT NULL DEFAULT '',\n  expected_host TEXT,\n  labels_json TEXT NOT NULL DEFAULT '{}',\n  sampling_interval_seconds INTEGER NOT NULL DEFAULT 10\n    CHECK (sampling_interval_seconds BETWEEN 5 AND 300),\n  report_interval_seconds INTEGER NOT NULL DEFAULT 60\n    CHECK (report_interval_seconds BETWEEN 60 AND 900),\n  offline_after_seconds INTEGER NOT NULL DEFAULT 150\n    CHECK (offline_after_seconds BETWEEN 60 AND 86400),\n  container_monitoring_enabled INTEGER NOT NULL DEFAULT 0 CHECK (container_monitoring_enabled IN (0, 1)),\n  maintenance_until INTEGER,\n  desired_config_revision INTEGER NOT NULL DEFAULT 1,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  deleted_at INTEGER\n, container_catalog_digest BLOB) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "memberships",
+          "table": "memberships",
+          "sql": "CREATE TABLE memberships (\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  user_id TEXT NOT NULL REFERENCES user (id) ON DELETE CASCADE,\n  role TEXT NOT NULL CHECK (role IN ('admin', 'member')),\n  status TEXT NOT NULL CHECK (status IN ('invited', 'active', 'suspended')),\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  PRIMARY KEY (workspace_id, user_id)\n) WITHOUT ROWID, STRICT"
+        },
+        {
+          "type": "table",
+          "name": "resource_grants",
+          "table": "resource_grants",
+          "sql": "CREATE TABLE resource_grants (\n  id TEXT PRIMARY KEY NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  subject_user_id TEXT NOT NULL REFERENCES user (id) ON DELETE CASCADE,\n  resource_type TEXT NOT NULL\n    CHECK (resource_type IN ('dashboard', 'machine', 'container', 'service', 'incident')),\n  resource_id TEXT NOT NULL,\n  capability TEXT NOT NULL CHECK (capability IN ('view', 'manage')),\n  effect TEXT NOT NULL CHECK (effect IN ('allow', 'deny')),\n  created_by TEXT NOT NULL REFERENCES user (id),\n  created_at INTEGER NOT NULL,\n  UNIQUE (subject_user_id, resource_type, resource_id, capability)\n) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "resource_public_policies",
+          "table": "resource_public_policies",
+          "sql": "CREATE TABLE resource_public_policies (\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  resource_type TEXT NOT NULL CHECK (resource_type IN ('machine', 'container', 'service')),\n  resource_id TEXT NOT NULL,\n  effect TEXT NOT NULL CHECK (effect IN ('allow', 'deny')),\n  projection_profile TEXT NOT NULL CHECK (projection_profile IN ('summary', 'detailed')),\n  updated_at INTEGER NOT NULL,\n  PRIMARY KEY (workspace_id, resource_type, resource_id)\n) WITHOUT ROWID, STRICT"
+        },
+        {
+          "type": "table",
+          "name": "retention_cursors",
+          "table": "retention_cursors",
+          "sql": "CREATE TABLE retention_cursors (\n  workspace_pk INTEGER NOT NULL,\n  table_kind TEXT NOT NULL CHECK (table_kind IN (\n    'machine_raw', 'check_raw', 'machine_5m', 'check_5m',\n    'machine_1h', 'check_1h', 'status_5m', 'event'\n  )),\n  resource_pk INTEGER NOT NULL DEFAULT 0,\n  time_cursor INTEGER NOT NULL DEFAULT 0,\n  lease_until INTEGER NOT NULL DEFAULT 0,\n  updated_at INTEGER NOT NULL,\n  PRIMARY KEY (workspace_pk, table_kind)\n) WITHOUT ROWID, STRICT"
+        },
+        {
+          "type": "table",
+          "name": "retention_policies",
+          "table": "retention_policies",
+          "sql": "CREATE TABLE retention_policies (\n  workspace_id TEXT PRIMARY KEY NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  raw_days INTEGER NOT NULL DEFAULT 7 CHECK (raw_days BETWEEN 1 AND 90),\n  rollup_5m_days INTEGER NOT NULL DEFAULT 30 CHECK (rollup_5m_days BETWEEN 7 AND 365),\n  rollup_1h_days INTEGER NOT NULL DEFAULT 365 CHECK (rollup_1h_days BETWEEN 30 AND 3650),\n  event_days INTEGER NOT NULL DEFAULT 365 CHECK (event_days BETWEEN 30 AND 3650),\n  updated_at INTEGER NOT NULL\n, audit_log_days INTEGER NOT NULL DEFAULT 365\n  CHECK (audit_log_days BETWEEN 30 AND 3650), expired_announcement_grace_days INTEGER NOT NULL DEFAULT 7\n  CHECK (expired_announcement_grace_days BETWEEN 1 AND 90), soft_delete_grace_days INTEGER NOT NULL DEFAULT 7\n  CHECK (soft_delete_grace_days BETWEEN 1 AND 90)) WITHOUT ROWID, STRICT"
+        },
+        {
+          "type": "table",
+          "name": "retention_runs",
+          "table": "retention_runs",
+          "sql": "CREATE TABLE retention_runs (\n  run_id TEXT PRIMARY KEY NOT NULL,\n  started_at INTEGER NOT NULL,\n  completed_at INTEGER,\n  deleted_rows INTEGER NOT NULL DEFAULT 0,\n  error_code TEXT\n) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "service_latest",
+          "table": "service_latest",
+          "sql": "CREATE TABLE service_latest (\n  service_pk INTEGER PRIMARY KEY NOT NULL,\n  workspace_pk INTEGER NOT NULL,\n  state TEXT NOT NULL CHECK (state IN (\n    'healthy', 'degraded', 'down', 'maintenance', 'unknown'\n  )),\n  status_since INTEGER NOT NULL,\n  reason_code TEXT NOT NULL,\n  last_transition_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL\n) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "services",
+          "table": "services",
+          "sql": "CREATE TABLE services (\n  id TEXT PRIMARY KEY NOT NULL,\n  telemetry_pk INTEGER NOT NULL UNIQUE,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  name TEXT NOT NULL,\n  description TEXT NOT NULL DEFAULT '',\n  status_rule_json TEXT NOT NULL DEFAULT '{}',\n  maintenance_until INTEGER,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  deleted_at INTEGER\n, slug TEXT) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "session",
+          "table": "session",
+          "sql": "CREATE TABLE session (\n  id TEXT PRIMARY KEY NOT NULL,\n  expires_at INTEGER NOT NULL,\n  token TEXT NOT NULL,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  ip_address TEXT,\n  user_agent TEXT,\n  user_id TEXT NOT NULL REFERENCES user (id) ON DELETE CASCADE\n) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "state_events",
+          "table": "state_events",
+          "sql": "CREATE TABLE state_events (\n  workspace_pk INTEGER NOT NULL,\n  resource_type INTEGER NOT NULL CHECK (resource_type IN (1, 2)),\n  resource_pk INTEGER NOT NULL,\n  occurred_at INTEGER NOT NULL,\n  event_id BLOB NOT NULL,\n  previous_state TEXT NOT NULL,\n  current_state TEXT NOT NULL,\n  reason_code TEXT NOT NULL,\n  PRIMARY KEY (resource_type, resource_pk, occurred_at, event_id)\n) WITHOUT ROWID, STRICT"
+        },
+        {
+          "type": "table",
+          "name": "status_buckets",
+          "table": "status_buckets",
+          "sql": "CREATE TABLE status_buckets (\n  resource_type INTEGER NOT NULL CHECK (resource_type IN (1, 2)),\n  resource_pk INTEGER NOT NULL,\n  workspace_pk INTEGER NOT NULL,\n  bucket_start INTEGER NOT NULL,\n  bucket_seconds INTEGER NOT NULL,\n  state TEXT NOT NULL CHECK (state IN (\n    'healthy', 'degraded', 'down', 'maintenance', 'unknown'\n  )),\n  availability_permille INTEGER NOT NULL CHECK (availability_permille BETWEEN 0 AND 1000),\n  latency_avg_ms INTEGER,\n  latency_max_ms INTEGER,\n  summary_code TEXT NOT NULL,\n  PRIMARY KEY (resource_type, resource_pk, bucket_seconds, bucket_start)\n) WITHOUT ROWID, STRICT"
+        },
+        {
+          "type": "table",
+          "name": "telemetry_blocks_5m",
+          "table": "telemetry_blocks_5m",
+          "sql": "CREATE TABLE telemetry_blocks_5m (\n  machine_pk INTEGER NOT NULL,\n  workspace_pk INTEGER NOT NULL,\n  block_start INTEGER NOT NULL,\n  report_0 BLOB,\n  report_id_0 BLOB,\n  payload_hash_0 BLOB,\n  report_1 BLOB,\n  report_id_1 BLOB,\n  payload_hash_1 BLOB,\n  report_2 BLOB,\n  report_id_2 BLOB,\n  payload_hash_2 BLOB,\n  report_3 BLOB,\n  report_id_3 BLOB,\n  payload_hash_3 BLOB,\n  report_4 BLOB,\n  report_id_4 BLOB,\n  payload_hash_4 BLOB,\n  schema_version INTEGER NOT NULL,\n  flags INTEGER NOT NULL DEFAULT 0,\n  PRIMARY KEY (machine_pk, block_start)\n) WITHOUT ROWID, STRICT"
+        },
+        {
+          "type": "table",
+          "name": "telemetry_resource_sequences",
+          "table": "telemetry_resource_sequences",
+          "sql": "CREATE TABLE telemetry_resource_sequences (\n  kind TEXT PRIMARY KEY NOT NULL CHECK (kind IN ('machine', 'service', 'check')),\n  value INTEGER NOT NULL CHECK (value >= 0)\n) WITHOUT ROWID, STRICT"
+        },
+        {
+          "type": "table",
+          "name": "user",
+          "table": "user",
+          "sql": "CREATE TABLE user (\n  id TEXT PRIMARY KEY NOT NULL,\n  name TEXT NOT NULL,\n  email TEXT NOT NULL,\n  email_verified INTEGER NOT NULL DEFAULT 0,\n  image TEXT,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL\n) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "verification",
+          "table": "verification",
+          "sql": "CREATE TABLE verification (\n  id TEXT PRIMARY KEY NOT NULL,\n  identifier TEXT NOT NULL,\n  value TEXT NOT NULL,\n  expires_at INTEGER NOT NULL,\n  created_at INTEGER,\n  updated_at INTEGER\n) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "workspace_invitations",
+          "table": "workspace_invitations",
+          "sql": "CREATE TABLE workspace_invitations (\n  id TEXT PRIMARY KEY NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  email TEXT NOT NULL,\n  role TEXT NOT NULL CHECK (role IN ('admin', 'member')),\n  token_digest BLOB NOT NULL UNIQUE,\n  expires_at INTEGER NOT NULL,\n  accepted_at INTEGER,\n  revoked_at INTEGER,\n  created_by TEXT NOT NULL REFERENCES user (id),\n  created_at INTEGER NOT NULL\n) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "workspace_status_summary",
+          "table": "workspace_status_summary",
+          "sql": "CREATE TABLE workspace_status_summary (\n  workspace_pk INTEGER PRIMARY KEY NOT NULL,\n  machine_total INTEGER NOT NULL DEFAULT 0,\n  machine_healthy INTEGER NOT NULL DEFAULT 0,\n  machine_degraded INTEGER NOT NULL DEFAULT 0,\n  machine_down INTEGER NOT NULL DEFAULT 0,\n  machine_offline INTEGER NOT NULL DEFAULT 0,\n  service_down INTEGER NOT NULL DEFAULT 0,\n  network_rx_bps INTEGER NOT NULL DEFAULT 0,\n  network_tx_bps INTEGER NOT NULL DEFAULT 0,\n  updated_at INTEGER NOT NULL\n) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "workspaces",
+          "table": "workspaces",
+          "sql": "CREATE TABLE workspaces (\n  id TEXT PRIMARY KEY NOT NULL,\n  telemetry_pk INTEGER NOT NULL UNIQUE,\n  slug TEXT NOT NULL UNIQUE,\n  name TEXT NOT NULL,\n  default_dashboard_id TEXT,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  deleted_at INTEGER\n) STRICT"
+        },
+        {
+          "type": "trigger",
+          "name": "memberships_keep_active_admin_on_delete",
+          "table": "memberships",
+          "sql": "CREATE TRIGGER memberships_keep_active_admin_on_delete\nBEFORE DELETE ON memberships\nWHEN OLD.role = 'admin'\n  AND OLD.status = 'active'\n  AND NOT EXISTS (\n    SELECT 1 FROM memberships\n    WHERE workspace_id = OLD.workspace_id\n      AND user_id != OLD.user_id\n      AND role = 'admin'\n      AND status = 'active'\n  )\nBEGIN\n  SELECT RAISE(ABORT, 'workspace requires an active administrator');\nEND"
+        },
+        {
+          "type": "trigger",
+          "name": "memberships_keep_active_admin_on_update",
+          "table": "memberships",
+          "sql": "CREATE TRIGGER memberships_keep_active_admin_on_update\nBEFORE UPDATE OF role, status ON memberships\nWHEN OLD.role = 'admin'\n  AND OLD.status = 'active'\n  AND (NEW.role != 'admin' OR NEW.status != 'active')\n  AND NOT EXISTS (\n    SELECT 1 FROM memberships\n    WHERE workspace_id = OLD.workspace_id\n      AND user_id != OLD.user_id\n      AND role = 'admin'\n      AND status = 'active'\n  )\nBEGIN\n  SELECT RAISE(ABORT, 'workspace requires an active administrator');\nEND"
+        }
+      ]
+    }
+  }
+}

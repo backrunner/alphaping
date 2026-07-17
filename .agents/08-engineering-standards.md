@@ -38,6 +38,10 @@ pnpm verify
 
 `pnpm db:validate` 通过 Wrangler 在临时本地 D1 上顺序应用 CONTROL_DB 与 TELEMETRY_DB 全部 migration；`pnpm db:migrate:local` 将同一 migration 链应用到 Web 本地开发状态。
 
+`pnpm db:generate` 从完整 migration 链创建规范化 `packages/db/schema-manifest.json`；`pnpm db:generate:check` 在全新的临时 D1 重建两库并拒绝 manifest 漂移。现有 migration 历史没有 Drizzle Kit snapshot，禁止让 Drizzle Kit 对发布过的目录生成从零建库或 destructive diff。Drizzle schema 保持应用查询的类型来源，D1 migration 链与生成 manifest 是部署 schema 的事实来源。
+
+`pnpm test:e2e` 在临时 D1 和随机本地端口上运行真实 SvelteKit Worker，覆盖首次初始化、Better Auth 登录、受保护 Dashboard 和公开状态投影；不连接远程 Cloudflare 资源。
+
 ## 3. TypeScript/Svelte
 
 - `strict: true`，启用 `noUncheckedIndexedAccess`、`exactOptionalPropertyTypes` 和 `noImplicitOverride` 等可用严格选项。

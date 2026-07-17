@@ -55,7 +55,9 @@ pnpm install
 pnpm format:check
 pnpm check
 pnpm test
+pnpm test:e2e
 pnpm build
+pnpm db:generate:check
 cargo fmt --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace
