@@ -379,6 +379,17 @@ export async function runWebManagementE2e({
     queryControlDb("SELECT id FROM incidents WHERE title = 'API response degradation'"),
     "created incident lookup",
   );
+  const dashboardResponse = await fetch(`${baseUrl}/operations`, {
+    headers: { cookie: adminCookie },
+  });
+  assertResponse(dashboardResponse, 200, "dashboard incident summary");
+  const dashboardPage = await dashboardResponse.text();
+  if (
+    !dashboardPage.includes("Active incidents") ||
+    !dashboardPage.includes('href="/operations/incidents?state=active"')
+  ) {
+    throw new Error("dashboard omitted the active incident filter metric");
+  }
   await submitAction(
     baseUrl,
     "/operations/incidents?/update",

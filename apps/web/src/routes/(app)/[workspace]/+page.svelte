@@ -26,35 +26,55 @@
   </header>
 
   <section class="summary" aria-label="Monitoring summary">
-    <Metric label="Machines" value={data.summary.machines} />
-    <Metric label="Online" value={data.summary.online} tone="healthy" />
+    <Metric
+      label="Machines"
+      value={data.summary.machines}
+      href={`/${data.workspace.slug}/machines`}
+    />
+    <Metric
+      label="Online"
+      value={data.summary.online}
+      tone="healthy"
+      href={`/${data.workspace.slug}/machines?status=online`}
+    />
     <Metric
       label="Impaired"
       value={data.summary.impaired}
       tone={data.summary.impaired > 0 ? "danger" : "default"}
+      href={`/${data.workspace.slug}/machines?status=impaired`}
     />
     <Metric
       label="Offline"
       value={data.summary.offline}
       tone={data.summary.offline > 0 ? "danger" : "default"}
+      href={`/${data.workspace.slug}/machines?status=offline`}
     />
     <Metric
       label="Download"
       value={formatRate(data.summary.networkRxBps)}
       detail={formatBytes(data.summary.networkRxTotal)}
+      href={`/${data.workspace.slug}/machines?sort=download`}
     />
     <Metric
       label="Upload"
       value={formatRate(data.summary.networkTxBps)}
       detail={formatBytes(data.summary.networkTxTotal)}
+      href={`/${data.workspace.slug}/machines?sort=upload`}
     />
     {#if data.services.length > 0}
       <Metric
         label="Service faults"
         value={data.summary.servicesDown}
         tone={data.summary.servicesDown > 0 ? "danger" : "default"}
+        href={`/${data.workspace.slug}/services?status=down`}
       />
     {/if}
+    <Metric
+      label="Active incidents"
+      value={data.summary.activeIncidents}
+      tone={data.summary.activeIncidents > 0 ? "danger" : "default"}
+      href={`/${data.workspace.slug}/incidents?state=active`}
+    />
   </section>
 
   {#if data.machines.length > 0}
@@ -140,7 +160,7 @@
 
   .summary {
     display: grid;
-    grid-template-columns: repeat(7, minmax(90px, 1fr));
+    grid-template-columns: repeat(8, minmax(90px, 1fr));
     margin: 20px 0 24px;
     padding: 14px 0;
     border-block: 1px solid var(--border);
@@ -227,6 +247,10 @@
     }
 
     .summary :global(.metric:nth-child(4)) {
+      border-right: 0;
+    }
+
+    .summary :global(.metric:nth-child(8)) {
       border-right: 0;
     }
   }

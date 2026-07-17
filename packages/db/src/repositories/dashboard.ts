@@ -71,6 +71,15 @@ interface RollupRow {
   down_count: number;
 }
 
+interface IncidentRow {
+  id: string;
+}
+
+interface IncidentResourceRow {
+  incident_id: string;
+  resource_id: string;
+}
+
 export interface DashboardMachine {
   id: string;
   name: string;
@@ -113,6 +122,7 @@ export interface DashboardSnapshot {
     networkRxTotal: number;
     networkTxTotal: number;
     servicesDown: number;
+    activeIncidents: number;
   };
   machines: readonly DashboardMachine[];
   services: readonly DashboardService[];
@@ -223,6 +233,39 @@ export async function loadDashboardSnapshot(
   });
 
   const allowedServiceIds = new Set(allowedServices.map((service) => service.id));
+  const activeIncidents = (
+    await controlDb
+      .prepare(
+        `SELECT id FROM incidents
+         WHERE workspace_id = ? AND deleted_at IS NULL AND state != 'resolved'
+         ORDER BY starts_at DESC LIMIT 500`,
+      )
+      .bind(workspace.id)
+      .all<IncidentRow>()
+  ).results;
+  const activeIncidentIds = activeIncidents.map((incident) => incident.id);
+  const activeIncidentResources =
+    activeIncidentIds.length === 0
+      ? []
+      : (
+          await controlDb
+            .prepare(
+              `SELECT incident_id, resource_id FROM incident_resources
+               WHERE resource_type = 'service'
+                 AND incident_id IN (${placeholders(activeIncidentIds.length)})`,
+            )
+            .bind(...activeIncidentIds)
+            .all<IncidentResourceRow>()
+        ).results;
+  const activeIncidentCount = activeIncidents.filter(
+    (incident) =>
+      workspace.role === "admin" ||
+      canAccessResource(workspace.role, grants, "incident", incident.id, "view") ||
+      activeIncidentResources.some(
+        (resource) =>
+          resource.incident_id === incident.id && allowedServiceIds.has(resource.resource_id),
+      ),
+  ).length;
   const checks = (
     await controlDb
       .prepare(
@@ -326,6 +369,7 @@ export async function loadDashboardSnapshot(
       networkRxTotal: machines.reduce((total, machine) => total + machine.networkRxTotal, 0),
       networkTxTotal: machines.reduce((total, machine) => total + machine.networkTxTotal, 0),
       servicesDown: services.filter((service) => service.state === "down").length,
+      activeIncidents: activeIncidentCount,
     },
     machines,
     services,

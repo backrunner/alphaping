@@ -3,24 +3,47 @@
     label,
     value,
     detail,
+    href,
     tone = "default",
   }: {
     label: string;
     value: string | number;
     detail?: string;
+    href?: string;
     tone?: "default" | "healthy" | "danger";
   } = $props();
 </script>
 
-<div class={`metric metric--${tone}`}>
-  <span class="metric__label">{label}</span>
-  <span class="metric__value">{value}</span>
-  {#if detail}<span class="metric__detail">{detail}</span>{/if}
-</div>
+{#if href}
+  <a class={`metric metric--${tone}`} {href}>
+    <span class="metric__label">{label}</span>
+    <span class="metric__value">{value}</span>
+    {#if detail}<span class="metric__detail">{detail}</span>{/if}
+  </a>
+{:else}
+  <div class={`metric metric--${tone}`}>
+    <span class="metric__label">{label}</span>
+    <span class="metric__value">{value}</span>
+    {#if detail}<span class="metric__detail">{detail}</span>{/if}
+  </div>
+{/if}
 
 <style>
   .metric {
+    display: block;
     min-width: 0;
+    border-radius: 4px;
+    color: inherit;
+    text-decoration: none;
+  }
+
+  a.metric:hover {
+    background: var(--surface-subtle);
+  }
+
+  a.metric:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
   }
 
   .metric__label {
