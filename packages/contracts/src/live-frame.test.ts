@@ -128,7 +128,7 @@ describe("live frame contract", () => {
     const truncated = (await encryptedFrame()).slice(0, -1);
     expect(() => parseAgentLiveFrame(truncated.buffer)).toThrow("invalid_live_frame_length");
     expect(() => decodeLiveMetricSample(new Uint8Array([0x08, ...Array(10).fill(0x80)]))).toThrow(
-      "invalid_live_protobuf_varint",
+      "invalid_protobuf_varint",
     );
     expect(() => parseLiveViewerMessage('{"type":"snapshot"}')).toThrow(
       "invalid_live_viewer_message",

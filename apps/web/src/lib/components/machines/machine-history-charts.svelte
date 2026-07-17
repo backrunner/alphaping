@@ -7,10 +7,22 @@
     $props();
 
   const chartPoints = $derived(compactPoints(points));
+  const usesThroughput = $derived(points.some((point) => point.networkRxBps !== null));
   const maximumMemory = $derived(Math.max(1, ...points.map((point) => point.memoryAverageBytes)));
-  const maximumNetwork = $derived(
-    Math.max(1, ...chartPoints.map((point) => point.networkRxBytes + point.networkTxBytes)),
-  );
+  const maximumNetwork = $derived(Math.max(1, ...chartPoints.map(networkValue)));
+
+  function averageNullable(values: readonly (number | null)[]): number | null {
+    const present = values.filter((value): value is number => value !== null);
+    return present.length === 0
+      ? null
+      : Math.round(present.reduce((total, value) => total + value, 0) / present.length);
+  }
+
+  function networkValue(point: MachineHistoryPoint): number {
+    return usesThroughput
+      ? (point.networkRxBps ?? 0) + (point.networkTxBps ?? 0)
+      : point.networkRxBytes + point.networkTxBytes;
+  }
 
   function compactPoints(source: readonly MachineHistoryPoint[]): readonly MachineHistoryPoint[] {
     const groupSize = Math.ceil(source.length / 120);
@@ -34,9 +46,15 @@
           group.reduce((total, point) => total + point.memoryAverageBytes * point.sampleCount, 0) /
             divisor,
         ),
+        memoryTotalBytes: Math.max(...group.map((point) => point.memoryTotalBytes ?? 0)) || null,
         storageMaxBytes: Math.max(...group.map((point) => point.storageMaxBytes)),
+        storageTotalBytes: Math.max(...group.map((point) => point.storageTotalBytes ?? 0)) || null,
         networkRxBytes: group.reduce((total, point) => total + point.networkRxBytes, 0),
         networkTxBytes: group.reduce((total, point) => total + point.networkTxBytes, 0),
+        networkRxBps: averageNullable(group.map((point) => point.networkRxBps)),
+        networkTxBps: averageNullable(group.map((point) => point.networkTxBps)),
+        load1mMilli: averageNullable(group.map((point) => point.load1mMilli)),
+        uptimeSeconds: group.at(-1)?.uptimeSeconds ?? null,
       });
     }
     return compacted;
@@ -72,11 +90,14 @@
     </div>
   </section>
   <section>
-    <header><strong>Network volume</strong><span>download + upload</span></header>
+    <header>
+      <strong>{usesThroughput ? "Network throughput" : "Network volume"}</strong><span
+        >download + upload</span
+      >
+    </header>
     <div class="bars bars--network" aria-hidden="true">
       {#each chartPoints as point (point.bucketStart)}
-        <i
-          style={`--bar-height: ${Math.max(3, ((point.networkRxBytes + point.networkTxBytes) / maximumNetwork) * 100)}%`}
+        <i style={`--bar-height: ${Math.max(3, (networkValue(point) / maximumNetwork) * 100)}%`}
         ></i>
       {/each}
     </div>
@@ -92,7 +113,7 @@
         <td>{formatBucket(point.bucketStart)}</td>
         <td>{(point.cpuAveragePermille / 10).toFixed(1)}%</td>
         <td>{formatBytes(point.memoryAverageBytes)}</td>
-        <td>{formatBytes(point.networkRxBytes + point.networkTxBytes)}</td>
+        <td>{formatBytes(networkValue(point))}{usesThroughput ? "/s" : ""}</td>
       </tr>
     {/each}
   </tbody>

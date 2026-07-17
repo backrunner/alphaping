@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Radio, Save, Settings2, ShieldAlert, TimerReset, Trash2 } from "lucide-svelte";
 
+  import CheckHistoryPanel from "$components/services/check-history-panel.svelte";
   import StatusLabel from "$components/status/status-label.svelte";
   import { formatRelativeTime } from "$lib/utils/format";
 
@@ -29,9 +30,11 @@
     checks,
     canManage,
     result,
+    historyBase,
   }: {
     checks: readonly Check[];
     canManage: boolean;
+    historyBase: string;
     result: {
       kind?: string;
       checkId?: string;
@@ -83,6 +86,7 @@
                 >{check.failureCode}{check.failureSummary ? ` · ${check.failureSummary}` : ""}</span
               >{/if}
           </div>
+          <CheckHistoryPanel endpoint={`${historyBase}/${encodeURIComponent(check.id)}/history`} />
           {#if canManage}
             <details class="policy">
               <summary><Settings2 size={12} />Policy</summary>

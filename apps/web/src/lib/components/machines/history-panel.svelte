@@ -7,7 +7,8 @@
   let { endpoint }: { endpoint: string } = $props();
 
   const ranges = [
-    { id: "3h", label: "3 hours", milliseconds: 3 * 3_600_000, resolution: "5m" },
+    { id: "1h", label: "1 hour", milliseconds: 3_600_000, resolution: "raw" },
+    { id: "6h", label: "6 hours", milliseconds: 6 * 3_600_000, resolution: "raw" },
     { id: "24h", label: "24 hours", milliseconds: 24 * 3_600_000, resolution: "5m" },
     { id: "7d", label: "7 days", milliseconds: 7 * 86_400_000, resolution: "1h" },
     { id: "30d", label: "30 days", milliseconds: 30 * 86_400_000, resolution: "1h" },
@@ -21,7 +22,7 @@
   function isHistoryPoint(value: unknown): value is MachineHistoryPoint {
     if (!value || typeof value !== "object") return false;
     const point = value as Record<string, unknown>;
-    return [
+    const required = [
       "bucketStart",
       "sampleCount",
       "cpuAveragePermille",
@@ -31,14 +32,30 @@
       "networkRxBytes",
       "networkTxBytes",
     ].every((key) => typeof point[key] === "number");
+    const nullable = [
+      "memoryTotalBytes",
+      "storageTotalBytes",
+      "networkRxBps",
+      "networkTxBps",
+      "load1mMilli",
+      "uptimeSeconds",
+    ].every((key) => point[key] === null || typeof point[key] === "number");
+    return required && nullable;
   }
 
-  function parsePoints(value: unknown): readonly MachineHistoryPoint[] | null {
+  function parsePage(
+    value: unknown,
+  ): { points: readonly MachineHistoryPoint[]; nextCursor: string | null } | null {
     if (!value || typeof value !== "object") return null;
-    const candidate = value as { points?: unknown };
-    return Array.isArray(candidate.points) && candidate.points.every(isHistoryPoint)
-      ? candidate.points
-      : null;
+    const candidate = value as { points?: unknown; nextCursor?: unknown };
+    if (
+      !Array.isArray(candidate.points) ||
+      !candidate.points.every(isHistoryPoint) ||
+      (candidate.nextCursor !== null && typeof candidate.nextCursor !== "string")
+    ) {
+      return null;
+    }
+    return { points: candidate.points, nextCursor: candidate.nextCursor };
   }
 
   async function loadHistory() {
@@ -50,12 +67,20 @@
     url.searchParams.set("from", String(to - selectedRange.milliseconds));
     url.searchParams.set("to", String(to));
     try {
-      const response = await fetch(url, { headers: { accept: "application/json" } });
-      if (!response.ok) throw new Error("History request failed");
-      const decoded: unknown = await response.json();
-      const nextPoints = parsePoints(decoded);
-      if (!nextPoints) throw new Error("History response is invalid");
-      points = nextPoints;
+      const loaded: MachineHistoryPoint[] = [];
+      let cursor: string | null = null;
+      for (let pageNumber = 0; pageNumber < 8; pageNumber += 1) {
+        if (cursor) url.searchParams.set("cursor", cursor);
+        const response = await fetch(url, { headers: { accept: "application/json" } });
+        if (!response.ok) throw new Error("History request failed");
+        const page = parsePage(await response.json());
+        if (!page) throw new Error("History response is invalid");
+        loaded.push(...page.points);
+        cursor = page.nextCursor;
+        if (cursor === null) break;
+        if (pageNumber === 7) throw new Error("History response exceeded the page limit");
+      }
+      points = loaded;
       loadState = "loaded";
     } catch (cause) {
       errorMessage = cause instanceof Error ? cause.message : "History is unavailable";

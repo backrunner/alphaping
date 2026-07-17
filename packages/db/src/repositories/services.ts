@@ -91,6 +91,20 @@ async function loadServiceRows(
   ).results;
 }
 
+async function loadServiceRow(
+  db: D1Database,
+  workspaceId: string,
+  serviceId: string,
+): Promise<ServiceRow | null> {
+  return db
+    .prepare(
+      `SELECT id, telemetry_pk, name, slug, description, maintenance_until, created_at
+       FROM services WHERE workspace_id = ? AND id = ? AND deleted_at IS NULL`,
+    )
+    .bind(workspaceId, serviceId)
+    .first<ServiceRow>();
+}
+
 async function loadCheckRows(db: D1Database, workspaceId: string): Promise<readonly CheckRow[]> {
   return (
     await db
@@ -313,6 +327,27 @@ export async function loadServiceCollection(
         now,
       ),
     ),
+  };
+}
+
+export async function loadAuthorizedServiceScope(
+  controlDb: D1Database,
+  workspaceSlug: string,
+  userId: string,
+  serviceId: string,
+): Promise<{ workspaceId: string; workspacePk: number; servicePk: number }> {
+  const access = await loadWorkspaceAccess(controlDb, workspaceSlug, userId);
+  const service = await loadServiceRow(controlDb, access.workspace.id, serviceId);
+  if (
+    !service ||
+    !canAccessResource(access.workspace.role, access.grants, "service", service.id, "view")
+  ) {
+    throw new ServiceNotFoundError();
+  }
+  return {
+    workspaceId: access.workspace.id,
+    workspacePk: access.workspace.telemetry_pk,
+    servicePk: service.telemetry_pk,
   };
 }
 

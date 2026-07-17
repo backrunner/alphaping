@@ -1,11 +1,11 @@
 import { decodeBase64Url, deriveAgentLiveKey } from "./live-ticket.js";
+import { readProtobufVarint, safeProtobufNumber, skipProtobufField } from "./protobuf.js";
 
 export const MAX_LIVE_FRAME_BYTES = 16 * 1024;
 export const LIVE_FRESHNESS_MS = 20_000;
 
 const FRAME_HEADER_BYTES = 48;
 const AUTHENTICATED_HEADER_BYTES = 44;
-const MAX_SAFE_BIGINT = BigInt(Number.MAX_SAFE_INTEGER);
 const LIVE_MAGIC = new Uint8Array([0x41, 0x50, 0x4c, 0x31]);
 
 export interface AgentLiveFrameHeader {
@@ -34,13 +34,8 @@ export interface LiveViewerSnapshot {
   uptimeSeconds: number | null;
 }
 
-function safeNumber(value: bigint): number {
-  if (value > MAX_SAFE_BIGINT) throw new Error("live_integer_out_of_range");
-  return Number(value);
-}
-
 function readUnsigned64(view: DataView, offset: number): number {
-  return safeNumber(view.getBigUint64(offset, false));
+  return safeProtobufNumber(view.getBigUint64(offset, false));
 }
 
 export function parseAgentLiveFrame(message: ArrayBuffer): AgentLiveFrameHeader {
@@ -66,38 +61,6 @@ export function parseAgentLiveFrame(message: ArrayBuffer): AgentLiveFrameHeader 
   };
 }
 
-function readVarint(bytes: Uint8Array, start: number): { value: bigint; next: number } {
-  let value = 0n;
-  let shift = 0n;
-  for (let offset = start; offset < bytes.length && offset < start + 10; offset += 1) {
-    const current = bytes[offset];
-    if (current === undefined) break;
-    value |= BigInt(current & 0x7f) << shift;
-    if ((current & 0x80) === 0) return { value, next: offset + 1 };
-    shift += 7n;
-  }
-  throw new Error("invalid_live_protobuf_varint");
-}
-
-function skipField(bytes: Uint8Array, offset: number, wireType: number): number {
-  if (wireType === 0) return readVarint(bytes, offset).next;
-  if (wireType === 1) {
-    if (offset + 8 > bytes.length) throw new Error("invalid_live_protobuf_field");
-    return offset + 8;
-  }
-  if (wireType === 2) {
-    const length = readVarint(bytes, offset);
-    const next = length.next + safeNumber(length.value);
-    if (next > bytes.length) throw new Error("invalid_live_protobuf_field");
-    return next;
-  }
-  if (wireType === 5) {
-    if (offset + 4 > bytes.length) throw new Error("invalid_live_protobuf_field");
-    return offset + 4;
-  }
-  throw new Error("invalid_live_protobuf_wire_type");
-}
-
 export function decodeLiveMetricSample(
   bytes: Uint8Array,
 ): Omit<LiveViewerSnapshot, "type" | "topic"> {
@@ -109,17 +72,17 @@ export function decodeLiveMetricSample(
   );
   let offset = 0;
   while (offset < bytes.length) {
-    const tag = readVarint(bytes, offset);
+    const tag = readProtobufVarint(bytes, offset);
     offset = tag.next;
     const field = Number(tag.value >> 3n);
     const wireType = Number(tag.value & 0x07n);
     if (field >= 1 && field <= 12) {
       if (wireType !== 0) throw new Error("invalid_live_metric_wire_type");
-      const decoded = readVarint(bytes, offset);
-      values[field - 1] = safeNumber(decoded.value);
+      const decoded = readProtobufVarint(bytes, offset);
+      values[field - 1] = safeProtobufNumber(decoded.value);
       offset = decoded.next;
     } else {
-      offset = skipField(bytes, offset, wireType);
+      offset = skipProtobufField(bytes, offset, wireType);
     }
   }
   const observedAt = values[0] ?? 0;

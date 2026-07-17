@@ -13,6 +13,7 @@
   import ServiceCheckForm from "$components/services/service-check-form.svelte";
   import ServiceCheckList from "$components/services/service-check-list.svelte";
   import ServiceEvents from "$components/services/service-events.svelte";
+  import ServiceHistoryPanel from "$components/services/service-history-panel.svelte";
   import ServiceSummary from "$components/services/service-summary.svelte";
   import StatusLabel from "$components/status/status-label.svelte";
   import Button from "$components/ui/button/button.svelte";
@@ -102,7 +103,13 @@
   {/if}
 
   <ServiceSummary service={data.service} />
-  <ServiceCheckList checks={data.checks} canManage={data.service.canManage} result={form ?? null} />
+  <ServiceHistoryPanel endpoint={`/${data.workspace.slug}/services/${data.service.id}/history`} />
+  <ServiceCheckList
+    checks={data.checks}
+    canManage={data.service.canManage}
+    result={form ?? null}
+    historyBase={`/${data.workspace.slug}/services/${data.service.id}/checks`}
+  />
   {#if data.service.canManage}
     <ServiceCheckForm agents={data.checkAgents} result={form ?? null} />
   {/if}

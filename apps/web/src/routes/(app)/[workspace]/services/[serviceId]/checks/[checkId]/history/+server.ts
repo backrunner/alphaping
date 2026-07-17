@@ -1,8 +1,8 @@
 import {
-  loadMachineHistory,
-  MachineHistoryDataError,
-  MachineHistoryRangeError,
-  MachineNotFoundError,
+  loadServiceCheckHistory,
+  ServiceHistoryDataError,
+  ServiceHistoryRangeError,
+  ServiceNotFoundError,
 } from "@alphaping/db";
 import { json } from "@sveltejs/kit";
 
@@ -14,29 +14,28 @@ export const GET: RequestHandler = async ({ locals, params, platform, url }) => 
   if (resolution !== "raw" && resolution !== "5m" && resolution !== "1h") {
     return json({ message: "Resolution is invalid" }, { status: 400 });
   }
-  const from = Number(url.searchParams.get("from"));
-  const to = Number(url.searchParams.get("to"));
   try {
-    const page = await loadMachineHistory(
+    const page = await loadServiceCheckHistory(
       platform.env.CONTROL_DB,
       platform.env.TELEMETRY_DB,
       params.workspace,
       locals.session.user.id,
-      params.machineId,
+      params.serviceId,
+      params.checkId,
       resolution,
-      from,
-      to,
+      Number(url.searchParams.get("from")),
+      Number(url.searchParams.get("to")),
       url.searchParams.get("cursor"),
     );
     return json({ resolution, ...page }, { headers: { "cache-control": "private, no-store" } });
   } catch (cause) {
-    if (cause instanceof MachineNotFoundError) {
+    if (cause instanceof ServiceNotFoundError) {
       return json({ message: "Not found" }, { status: 404 });
     }
-    if (cause instanceof MachineHistoryRangeError) {
+    if (cause instanceof ServiceHistoryRangeError) {
       return json({ message: "Time range or cursor is invalid" }, { status: 400 });
     }
-    if (cause instanceof MachineHistoryDataError) {
+    if (cause instanceof ServiceHistoryDataError) {
       return json({ message: "History data is unavailable" }, { status: 502 });
     }
     throw cause;

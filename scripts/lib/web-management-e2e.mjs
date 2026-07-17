@@ -1,3 +1,5 @@
+import { deflateSync } from "node:zlib";
+
 function assertResponse(response, expectedStatus, label) {
   if (response.status !== expectedStatus) {
     throw new Error(`${label} returned ${response.status}, expected ${expectedStatus}`);
@@ -56,6 +58,44 @@ function dateTimeInput(timestamp) {
 
 function sqlString(value) {
   return `'${value.replaceAll("'", "''")}'`;
+}
+
+function varint(value) {
+  let remaining = BigInt(value);
+  const bytes = [];
+  do {
+    let current = Number(remaining & 0x7fn);
+    remaining >>= 7n;
+    if (remaining > 0n) current |= 0x80;
+    bytes.push(current);
+  } while (remaining > 0n);
+  return bytes;
+}
+
+function machineReportHex(observedAt) {
+  const values = [
+    observedAt,
+    417,
+    2_048,
+    8_192,
+    4_096,
+    16_384,
+    512,
+    256,
+    65_536,
+    32_768,
+    1_250,
+    86_400,
+  ];
+  const sample = Buffer.from(
+    values.flatMap((value, index) => [((index + 1) << 3) | 0, ...varint(value)]),
+  );
+  const report = Buffer.from([0x2a, ...varint(sample.byteLength), ...sample]);
+  return deflateSync(report).toString("hex");
+}
+
+function jsonBlob(value) {
+  return `X'${Buffer.from(JSON.stringify(value)).toString("hex")}'`;
 }
 
 export async function runWebManagementE2e({
@@ -293,6 +333,20 @@ export async function runWebManagementE2e({
        1000000, 500000, 1250, 273600, X'01010101010101010101010101010101',
        ${sqlString(containerInventory)})`,
   );
+  const machineBlockStart = Math.floor(latestAt / 300_000) * 300_000;
+  queryTelemetryDb(
+    `INSERT INTO telemetry_blocks_5m
+      (machine_pk, workspace_pk, block_start, report_0, schema_version, flags)
+     VALUES (${machine.telemetry_pk}, 1, ${machineBlockStart},
+       X'${machineReportHex(latestAt)}', 4, 0)`,
+  );
+  queryTelemetryDb(
+    `INSERT INTO machine_rollups_5m
+      (machine_pk, workspace_pk, bucket_start, sample_count, cpu_avg_permille,
+       cpu_max_permille, memory_avg_bytes, storage_max_bytes, network_rx_bytes, network_tx_bytes)
+     VALUES (${machine.telemetry_pk}, 1, ${machineBlockStart}, 1, 417, 417,
+       2048, 4096, 5120, 2560)`,
+  );
   response = await fetch(`${baseUrl}/operations`, { headers: { cookie: adminCookie } });
   assertResponse(response, 200, "dashboard machine latest projection");
   const dashboard = await response.text();
@@ -312,6 +366,40 @@ export async function runWebManagementE2e({
   ) {
     throw new Error("machine latest API did not return the durable telemetry projection");
   }
+  response = await fetch(
+    `${baseUrl}/operations/machines/${machine.id}/metrics?resolution=raw&from=${machineBlockStart}&to=${machineBlockStart + 300_000}`,
+    { headers: { cookie: adminCookie } },
+  );
+  assertResponse(response, 200, "administrator raw machine history API");
+  if (response.headers.get("cache-control") !== "private, no-store") {
+    throw new Error("machine history API was not marked private");
+  }
+  const rawMachineHistory = await response.json();
+  if (
+    rawMachineHistory.nextCursor !== null ||
+    rawMachineHistory.points.length !== 1 ||
+    rawMachineHistory.points[0].load1mMilli !== 1250 ||
+    rawMachineHistory.points[0].networkRxBps !== 512
+  ) {
+    throw new Error("raw machine history did not decode the stored protobuf report");
+  }
+  response = await fetch(
+    `${baseUrl}/operations/machines/${machine.id}/metrics?resolution=5m&from=${machineBlockStart}&to=${machineBlockStart + 300_000}`,
+    { headers: { cookie: adminCookie } },
+  );
+  assertResponse(response, 200, "administrator machine rollup history API");
+  const machineRollupHistory = await response.json();
+  if (
+    machineRollupHistory.points.length !== 1 ||
+    machineRollupHistory.points[0].cpuAveragePermille !== 417
+  ) {
+    throw new Error("machine rollup history did not return the bounded bucket");
+  }
+  response = await fetch(
+    `${baseUrl}/operations/machines/${machine.id}/metrics?resolution=raw&from=${machineBlockStart}&to=${machineBlockStart + 300_000}&cursor=invalid`,
+    { headers: { cookie: adminCookie } },
+  );
+  assertResponse(response, 400, "invalid machine history cursor");
   response = await fetch(`${baseUrl}/operations/machines/${machine.id}`, {
     headers: { cookie: adminCookie },
   });
@@ -436,7 +524,7 @@ export async function runWebManagementE2e({
   }
   const compiledCheck = onlyRow(
     queryControlDb(
-      `SELECT request_json, secret_refs_json, retry_count, critical,
+      `SELECT id, telemetry_pk, request_json, secret_refs_json, retry_count, critical,
         (SELECT COUNT(*) FROM check_assertions a WHERE a.check_id = c.id) AS assertion_count,
         (SELECT COUNT(*) FROM check_secrets s WHERE s.workspace_id = c.workspace_id) AS secret_count
        FROM check_configs c WHERE c.service_id = '${service.id}' AND c.kind = 'http'`,
@@ -455,6 +543,90 @@ export async function runWebManagementE2e({
     compiledCheck.critical !== 1
   ) {
     throw new Error("service secret wrapping or assertion persistence is incorrect");
+  }
+  const serviceBlockStart = Math.floor(Date.now() / 300_000) * 300_000;
+  const checkObservedAt = serviceBlockStart + 10_000;
+  queryTelemetryDb(
+    `INSERT INTO status_buckets
+      (resource_type, resource_pk, workspace_pk, bucket_start, bucket_seconds, state,
+       availability_permille, latency_avg_ms, latency_max_ms, summary_code)
+     VALUES (2, ${service.telemetry_pk}, 1, ${serviceBlockStart}, 300, 'degraded',
+       950, 84, 110, 'check_degraded')`,
+  );
+  queryTelemetryDb(
+    `INSERT INTO check_result_blocks_5m
+      (check_pk, workspace_pk, block_start, result_0, schema_version, flags)
+     VALUES (${compiledCheck.telemetry_pk}, 1, ${serviceBlockStart},
+       ${jsonBlob({
+         v: 1,
+         observedAt: checkObservedAt,
+         state: "degraded",
+         latencyMs: 84,
+         failureCode: "latency_threshold",
+         failureSummary: "Latency exceeded the degraded threshold",
+       })}, 1, 0)`,
+  );
+  for (const table of ["check_rollups_5m", "check_rollups_1h"]) {
+    const bucketStart =
+      table === "check_rollups_5m"
+        ? serviceBlockStart
+        : Math.floor(serviceBlockStart / 3_600_000) * 3_600_000;
+    queryTelemetryDb(
+      `INSERT INTO ${table}
+        (check_pk, workspace_pk, bucket_start, total_count, healthy_count,
+         degraded_count, down_count, latency_avg_ms, latency_max_ms)
+       VALUES (${compiledCheck.telemetry_pk}, 1, ${bucketStart}, 1, 0, 1, 0, 84, 110)`,
+    );
+  }
+  response = await fetch(
+    `${baseUrl}/operations/services/${service.id}/history?resolution=5m&from=${serviceBlockStart}&to=${serviceBlockStart + 300_000}`,
+    { headers: { cookie: adminCookie } },
+  );
+  assertResponse(response, 200, "administrator service history API");
+  const serviceHistory = await response.json();
+  if (
+    serviceHistory.points.length !== 1 ||
+    serviceHistory.points[0].state !== "degraded" ||
+    serviceHistory.points[0].availabilityPermille !== 950
+  ) {
+    throw new Error("service history did not return the status bucket projection");
+  }
+  response = await fetch(
+    `${baseUrl}/operations/services/${service.id}/history?resolution=1h&from=${serviceBlockStart - 3_600_000}&to=${serviceBlockStart + 300_000}`,
+    { headers: { cookie: adminCookie } },
+  );
+  assertResponse(response, 200, "administrator hourly service history API");
+  if ((await response.json()).points[0]?.state !== "degraded") {
+    throw new Error("hourly service history did not aggregate the five-minute bucket");
+  }
+  response = await fetch(
+    `${baseUrl}/operations/services/${service.id}/checks/${compiledCheck.id}/history?resolution=raw&from=${serviceBlockStart}&to=${serviceBlockStart + 300_000}`,
+    { headers: { cookie: adminCookie } },
+  );
+  assertResponse(response, 200, "administrator raw check history API");
+  const rawCheckHistory = await response.json();
+  if (
+    rawCheckHistory.points.length !== 1 ||
+    rawCheckHistory.points[0].kind !== "raw" ||
+    rawCheckHistory.points[0].failureCode !== "latency_threshold"
+  ) {
+    throw new Error("raw check history did not decode the stored v1 result");
+  }
+  response = await fetch(
+    `${baseUrl}/operations/services/${service.id}/checks/${compiledCheck.id}/history?resolution=1h&from=${serviceBlockStart - 3_600_000}&to=${serviceBlockStart + 300_000}`,
+    { headers: { cookie: adminCookie } },
+  );
+  assertResponse(response, 200, "administrator check rollup history API");
+  if ((await response.json()).points[0]?.degradedCount !== 1) {
+    throw new Error("check history did not return the hourly rollup");
+  }
+  response = await fetch(`${baseUrl}/operations/services/${service.id}`, {
+    headers: { cookie: adminCookie },
+  });
+  assertResponse(response, 200, "service history management view");
+  const serviceHistoryPage = await response.text();
+  if (!serviceHistoryPage.includes("Service history") || !serviceHistoryPage.includes("History")) {
+    throw new Error("service detail omitted lazy history disclosures");
   }
 
   await submitAction(
@@ -847,6 +1019,23 @@ export async function runWebManagementE2e({
     headers: { cookie: memberCookie },
   });
   assertResponse(response, 404, "ungranted member service detail");
+  for (const [path, label] of [
+    [
+      `/operations/machines/${machine.id}/metrics?resolution=5m&from=${machineBlockStart}&to=${machineBlockStart + 300_000}`,
+      "ungranted member machine history",
+    ],
+    [
+      `/operations/services/${service.id}/history?resolution=5m&from=${serviceBlockStart}&to=${serviceBlockStart + 300_000}`,
+      "ungranted member service history",
+    ],
+    [
+      `/operations/services/${service.id}/checks/${compiledCheck.id}/history?resolution=5m&from=${serviceBlockStart}&to=${serviceBlockStart + 300_000}`,
+      "ungranted member check history",
+    ],
+  ]) {
+    response = await fetch(`${baseUrl}${path}`, { headers: { cookie: memberCookie } });
+    assertResponse(response, 404, label);
+  }
   await submitAction(
     baseUrl,
     "/operations/admin?/machine",
@@ -887,6 +1076,11 @@ export async function runWebManagementE2e({
     headers: { cookie: memberCookie },
   });
   assertResponse(response, 200, "managed member service detail");
+  response = await fetch(
+    `${baseUrl}/operations/services/${service.id}/checks/${compiledCheck.id}/history?resolution=5m&from=${serviceBlockStart}&to=${serviceBlockStart + 300_000}`,
+    { headers: { cookie: memberCookie } },
+  );
+  assertResponse(response, 200, "managed member check history");
   await submitAction(
     baseUrl,
     `/operations/machines/${machine.id}?/checkUpdate`,
@@ -995,6 +1189,11 @@ export async function runWebManagementE2e({
     headers: { cookie: memberCookie },
   });
   assertResponse(response, 404, "explicitly denied member machine API");
+  response = await fetch(
+    `${baseUrl}/operations/machines/${machine.id}/metrics?resolution=5m&from=${machineBlockStart}&to=${machineBlockStart + 300_000}`,
+    { headers: { cookie: memberCookie } },
+  );
+  assertResponse(response, 404, "explicitly denied member machine history");
   response = await fetch(`${baseUrl}/operations/machines/${machine.id}/latest`);
   assertResponse(response, 404, "guest machine API");
 

@@ -6,11 +6,15 @@ import { parseContainerInventory, resolveLastMachineError } from "./machines.js"
 
 describe("machine history range", () => {
   it("allows the bounded dashboard ranges", () => {
+    expect(() => validateMachineHistoryRange("raw", 0, 86_400_000)).not.toThrow();
     expect(() => validateMachineHistoryRange("5m", 0, 7 * 86_400_000)).not.toThrow();
     expect(() => validateMachineHistoryRange("1h", 0, 31 * 86_400_000)).not.toThrow();
   });
 
   it("rejects scans beyond the fixed resolution budget", () => {
+    expect(() => validateMachineHistoryRange("raw", 0, 86_400_001)).toThrow(
+      MachineHistoryRangeError,
+    );
     expect(() => validateMachineHistoryRange("5m", 0, 7 * 86_400_000 + 1)).toThrow(
       MachineHistoryRangeError,
     );
