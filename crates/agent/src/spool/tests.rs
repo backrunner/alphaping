@@ -176,6 +176,9 @@ fn probe_config_and_results_are_durable_until_report_ack() {
         probe_tasks: Vec::new(),
         created_at_ms: 120_000,
         digest: Vec::new(),
+        sample_interval_seconds: Some(10),
+        report_interval_seconds: Some(60),
+        container_monitoring_enabled: Some(true),
     };
     config.digest = blake3::hash(&encode_message(&config)).as_bytes().to_vec();
     assert!(

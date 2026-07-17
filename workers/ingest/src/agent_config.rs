@@ -34,6 +34,13 @@ struct ProbeConfigRow {
 }
 
 #[derive(Debug, Deserialize)]
+struct MachineConfigRow {
+    sampling_interval_seconds: f64,
+    report_interval_seconds: f64,
+    container_monitoring_enabled: f64,
+}
+
+#[derive(Debug, Deserialize)]
 struct SecretRow {
     id: String,
     wrapped_value: Vec<u8>,
@@ -99,6 +106,17 @@ pub async fn build_config_snapshot(
     agent_id: &str,
     desired_revision: u64,
 ) -> worker::Result<AgentConfigSnapshot> {
+    let machine = db
+        .prepare(
+            "SELECT m.sampling_interval_seconds, m.report_interval_seconds,
+                    m.container_monitoring_enabled
+             FROM agents a JOIN machines m ON m.id = a.machine_id
+             WHERE a.id = ? AND a.status = 'active' AND m.deleted_at IS NULL",
+        )
+        .bind(&[JsValue::from_str(agent_id)])?
+        .first::<MachineConfigRow>(None)
+        .await?
+        .ok_or_else(|| worker::Error::RustError("missing_agent_machine".to_owned()))?;
     let rows = db
         .prepare(
             "SELECT c.id, c.telemetry_pk, s.telemetry_pk AS service_pk,
@@ -139,6 +157,9 @@ pub async fn build_config_snapshot(
         probe_tasks: tasks,
         created_at_ms: worker::js_sys::Date::now() as i64,
         digest: Vec::new(),
+        sample_interval_seconds: Some(machine.sampling_interval_seconds as u32),
+        report_interval_seconds: Some(machine.report_interval_seconds as u32),
+        container_monitoring_enabled: Some(machine.container_monitoring_enabled == 1.0),
     };
     snapshot.digest = blake3::hash(&encode_message(&snapshot)).as_bytes().to_vec();
     if encode_message(&snapshot).len() > MAX_CONFIG_BYTES {

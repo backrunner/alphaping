@@ -35,6 +35,7 @@ fn maximum_agent_probe_config_fits_the_encrypted_ack_budget() {
         probe_tasks: (0..32).map(task).collect(),
         created_at_ms: 1_752_574_800_000,
         digest: vec![7; 32],
+        ..AgentConfigSnapshot::default()
     };
     assert!(encode_message(&config).len() <= 48 * 1024);
 }

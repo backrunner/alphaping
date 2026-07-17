@@ -26,17 +26,25 @@ use crate::{
     uploader::{UploadError, Uploader},
 };
 
+struct RuntimeControl<'a> {
+    probe_monitor: &'a ProbeMonitor,
+    live: &'a LiveHandle,
+    config_path: &'a Path,
+    config: &'a mut AgentConfig,
+    container_monitor: &'a mut Option<ContainerMonitor>,
+}
+
 pub async fn run(
     config_path: &Path,
     mut service_shutdown: Option<watch::Receiver<bool>>,
 ) -> Result<()> {
-    let config = AgentConfig::load(config_path)?;
+    let mut config = AgentConfig::load(config_path)?;
     let mut spool = Spool::open(&config.spool_path)?;
     let mut sampler = Sampler::new();
     let initial_probe_config = spool.load_probe_config()?;
     let (probe_monitor, mut probe_results) =
         ProbeMonitor::start(config.agent_id.clone(), initial_probe_config)?;
-    let container_monitor = config
+    let mut container_monitor = config
         .container_monitoring_enabled
         .then(ContainerMonitor::start);
     let uploader = Uploader::new(
@@ -103,13 +111,24 @@ pub async fn run(
                 }
             }
             _ = upload_tick.tick() => {
-                upload_due_report(
+                let schedule_changed = upload_due_report(
                     &mut spool,
                     &uploader,
-                    &probe_monitor,
-                    &live,
+                    &mut RuntimeControl {
+                        probe_monitor: &probe_monitor,
+                        live: &live,
+                        config_path,
+                        config: &mut config,
+                        container_monitor: &mut container_monitor,
+                    },
                     unix_time_ms()?,
                 ).await?;
+                if schedule_changed {
+                    sample_tick = interval(Duration::from_secs(config.sample_interval_seconds));
+                    sample_tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
+                    report_tick = interval(Duration::from_secs(config.report_interval_seconds));
+                    report_tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
+                }
             }
             _ = command_tick.tick(), if !command_in_flight && !automatic_update_in_flight => {
                 command_in_flight = start_due_command(
@@ -177,33 +196,35 @@ pub async fn run(
 async fn upload_due_report(
     spool: &mut Spool,
     uploader: &Uploader,
-    probe_monitor: &ProbeMonitor,
-    live: &LiveHandle,
+    control: &mut RuntimeControl<'_>,
     now_ms: i64,
-) -> Result<()> {
+) -> Result<bool> {
     let Some(delivery) = spool.due_delivery(now_ms)? else {
-        return Ok(());
+        return Ok(false);
     };
+    let mut schedule_changed = false;
     match uploader.upload(spool, &delivery, now_ms).await {
         Ok(acknowledgement) => {
-            let local_result = apply_ack(
+            match apply_ack(
                 spool,
-                probe_monitor,
-                live,
+                control,
                 &delivery.report_id,
                 &acknowledgement,
                 now_ms,
-            );
-            if let Err(error) = local_result {
-                spool.mark_failure(
-                    &delivery.report_id,
-                    now_ms.saturating_add(300_000),
-                    "local_config",
-                )?;
-                error!(error = %error, "failed to apply authenticated Agent response");
-            } else {
-                let recovery_jitter_ms = rand::rng().random_range(0_i64..=5_000);
-                spool.wake_backlog(now_ms.saturating_add(recovery_jitter_ms))?;
+            ) {
+                Ok(changed) => {
+                    schedule_changed = changed;
+                    let recovery_jitter_ms = rand::rng().random_range(0_i64..=5_000);
+                    spool.wake_backlog(now_ms.saturating_add(recovery_jitter_ms))?;
+                }
+                Err(error) => {
+                    spool.mark_failure(
+                        &delivery.report_id,
+                        now_ms.saturating_add(300_000),
+                        "local_config",
+                    )?;
+                    error!(error = %error, "failed to apply authenticated Agent response");
+                }
             }
         }
         Err(error) => {
@@ -214,17 +235,17 @@ async fn upload_due_report(
             warn!(error = %error, retry_seconds = delay.as_secs(), "durable report upload failed");
         }
     }
-    Ok(())
+    Ok(schedule_changed)
 }
 
 fn apply_ack(
     spool: &mut Spool,
-    probe_monitor: &ProbeMonitor,
-    live: &LiveHandle,
+    control: &mut RuntimeControl<'_>,
     report_id: &[u8],
     acknowledgement: &alphaping_protocol::v1::DurableAck,
     now_ms: i64,
-) -> Result<()> {
+) -> Result<bool> {
+    let mut schedule_changed = false;
     let current_revision = spool.applied_config_revision()?;
     if acknowledgement.config_revision > current_revision {
         let next = acknowledgement
@@ -232,20 +253,41 @@ fn apply_ack(
             .as_ref()
             .context("server omitted the newer Agent configuration")?;
         validate_new_config(next, acknowledgement.config_revision)?;
-        if spool.apply_probe_config(next, now_ms)? {
-            probe_monitor.apply_config(next.clone())?;
+        let mut updated = control.config.clone();
+        if let Some(sample) = next.sample_interval_seconds {
+            updated.sample_interval_seconds = u64::from(sample);
         }
+        if let Some(report) = next.report_interval_seconds {
+            updated.report_interval_seconds = u64::from(report);
+        }
+        if let Some(enabled) = next.container_monitoring_enabled {
+            updated.container_monitoring_enabled = enabled;
+        }
+        schedule_changed = updated.sample_interval_seconds
+            != control.config.sample_interval_seconds
+            || updated.report_interval_seconds != control.config.report_interval_seconds;
+        let container_changed =
+            updated.container_monitoring_enabled != control.config.container_monitoring_enabled;
+        updated.save(control.config_path)?;
+        control.probe_monitor.apply_config(next.clone())?;
+        if container_changed {
+            *control.container_monitor = updated
+                .container_monitoring_enabled
+                .then(ContainerMonitor::start);
+        }
+        spool.apply_probe_config(next, now_ms)?;
+        *control.config = updated;
     }
     spool.accept_commands(&acknowledgement.commands, now_ms)?;
     if let Some(credential) = acknowledgement.live_session.clone()
-        && let Err(error) = live.update_credential(credential, now_ms)
+        && let Err(error) = control.live.update_credential(credential, now_ms)
     {
         warn!(error = %error, "authenticated live session credential was ignored");
     }
     if !spool.acknowledge(report_id)? {
         bail!("durable ACK did not match a local delivery");
     }
-    Ok(())
+    Ok(schedule_changed)
 }
 
 fn validate_new_config(config: &AgentConfigSnapshot, expected_revision: u64) -> Result<()> {

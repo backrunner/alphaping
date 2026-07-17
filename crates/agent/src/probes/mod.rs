@@ -80,6 +80,17 @@ pub fn validate_config(config: &AgentConfigSnapshot) -> Result<()> {
     if config.created_at_ms <= 0 || config.digest.len() != 32 {
         bail!("probe configuration metadata is invalid");
     }
+    match (
+        config.sample_interval_seconds,
+        config.report_interval_seconds,
+    ) {
+        (Some(sample), Some(report))
+            if (5..=300).contains(&sample)
+                && (60..=900).contains(&report)
+                && report.is_multiple_of(sample) => {}
+        (None, None) => {}
+        _ => bail!("Agent collection intervals are invalid"),
+    }
     let mut unsigned = config.clone();
     unsigned.digest.clear();
     if blake3::hash(&encode_message(&unsigned)).as_bytes() != config.digest.as_slice() {
@@ -258,11 +269,36 @@ mod tests {
         let mut config = AgentConfigSnapshot {
             revision: 3,
             created_at_ms: 120_000,
+            sample_interval_seconds: Some(10),
+            report_interval_seconds: Some(60),
             ..AgentConfigSnapshot::default()
         };
         config.digest = blake3::hash(&encode_message(&config)).as_bytes().to_vec();
         assert!(validate_config(&config).is_ok());
         config.created_at_ms += 1;
         assert!(validate_config(&config).is_err());
+    }
+
+    #[test]
+    fn configuration_intervals_are_bounded_and_backward_compatible() {
+        let snapshots = [
+            (None, None, true),
+            (Some(10), Some(60), true),
+            (Some(5), Some(900), true),
+            (Some(4), Some(60), false),
+            (Some(10), Some(65), false),
+            (Some(10), None, false),
+        ];
+        for (sample, report, expected) in snapshots {
+            let mut config = AgentConfigSnapshot {
+                revision: 2,
+                created_at_ms: 120_000,
+                sample_interval_seconds: sample,
+                report_interval_seconds: report,
+                ..AgentConfigSnapshot::default()
+            };
+            config.digest = blake3::hash(&encode_message(&config)).as_bytes().to_vec();
+            assert_eq!(validate_config(&config).is_ok(), expected);
+        }
     }
 }

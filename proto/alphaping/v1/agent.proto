@@ -208,6 +208,9 @@ message AgentConfigSnapshot {
   repeated ProbeTask probe_tasks = 2;
   int64 created_at_ms = 3;
   bytes digest = 4;
+  optional uint32 sample_interval_seconds = 5;
+  optional uint32 report_interval_seconds = 6;
+  optional bool container_monitoring_enabled = 7;
 }
 
 enum AgentCommandType {

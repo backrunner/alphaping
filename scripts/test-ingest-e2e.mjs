@@ -293,6 +293,44 @@ try {
   } catch (cause) {
     throw new Error(`${cause.message}\n${processOutput.text}`.trim(), { cause });
   }
+  run(
+    pnpm,
+    [
+      "exec",
+      "wrangler",
+      "d1",
+      "execute",
+      "CONTROL_DB",
+      "--local",
+      "--config",
+      config,
+      "--persist-to",
+      persistTo,
+      "--command",
+      `UPDATE machines SET sampling_interval_seconds = 15, report_interval_seconds = 120,
+         container_monitoring_enabled = 0, desired_config_revision = 2, updated_at = ${Date.now()}
+       WHERE id = '${machineId}'`,
+    ],
+    "Agent collection config update",
+    { quiet: true },
+  );
+  run(
+    process.execPath,
+    [
+      resolve(root, "scripts/run-cargo.mjs"),
+      "run",
+      "--quiet",
+      "-p",
+      "alphaping-ingest",
+      "--example",
+      "ingest_e2e_client",
+      "--",
+      "verify-config",
+      origin,
+      sessionPath,
+    ],
+    "Agent collection config protocol client",
+  );
   const commandNow = Date.now();
   run(
     pnpm,
@@ -451,11 +489,11 @@ try {
   );
   const containerInventory = JSON.parse(telemetry?.container_inventory_json ?? "null");
   if (
-    ![1, 2].includes(telemetry?.block_count) ||
-    telemetry.populated_slots !== 3 ||
+    ![1, 2, 3].includes(telemetry?.block_count) ||
+    telemetry.populated_slots !== 4 ||
     telemetry.cpu_permille !== 980 ||
     telemetry.machine_state !== "down" ||
-    telemetry.highest_sequence !== 5 ||
+    telemetry.highest_sequence !== 7 ||
     telemetry.recovery_events !== 1 ||
     telemetry.threshold_events !== 1 ||
     containerInventory?.runtimes?.map((runtime) => runtime.kind).join(",") !==

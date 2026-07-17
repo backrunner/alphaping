@@ -155,7 +155,7 @@ async fn verify_revoked_key(
         root_key,
         nonce_prefix,
     )?;
-    let envelope = codec.encode_report(6, now_ms()?, &report_id, &compressed_payload)?;
+    let envelope = codec.encode_report(8, now_ms()?, &report_id, &compressed_payload)?;
     let response = post_protobuf(client, &format!("{origin}/v1/reports"), envelope).await?;
     if response.status() != StatusCode::NOT_FOUND {
         return Err(invalid_data("revoked Agent key accepted a report").into());
@@ -185,12 +185,12 @@ async fn verify_command_delivery(
         nonce_prefix,
     )?;
     let endpoint = format!("{origin}/v1/reports");
-    let envelope = codec.encode_report(4, now_ms()?, &report_id, &compressed_payload)?;
+    let envelope = codec.encode_report(6, now_ms()?, &report_id, &compressed_payload)?;
     let response = post_protobuf(client, &endpoint, envelope).await?;
     if response.status() != StatusCode::OK {
         return Err(invalid_data("command delivery report was rejected").into());
     }
-    let acknowledgement = codec.decode_ack(&response.bytes().await?, 4, &report_id)?;
+    let acknowledgement = codec.decode_ack(&response.bytes().await?, 6, &report_id)?;
     if AckStatus::try_from(acknowledgement.status)? != AckStatus::Duplicate
         || acknowledgement.commands.len() != 1
     {
@@ -224,17 +224,81 @@ async fn verify_command_delivery(
         installed_version: "0.1.0".to_owned(),
     }];
     let result_payload = compress_message(&result_report)?;
-    let envelope = codec.encode_report(5, now_ms()?, &result_report.report_id, &result_payload)?;
+    let envelope = codec.encode_report(7, now_ms()?, &result_report.report_id, &result_payload)?;
     let response = post_protobuf(client, &endpoint, envelope).await?;
     if response.status() != StatusCode::OK {
         return Err(invalid_data("command result report was rejected").into());
     }
     let acknowledgement =
-        codec.decode_ack(&response.bytes().await?, 5, &result_report.report_id)?;
+        codec.decode_ack(&response.bytes().await?, 7, &result_report.report_id)?;
     if AckStatus::try_from(acknowledgement.status)? != AckStatus::Committed {
         return Err(invalid_data("command result report was not committed").into());
     }
     println!("Ingest delivered and persisted an allowlisted Agent update command");
+    Ok(())
+}
+
+async fn verify_config_delivery(
+    client: &Client,
+    origin: &str,
+    state_path: &str,
+) -> Result<(), Box<dyn Error>> {
+    let session: StoredSession = serde_json::from_slice(&fs::read(state_path)?)?;
+    let root_key: [u8; 32] = hex::decode(&session.root_key_hex)?
+        .try_into()
+        .map_err(|_| invalid_data("stored E2E root key length changed"))?;
+    let nonce_prefix: [u8; 4] = hex::decode(&session.nonce_prefix_hex)?
+        .try_into()
+        .map_err(|_| invalid_data("stored E2E nonce prefix length changed"))?;
+    let codec = EnvelopeCodec::new(
+        session.agent_id.into_bytes(),
+        session.key_epoch,
+        root_key,
+        nonce_prefix,
+    )?;
+    let mut report: MachineReport =
+        decompress_message(&hex::decode(&session.compressed_payload_hex)?)?;
+    report.report_id = vec![0x8d; 16];
+    report.nominal_minute_ms -= 120_000;
+    for sample in &mut report.samples {
+        sample.observed_at_ms -= 120_000;
+    }
+    if let Some(inventory) = &mut report.container_inventory {
+        inventory.observed_at_ms -= 120_000;
+    }
+    let payload = compress_message(&report)?;
+    let endpoint = format!("{origin}/v1/reports");
+    let envelope = codec.encode_report(5, now_ms()?, &report.report_id, &payload)?;
+    let response = post_protobuf(client, &endpoint, envelope).await?;
+    if response.status() != StatusCode::OK {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(invalid_data(&format!(
+            "configuration delivery report was rejected with {status}: {body}"
+        ))
+        .into());
+    }
+    let acknowledgement = codec.decode_ack(&response.bytes().await?, 5, &report.report_id)?;
+    let config = acknowledgement
+        .config
+        .as_ref()
+        .ok_or_else(|| invalid_data("configuration ACK omitted Agent configuration"))?;
+    if acknowledgement.config_revision != 2
+        || config.revision != 2
+        || config.sample_interval_seconds != Some(15)
+        || config.report_interval_seconds != Some(120)
+        || config.container_monitoring_enabled != Some(false)
+    {
+        return Err(invalid_data("Agent configuration omitted machine collection settings").into());
+    }
+    let mut unsigned_config = config.clone();
+    unsigned_config.digest.clear();
+    if config.digest != blake3::hash(&encode_message(&unsigned_config)).as_bytes() {
+        return Err(
+            invalid_data("Agent configuration digest did not cover collection settings").into(),
+        );
+    }
+    println!("Ingest delivered authenticated Agent collection settings");
     Ok(())
 }
 
@@ -262,6 +326,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .into());
         }
         return verify_command_delivery(&client, &origin, &state_path).await;
+    }
+    if mode == "verify-config" {
+        let state_path = arguments
+            .next()
+            .ok_or_else(|| invalid_data("missing E2E session path"))?;
+        if arguments.next().is_some() || !origin.starts_with("http://127.0.0.1:") {
+            return Err(invalid_data(
+                "usage: ingest_e2e_client verify-config LOCAL_ORIGIN SESSION_PATH",
+            )
+            .into());
+        }
+        return verify_config_delivery(&client, &origin, &state_path).await;
     }
     if mode == "verify-revoked" {
         let state_path = arguments
@@ -385,7 +461,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     if AckStatus::try_from(acknowledgement.status)? != AckStatus::Committed {
         return Err(invalid_data("first durable report was not committed").into());
     }
-
     let duplicate_envelope = codec.encode_report(2, now_ms()?, &report_id, &compressed)?;
     let response = post_protobuf(&client, &reports_endpoint, duplicate_envelope).await?;
     if response.status() != StatusCode::OK {
