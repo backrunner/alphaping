@@ -46,6 +46,8 @@ interface MachineLatestRow {
   network_tx_bps: number;
   network_rx_total: number;
   network_tx_total: number;
+  load_1m_milli: number | null;
+  uptime_seconds: number | null;
 }
 
 interface ServiceRow {
@@ -102,6 +104,8 @@ export interface DashboardMachine {
   networkTxBps: number;
   networkRxTotal: number;
   networkTxTotal: number;
+  load1mMilli: number | null;
+  uptimeSeconds: number | null;
   agentVersion: string | null;
   platform: string | null;
   arch: string | null;
@@ -220,7 +224,7 @@ export async function loadDashboardSnapshot(
               `SELECT machine_pk, observed_at, received_at, state, cpu_permille,
                       memory_used_bytes, memory_total_bytes, storage_used_bytes,
                       storage_total_bytes, network_rx_bps, network_tx_bps,
-                      network_rx_total, network_tx_total
+                      network_rx_total, network_tx_total, load_1m_milli, uptime_seconds
                FROM machine_latest WHERE machine_pk IN (${placeholders(machinePks.length)})`,
             )
             .bind(...machinePks)
@@ -246,6 +250,8 @@ export async function loadDashboardSnapshot(
       networkTxBps: latest?.network_tx_bps ?? 0,
       networkRxTotal: latest?.network_rx_total ?? 0,
       networkTxTotal: latest?.network_tx_total ?? 0,
+      load1mMilli: latest?.load_1m_milli ?? null,
+      uptimeSeconds: latest?.uptime_seconds ?? null,
       agentVersion: machine.agent_version,
       platform: machine.platform,
       arch: machine.arch,

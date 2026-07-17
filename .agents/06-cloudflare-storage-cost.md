@@ -310,6 +310,7 @@ Durable Object 对比只计 request：
 中央 check 的 outbound `fetch`/TCP 是同一 Cron invocation 的 subrequest，因此不增加 Workers request 计费，但会增加 CPU 和 D1 rows。上表 storage 要求：
 
 - 常见每机约 10 个容器时，完整 machine compressed report 的确定性 fixture 上限为 2 KiB；通过 16-byte stable container key、catalog-on-change 和压缩控制。
+- optional 1 分钟 load 与 uptime 只给每个 machine sample 增加两个有界 varint，仍必须包含在同一 2 KiB/8 KiB report fixture 门禁内；系统 hostname/OS/kernel 只在 enrollment 写入 CONTROL_DB，不进入每分钟 raw payload。
 - 64 个容器的硬上限 fixture 将常规 report 限制在 8 KiB，catalog 变化 report 限制在 16 KiB；catalog 只在上次认证 ACK 后发生变化时重发。
 - Check raw result 平均不高于 512 bytes，不保存完整 response body。
 - Rollup 的实际 SQLite 物理占用平均不高于 320 bytes/row。

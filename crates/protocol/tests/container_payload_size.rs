@@ -64,6 +64,8 @@ fn report(container_count: usize, include_catalog: bool) -> MachineReport {
                 network_tx_bytes_per_second: 8_000,
                 network_rx_bytes_total: 8_000_000,
                 network_tx_bytes_total: 4_000_000,
+                load_1m_milli: Some(1_250),
+                uptime_seconds: Some(86_400 + u64::try_from(index).unwrap_or_default()),
             })
             .collect(),
         schema_version: 2,

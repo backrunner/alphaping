@@ -101,10 +101,12 @@ Server master wrapping key (MWK, Worker secret, versioned)
 - machine claim ID
 - Agent identity public key
 - request nonce
-- platform、arch、Agent version
+- platform、arch、Agent version，以及有界 hostname、OS name/version 和 kernel version
 - supported protocol versions
 - supported TLS/PQ capability
 - 对上述 canonical bytes 的 Ed25519 signature
+
+系统标识字段允许旧 Agent 省略，服务端以空值兼容滚动升级；新 enrollment 将它们一次性保存到 `CONTROL_DB.agents`，不在每分钟 report 中重复发送。字段禁止控制字符并分别执行长度上限，公共投影不返回这些内部诊断字段。
 
 ### 5.4 响应
 
@@ -147,6 +149,8 @@ ARS 不再通过任何管理 API 返回。
 - 12-byte nonce，必须等于派生 prefix + big-endian sequence
 
 Ciphertext 解密后是 `ReportBatch` protobuf。
+
+`MetricSample` 的 1 分钟 load（milli）和 uptime seconds 使用 proto3 `optional` 字段。旧 Agent 不发送时保持未知，新 reader 不把缺失误判为零；旧 reader 会忽略新字段。两项值复用既有 raw block、latest UPSERT 和按需 live frame，不改变 durable ACK 语义。
 
 ### 6.2 Nonce
 

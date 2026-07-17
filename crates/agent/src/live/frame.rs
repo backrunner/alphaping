@@ -100,6 +100,8 @@ mod tests {
             observed_at_ms: 1_752_580_800_000,
             cpu_permille: 417,
             memory_used_bytes: 2_048,
+            load_1m_milli: Some(1_250),
+            uptime_seconds: Some(86_400),
             ..MetricSample::default()
         };
         let credential = credential(sample.observed_at_ms + 60_000);

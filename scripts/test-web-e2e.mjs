@@ -13,8 +13,14 @@ const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const arguments_ = process.argv.slice(2);
 const skipBuild = arguments_.includes("--skip-build");
 const inspectSetup = arguments_.includes("--inspect-setup");
-if (arguments_.some((argument) => !["--skip-build", "--inspect-setup"].includes(argument))) {
-  throw new Error("Usage: test-web-e2e.mjs [--skip-build] [--inspect-setup]");
+const inspectManagement = arguments_.includes("--inspect-management");
+if (
+  arguments_.some(
+    (argument) => !["--skip-build", "--inspect-setup", "--inspect-management"].includes(argument),
+  ) ||
+  (inspectSetup && inspectManagement)
+) {
+  throw new Error("Usage: test-web-e2e.mjs [--skip-build] [--inspect-setup|--inspect-management]");
 }
 
 function run(command, args, label, options = {}) {
@@ -404,6 +410,18 @@ try {
     queryControlDb: (sql) => queryD1("CONTROL_DB", sql),
     queryTelemetryDb: (sql) => queryD1("TELEMETRY_DB", sql),
   });
+
+  if (inspectManagement) {
+    console.log(`Management inspection server: ${baseUrl}/login`);
+    console.log(
+      "Sign in as admin@example.test; press Ctrl+C to stop and remove temporary D1 state",
+    );
+    await new Promise((resolveStop) => {
+      process.once("SIGINT", resolveStop);
+      process.once("SIGTERM", resolveStop);
+    });
+    throw new SetupInspectionComplete();
+  }
 
   console.log("Web E2E setup, management, RBAC, dashboard, and public status flows passed");
 } catch (cause) {

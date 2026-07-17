@@ -495,7 +495,8 @@ try {
   };
   const [agent] = query(
     "CONTROL_DB",
-    `SELECT a.status, a.agent_version, a.last_seen_at, t.used_at, k.revoked_at,
+    `SELECT a.status, a.agent_version, a.hostname, a.os_name, a.last_seen_at,
+      t.used_at, k.revoked_at,
       LENGTH(k.wrapped_data_key) AS wrapped_key_bytes,
       (SELECT state FROM agent_commands WHERE id = '${commandId}') AS command_state,
       (SELECT result_code FROM agent_commands WHERE id = '${commandId}') AS command_result,
@@ -512,6 +513,10 @@ try {
   if (
     agent?.status !== "active" ||
     agent.agent_version !== "business-marker-1" ||
+    typeof agent.hostname !== "string" ||
+    agent.hostname.length === 0 ||
+    typeof agent.os_name !== "string" ||
+    agent.os_name.length === 0 ||
     !Number.isInteger(agent.last_seen_at) ||
     !Number.isInteger(agent.used_at) ||
     !Number.isInteger(agent.revoked_at) ||
@@ -533,6 +538,8 @@ try {
         (report_3 IS NOT NULL) + (report_4 IS NOT NULL)) FROM telemetry_blocks_5m)
         AS populated_slots,
       (SELECT cpu_permille FROM machine_latest WHERE machine_pk = 1) AS cpu_permille,
+      (SELECT load_1m_milli FROM machine_latest WHERE machine_pk = 1) AS load_1m_milli,
+      (SELECT uptime_seconds FROM machine_latest WHERE machine_pk = 1) AS uptime_seconds,
       (SELECT state FROM machine_latest WHERE machine_pk = 1) AS machine_state,
       (SELECT container_inventory_json FROM machine_latest WHERE machine_pk = 1)
         AS container_inventory_json,
@@ -547,6 +554,8 @@ try {
     ![1, 2, 3].includes(telemetry?.block_count) ||
     telemetry.populated_slots !== 4 ||
     telemetry.cpu_permille !== 980 ||
+    telemetry.load_1m_milli !== 1250 ||
+    telemetry.uptime_seconds !== 86405 ||
     telemetry.machine_state !== "down" ||
     telemetry.highest_sequence !== 7 ||
     telemetry.recovery_events !== 1 ||

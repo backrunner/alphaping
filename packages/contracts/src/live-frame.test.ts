@@ -31,7 +31,20 @@ function varint(value: number): number[] {
 }
 
 function metricSample(observedAt: number): Uint8Array {
-  const values = [observedAt, 417, 2_048, 8_192, 4_096, 16_384, 512, 256, 65_536, 32_768];
+  const values = [
+    observedAt,
+    417,
+    2_048,
+    8_192,
+    4_096,
+    16_384,
+    512,
+    256,
+    65_536,
+    32_768,
+    1_250,
+    86_400,
+  ];
   return new Uint8Array(
     values.flatMap((value, index) => [((index + 1) << 3) | 0, ...varint(value)]),
   );
@@ -84,6 +97,8 @@ describe("live frame contract", () => {
       networkTxBps: 256,
       networkRxTotal: 65_536,
       networkTxTotal: 32_768,
+      load1mMilli: 1_250,
+      uptimeSeconds: 86_400,
     });
     expect(parseLiveViewerMessage(JSON.stringify(snapshot))).toEqual(snapshot);
   });

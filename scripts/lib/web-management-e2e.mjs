@@ -222,9 +222,11 @@ export async function runWebManagementE2e({
   queryControlDb(
     `INSERT INTO agents
       (id, workspace_id, machine_id, identity_public_key, platform, arch, agent_version,
-       protocol_version, status, applied_config_revision, created_at)
+       protocol_version, hostname, os_name, os_version, kernel_version, status,
+       applied_config_revision, created_at, last_seen_at)
      SELECT '${agentId}', workspace_id, id, X'${"01".repeat(32)}', 'linux', 'x86_64',
-       '0.1.0', 1, 'active', 1, ${Date.now()} FROM machines WHERE id = '${machine.id}'`,
+       '0.1.0', 1, 'edge-e2e.local', 'Linux', '6.8', '6.8.0-e2e', 'active', 1,
+       ${Date.now()}, ${Date.now()} FROM machines WHERE id = '${machine.id}'`,
   );
   const latestAt = Date.now();
   const containerInventory = JSON.stringify({
@@ -285,10 +287,10 @@ export async function runWebManagementE2e({
       (machine_pk, workspace_pk, agent_id, observed_at, received_at, state,
        cpu_permille, memory_used_bytes, memory_total_bytes, storage_used_bytes,
        storage_total_bytes, network_rx_bps, network_tx_bps, network_rx_total,
-       network_tx_total, report_id, container_inventory_json)
+       network_tx_total, load_1m_milli, uptime_seconds, report_id, container_inventory_json)
      VALUES (${machine.telemetry_pk}, 1, '${agentId}', ${latestAt}, ${latestAt}, 'healthy',
        420, 2147483648, 4294967296, 8589934592, 17179869184, 4096, 2048,
-       1000000, 500000, X'01010101010101010101010101010101',
+       1000000, 500000, 1250, 273600, X'01010101010101010101010101010101',
        ${sqlString(containerInventory)})`,
   );
   response = await fetch(`${baseUrl}/operations`, { headers: { cookie: adminCookie } });
@@ -302,7 +304,12 @@ export async function runWebManagementE2e({
   });
   assertResponse(response, 200, "administrator machine latest API");
   const latest = await response.json();
-  if (latest.latest.cpuPermille !== 420 || latest.latest.state !== "healthy") {
+  if (
+    latest.latest.cpuPermille !== 420 ||
+    latest.latest.load1mMilli !== 1250 ||
+    latest.latest.uptimeSeconds !== 273600 ||
+    latest.latest.state !== "healthy"
+  ) {
     throw new Error("machine latest API did not return the durable telemetry projection");
   }
   response = await fetch(`${baseUrl}/operations/machines/${machine.id}`, {
@@ -317,6 +324,11 @@ export async function runWebManagementE2e({
     "apple-container",
     "api-runtime-e2e",
     "healthy",
+    "edge-e2e.local",
+    "Linux 6.8",
+    "1.25",
+    "3d 4h",
+    "profile_stopped",
   ]) {
     if (!machineDetail.includes(expected)) {
       throw new Error(`machine detail omitted container projection value ${expected}`);

@@ -297,7 +297,7 @@ impl Spool {
             workspace_pk,
             nominal_minute_ms: nominal_minute,
             samples,
-            schema_version: 3,
+            schema_version: 4,
             container_inventory,
             probe_results,
             applied_config_revision: self.applied_config_revision()?,

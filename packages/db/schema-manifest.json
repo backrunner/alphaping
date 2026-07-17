@@ -46,6 +46,10 @@
         {
           "file": "0011_check_policy.sql",
           "sha256": "099094e3b335a4464c73591a1bed5066a0b03be21fe1165b7fd84b948eab9a31"
+        },
+        {
+          "file": "0012_agent_system_info.sql",
+          "sha256": "7cd577dc60834eaab74cbf936a94eff035f083fb586ffc34518ea0aeb824eba3"
         }
       ],
       "objects": [
@@ -245,7 +249,7 @@
           "type": "table",
           "name": "agents",
           "table": "agents",
-          "sql": "CREATE TABLE agents (\n  id TEXT PRIMARY KEY NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  machine_id TEXT NOT NULL REFERENCES machines (id) ON DELETE CASCADE,\n  identity_public_key BLOB NOT NULL,\n  platform TEXT NOT NULL,\n  arch TEXT NOT NULL,\n  agent_version TEXT NOT NULL,\n  protocol_version INTEGER NOT NULL,\n  status TEXT NOT NULL CHECK (status IN ('active', 'revoked')),\n  applied_config_revision INTEGER NOT NULL DEFAULT 0,\n  created_at INTEGER NOT NULL,\n  last_seen_at INTEGER,\n  revoked_at INTEGER\n) STRICT"
+          "sql": "CREATE TABLE agents (\n  id TEXT PRIMARY KEY NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  machine_id TEXT NOT NULL REFERENCES machines (id) ON DELETE CASCADE,\n  identity_public_key BLOB NOT NULL,\n  platform TEXT NOT NULL,\n  arch TEXT NOT NULL,\n  agent_version TEXT NOT NULL,\n  protocol_version INTEGER NOT NULL,\n  status TEXT NOT NULL CHECK (status IN ('active', 'revoked')),\n  applied_config_revision INTEGER NOT NULL DEFAULT 0,\n  created_at INTEGER NOT NULL,\n  last_seen_at INTEGER,\n  revoked_at INTEGER\n, hostname TEXT NOT NULL DEFAULT '', os_name TEXT NOT NULL DEFAULT '', os_version TEXT NOT NULL DEFAULT '', kernel_version TEXT NOT NULL DEFAULT '') STRICT"
         },
         {
           "type": "table",
@@ -430,6 +434,10 @@
         {
           "file": "0006_check_policy.sql",
           "sha256": "58a8a93375e9d55e12d7e4ad78921b5e87db6b8d3c9df1a266d3b47a7f53dd72"
+        },
+        {
+          "file": "0007_machine_diagnostics.sql",
+          "sha256": "8102be29b4376a15ad34f1eb2dba2caa9b70c7b6e43ba621505792b998e6d7d5"
         }
       ],
       "objects": [
@@ -635,7 +643,7 @@
           "type": "table",
           "name": "agents",
           "table": "agents",
-          "sql": "CREATE TABLE agents (\n  id TEXT PRIMARY KEY NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  machine_id TEXT NOT NULL REFERENCES machines (id) ON DELETE CASCADE,\n  identity_public_key BLOB NOT NULL,\n  platform TEXT NOT NULL,\n  arch TEXT NOT NULL,\n  agent_version TEXT NOT NULL,\n  protocol_version INTEGER NOT NULL,\n  status TEXT NOT NULL CHECK (status IN ('active', 'revoked')),\n  applied_config_revision INTEGER NOT NULL DEFAULT 0,\n  created_at INTEGER NOT NULL,\n  last_seen_at INTEGER,\n  revoked_at INTEGER\n) STRICT"
+          "sql": "CREATE TABLE agents (\n  id TEXT PRIMARY KEY NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  machine_id TEXT NOT NULL REFERENCES machines (id) ON DELETE CASCADE,\n  identity_public_key BLOB NOT NULL,\n  platform TEXT NOT NULL,\n  arch TEXT NOT NULL,\n  agent_version TEXT NOT NULL,\n  protocol_version INTEGER NOT NULL,\n  status TEXT NOT NULL CHECK (status IN ('active', 'revoked')),\n  applied_config_revision INTEGER NOT NULL DEFAULT 0,\n  created_at INTEGER NOT NULL,\n  last_seen_at INTEGER,\n  revoked_at INTEGER\n, hostname TEXT NOT NULL DEFAULT '', os_name TEXT NOT NULL DEFAULT '', os_version TEXT NOT NULL DEFAULT '', kernel_version TEXT NOT NULL DEFAULT '') STRICT"
         },
         {
           "type": "table",
@@ -743,7 +751,7 @@
           "type": "table",
           "name": "machine_latest",
           "table": "machine_latest",
-          "sql": "CREATE TABLE machine_latest (\n  machine_pk INTEGER PRIMARY KEY NOT NULL,\n  workspace_pk INTEGER NOT NULL,\n  agent_id TEXT NOT NULL,\n  observed_at INTEGER NOT NULL,\n  received_at INTEGER NOT NULL,\n  state TEXT NOT NULL CHECK (state IN (\n    'healthy', 'degraded', 'down', 'offline', 'maintenance', 'unknown'\n  )),\n  cpu_permille INTEGER NOT NULL,\n  memory_used_bytes INTEGER NOT NULL,\n  memory_total_bytes INTEGER NOT NULL,\n  storage_used_bytes INTEGER NOT NULL,\n  storage_total_bytes INTEGER NOT NULL,\n  network_rx_bps INTEGER NOT NULL,\n  network_tx_bps INTEGER NOT NULL,\n  network_rx_total INTEGER NOT NULL,\n  network_tx_total INTEGER NOT NULL,\n  report_id BLOB NOT NULL\n, container_inventory_json TEXT) STRICT"
+          "sql": "CREATE TABLE machine_latest (\n  machine_pk INTEGER PRIMARY KEY NOT NULL,\n  workspace_pk INTEGER NOT NULL,\n  agent_id TEXT NOT NULL,\n  observed_at INTEGER NOT NULL,\n  received_at INTEGER NOT NULL,\n  state TEXT NOT NULL CHECK (state IN (\n    'healthy', 'degraded', 'down', 'offline', 'maintenance', 'unknown'\n  )),\n  cpu_permille INTEGER NOT NULL,\n  memory_used_bytes INTEGER NOT NULL,\n  memory_total_bytes INTEGER NOT NULL,\n  storage_used_bytes INTEGER NOT NULL,\n  storage_total_bytes INTEGER NOT NULL,\n  network_rx_bps INTEGER NOT NULL,\n  network_tx_bps INTEGER NOT NULL,\n  network_rx_total INTEGER NOT NULL,\n  network_tx_total INTEGER NOT NULL,\n  report_id BLOB NOT NULL\n, container_inventory_json TEXT, load_1m_milli INTEGER, uptime_seconds INTEGER) STRICT"
         },
         {
           "type": "table",

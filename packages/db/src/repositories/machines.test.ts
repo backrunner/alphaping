@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { MachineHistoryRangeError, validateMachineHistoryRange } from "./machine-history.js";
 import { parseProbeTarget } from "./machine-probes.js";
-import { parseContainerInventory } from "./machines.js";
+import { parseContainerInventory, resolveLastMachineError } from "./machines.js";
 
 describe("machine history range", () => {
   it("allows the bounded dashboard ranges", () => {
@@ -71,6 +71,44 @@ describe("container inventory projection", () => {
         }),
       ),
     ).toBeNull();
+  });
+});
+
+describe("machine diagnostics", () => {
+  it("selects the newest bounded Agent or runtime error", () => {
+    const inventory = parseContainerInventory(
+      JSON.stringify({
+        observedAt: 20_000,
+        runtimes: [
+          {
+            kind: "colima-docker",
+            instance: "default",
+            availability: "stopped",
+            version: "",
+            detailCode: "profile_stopped",
+          },
+        ],
+        containers: [],
+      }),
+    );
+    expect(
+      resolveLastMachineError(
+        [
+          {
+            type: "check_update",
+            state: "failed",
+            result_code: "metadata_expired",
+            created_at: 10_000,
+            completed_at: 15_000,
+          },
+        ],
+        inventory,
+      ),
+    ).toMatchObject({
+      code: "profile_stopped",
+      source: "container-runtime",
+      occurredAt: 20_000,
+    });
   });
 });
 

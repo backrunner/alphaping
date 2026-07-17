@@ -71,6 +71,8 @@ CREATE TABLE telemetry_blocks_5m (
 
 历史补报不会覆盖当前状态。
 
+除 CPU、内存、存储和网络外，latest 保存可空的 `load_1m_milli` 与 `uptime_seconds`。它们来自最后一个 `MetricSample`；旧 Agent 缺省字段时保持未知，不能在查询层伪造为零。
+
 ### 3.3 `machine_rollups_5m` / `machine_rollups_1h`
 
 - 每个 5 分钟 bucket 关闭后只写一次。
@@ -131,7 +133,7 @@ GET /api/workspaces/:wid/services/:sid/status-buckets
 
 - Dashboard SSR/初次进入始终从 D1 latest 起步。
 - 只有机器详情 Overview tab 可见时才建立 Live Hub WebSocket；viewer ticket 最长 5 分钟，在 expiry 前 10 秒重连刷新。
-- Viewer 每 15 秒刷新 30 秒 demand TTL；有有效 demand 时 Agent 每 10 秒发当前 snapshot。
+- Viewer 每 15 秒刷新 30 秒 demand TTL；有有效 demand 时 Agent 每 10 秒发包含 optional load/uptime 的当前 snapshot。
 - 浏览器只接受 observed time 比当前画面新且不超过 20 秒的帧。
 - WebSocket 断开或超过 20 秒无帧时，标记 live degraded 并切换到 30 秒 D1 polling；不因 live 断开将机器标记为 offline。
 

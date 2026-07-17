@@ -59,6 +59,12 @@ interface MachineRow {
   arch: string | null;
   applied_config_revision: number | null;
   agent_id: string | null;
+  agent_hostname: string | null;
+  agent_os_name: string | null;
+  agent_os_version: string | null;
+  agent_kernel_version: string | null;
+  agent_created_at: number | null;
+  agent_last_seen_at: number | null;
 }
 
 interface MachineLatestRow {
@@ -75,7 +81,9 @@ interface MachineLatestRow {
   network_tx_bps: number;
   network_rx_total: number;
   network_tx_total: number;
-  container_inventory_json: string | null;
+  load_1m_milli: number | null;
+  uptime_seconds: number | null;
+  container_inventory_json?: string | null;
 }
 
 interface EventRow {
@@ -145,7 +153,9 @@ async function loadMachineRows(
                 m.sampling_interval_seconds, m.report_interval_seconds, m.offline_after_seconds,
                 m.container_monitoring_enabled, m.maintenance_until, m.desired_config_revision,
                 m.created_at, a.agent_version, a.platform, a.arch, a.applied_config_revision,
-                a.id AS agent_id
+                a.id AS agent_id, a.hostname AS agent_hostname, a.os_name AS agent_os_name,
+                a.os_version AS agent_os_version, a.kernel_version AS agent_kernel_version,
+                a.created_at AS agent_created_at, a.last_seen_at AS agent_last_seen_at
          FROM machines m LEFT JOIN agents a ON a.machine_id = m.id AND a.status = 'active'
          WHERE m.workspace_id = ? AND m.deleted_at IS NULL ORDER BY m.name LIMIT 500`,
       )
@@ -165,7 +175,9 @@ async function loadMachineRow(
               m.sampling_interval_seconds, m.report_interval_seconds, m.offline_after_seconds,
               m.container_monitoring_enabled, m.maintenance_until, m.desired_config_revision,
               m.created_at, a.agent_version, a.platform, a.arch, a.applied_config_revision,
-              a.id AS agent_id
+              a.id AS agent_id, a.hostname AS agent_hostname, a.os_name AS agent_os_name,
+              a.os_version AS agent_os_version, a.kernel_version AS agent_kernel_version,
+              a.created_at AS agent_created_at, a.last_seen_at AS agent_last_seen_at
        FROM machines m LEFT JOIN agents a ON a.machine_id = m.id AND a.status = 'active'
        WHERE m.workspace_id = ? AND m.id = ? AND m.deleted_at IS NULL`,
     )
@@ -187,13 +199,29 @@ async function loadLatestRows(
       .prepare(
         `SELECT machine_pk, observed_at, received_at, state, cpu_permille,
                 memory_used_bytes, memory_total_bytes, storage_used_bytes, storage_total_bytes,
-                network_rx_bps, network_tx_bps, network_rx_total, network_tx_total
-                , container_inventory_json
+                network_rx_bps, network_tx_bps, network_rx_total, network_tx_total,
+                load_1m_milli, uptime_seconds
          FROM machine_latest WHERE machine_pk IN (${placeholders(machinePks.length)})`,
       )
       .bind(...machinePks)
       .all<MachineLatestRow>()
   ).results;
+}
+
+async function loadLatestDetailRow(
+  telemetryDb: D1Database,
+  machinePk: number,
+): Promise<MachineLatestRow | null> {
+  return telemetryDb
+    .prepare(
+      `SELECT machine_pk, observed_at, received_at, state, cpu_permille,
+              memory_used_bytes, memory_total_bytes, storage_used_bytes, storage_total_bytes,
+              network_rx_bps, network_tx_bps, network_rx_total, network_tx_total,
+              load_1m_milli, uptime_seconds, container_inventory_json
+       FROM machine_latest WHERE machine_pk = ?`,
+    )
+    .bind(machinePk)
+    .first<MachineLatestRow>();
 }
 
 const runtimeKinds = new Set<MachineRuntimeStatus["kind"]>([
@@ -383,11 +411,51 @@ function toDashboardMachine(
     networkTxBps: latest?.network_tx_bps ?? 0,
     networkRxTotal: latest?.network_rx_total ?? 0,
     networkTxTotal: latest?.network_tx_total ?? 0,
+    load1mMilli: latest?.load_1m_milli ?? null,
+    uptimeSeconds: latest?.uptime_seconds ?? null,
     agentVersion: machine.agent_version,
     platform: machine.platform,
     arch: machine.arch,
     containersEnabled: machine.container_monitoring_enabled === 1,
   };
+}
+
+function nonempty(value: string | null): string | null {
+  return value && value.length > 0 ? value : null;
+}
+
+export function resolveLastMachineError(
+  commands: readonly {
+    type: AgentCommandRow["type"];
+    state: AgentCommandRow["state"];
+    result_code: string | null;
+    created_at: number;
+    completed_at: number | null;
+  }[],
+  inventory: MachineContainerInventory | null,
+): MachineDetail["lastError"] {
+  const failedCommand = commands
+    .filter((command) => command.state === "failed")
+    .map((command) => ({
+      code: nonempty(command.result_code) ?? "command_failed",
+      source: "agent-command" as const,
+      sourceLabel: command.type,
+      occurredAt: command.completed_at ?? command.created_at,
+    }))
+    .sort((left, right) => right.occurredAt - left.occurredAt)[0];
+  const runtimeError = inventory?.runtimes
+    .filter((runtime) =>
+      ["stopped", "permission-denied", "incompatible", "error"].includes(runtime.availability),
+    )
+    .map((runtime) => ({
+      code: nonempty(runtime.detailCode) ?? runtime.availability,
+      source: "container-runtime" as const,
+      sourceLabel: runtime.instance ? `${runtime.kind}:${runtime.instance}` : runtime.kind,
+      occurredAt: inventory.observedAt,
+    }))[0];
+  if (!failedCommand) return runtimeError ?? null;
+  if (!runtimeError) return failedCommand;
+  return failedCommand.occurredAt >= runtimeError.occurredAt ? failedCommand : runtimeError;
 }
 
 function parseLabels(value: string): Readonly<Record<string, string>> {
@@ -499,8 +567,8 @@ export async function loadMachineDetail(
     userId,
     machineId,
   );
-  const latestRows = await loadLatestRows(telemetryDb, [machine.telemetry_pk]);
-  const inventory = parseContainerInventory(latestRows[0]?.container_inventory_json ?? null);
+  const latestRow = await loadLatestDetailRow(telemetryDb, machine.telemetry_pk);
+  const inventory = parseContainerInventory(latestRow?.container_inventory_json ?? null);
   const canManage = canAccessResource(
     access.workspace.role,
     access.grants,
@@ -527,17 +595,16 @@ export async function loadMachineDetail(
     machine.agent_id,
     now,
   );
-  const commandRows =
-    machine.agent_id && canManage
-      ? await controlDb
-          .prepare(
-            `SELECT id, type, state, result_code, created_at, completed_at
+  const commandRows = machine.agent_id
+    ? await controlDb
+        .prepare(
+          `SELECT id, type, state, result_code, created_at, completed_at
              FROM agent_commands WHERE agent_id = ?
              ORDER BY created_at DESC LIMIT 8`,
-          )
-          .bind(machine.agent_id)
-          .all<AgentCommandRow>()
-      : { results: [] as AgentCommandRow[] };
+        )
+        .bind(machine.agent_id)
+        .all<AgentCommandRow>()
+    : { results: [] as AgentCommandRow[] };
   return {
     workspace: {
       id: access.workspace.id,
@@ -559,26 +626,34 @@ export async function loadMachineDetail(
       desiredConfigRevision: machine.desired_config_revision,
       createdAt: machine.created_at,
     },
-    latest: toDashboardMachine(machine, latestRows[0], now),
-    latestReceivedAt: latestRows[0]?.received_at ?? null,
-    agent:
-      machine.agent_version && machine.platform && machine.arch
-        ? {
-            id: machine.agent_id ?? "",
-            version: machine.agent_version,
-            platform: machine.platform,
-            arch: machine.arch,
-            appliedConfigRevision: machine.applied_config_revision ?? 0,
-          }
-        : null,
-    agentCommands: commandRows.results.map((command) => ({
-      id: command.id,
-      type: command.type,
-      state: command.state,
-      resultCode: command.result_code,
-      createdAt: command.created_at,
-      completedAt: command.completed_at,
-    })),
+    latest: toDashboardMachine(machine, latestRow ?? undefined, now),
+    latestReceivedAt: latestRow?.received_at ?? null,
+    agent: machine.agent_id
+      ? {
+          id: machine.agent_id,
+          version: machine.agent_version ?? "",
+          platform: machine.platform ?? "",
+          arch: machine.arch ?? "",
+          hostname: nonempty(machine.agent_hostname),
+          osName: nonempty(machine.agent_os_name),
+          osVersion: nonempty(machine.agent_os_version),
+          kernelVersion: nonempty(machine.agent_kernel_version),
+          appliedConfigRevision: machine.applied_config_revision ?? 0,
+          enrolledAt: machine.agent_created_at ?? machine.created_at,
+          lastSeenAt: machine.agent_last_seen_at,
+        }
+      : null,
+    lastError: resolveLastMachineError(commandRows.results, inventory),
+    agentCommands: canManage
+      ? commandRows.results.map((command) => ({
+          id: command.id,
+          type: command.type,
+          state: command.state,
+          resultCode: command.result_code,
+          createdAt: command.created_at,
+          completedAt: command.completed_at,
+        }))
+      : [],
     events: events.results.map((event) => ({
       occurredAt: event.occurred_at,
       previousState: event.previous_state,

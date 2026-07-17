@@ -25,6 +25,10 @@ pub const CPU_DOWN_PERMILLE: u32 = 950;
 pub const CAPACITY_DEGRADED_PERMILLE: u64 = 850;
 pub const CAPACITY_DOWN_PERMILLE: u64 = 950;
 
+fn bounded_system_text(value: &str, maximum: usize) -> bool {
+    value.len() <= maximum && value.chars().all(|character| !character.is_control())
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MachineHealthState {
     Healthy,
@@ -130,6 +134,10 @@ pub fn validate_enrollment_request(
         || enrollment.arch.len() > 32
         || enrollment.agent_version.is_empty()
         || enrollment.agent_version.len() > 32
+        || !bounded_system_text(&enrollment.hostname, 253)
+        || !bounded_system_text(&enrollment.os_name, 64)
+        || !bounded_system_text(&enrollment.os_version, 128)
+        || !bounded_system_text(&enrollment.kernel_version, 128)
         || enrollment.signature.len() != 64
     {
         return Err(EnrollmentValidationError::Fields);
@@ -197,6 +205,9 @@ pub fn validate_report(
                 && sample.memory_used_bytes > sample.memory_total_bytes)
             || (sample.storage_total_bytes > 0
                 && sample.storage_used_bytes > sample.storage_total_bytes)
+            || sample
+                .uptime_seconds
+                .is_some_and(|uptime| uptime > MAX_SAFE_SEQUENCE)
     }) {
         return Err(ValidationError::ReportTime);
     }
@@ -353,12 +364,28 @@ mod tests {
             supported_protocol_versions: vec![PROTOCOL_VERSION],
             pq_hybrid: true,
             signature: Vec::new(),
+            hostname: "edge-01.example.test".to_owned(),
+            os_name: "Linux".to_owned(),
+            os_version: "6.8".to_owned(),
+            kernel_version: "6.8.0-test".to_owned(),
         };
         request.signature = signing_key
             .sign(&encode_message(&request))
             .to_bytes()
             .to_vec();
         assert_eq!(validate_enrollment_request(&request), Ok(()));
+
+        let mut invalid_system_info = request.clone();
+        invalid_system_info.hostname = "edge-01\nforged".to_owned();
+        invalid_system_info.signature.clear();
+        invalid_system_info.signature = signing_key
+            .sign(&encode_message(&invalid_system_info))
+            .to_bytes()
+            .to_vec();
+        assert_eq!(
+            validate_enrollment_request(&invalid_system_info),
+            Err(EnrollmentValidationError::Fields)
+        );
 
         request.machine_claim_id = "018f5f7e-7d28-7e12-a521-000000000000".to_owned();
         assert_eq!(

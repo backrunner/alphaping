@@ -396,8 +396,10 @@ async fn handle_enrollment(mut request: Request, env: Env) -> Result<Response, I
                 .prepare(
                     "INSERT INTO agents
                       (id, workspace_id, machine_id, identity_public_key, platform, arch,
-                       agent_version, protocol_version, status, applied_config_revision, created_at)
-                     SELECT ?, t.workspace_id, t.machine_id, ?, ?, ?, ?, ?, 'active', ?, ?
+                       agent_version, protocol_version, hostname, os_name, os_version,
+                       kernel_version, status, applied_config_revision, created_at)
+                     SELECT ?, t.workspace_id, t.machine_id, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                            'active', ?, ?
                      FROM agent_enrollment_tokens t
                      WHERE t.id = ? AND t.used_by_agent_id = ?",
                 )
@@ -408,6 +410,10 @@ async fn handle_enrollment(mut request: Request, env: Env) -> Result<Response, I
                     text(&enrollment.arch),
                     text(&enrollment.agent_version),
                     unsigned(u64::from(enrollment.protocol_version)),
+                    text(&enrollment.hostname),
+                    text(&enrollment.os_name),
+                    text(&enrollment.os_version),
+                    text(&enrollment.kernel_version),
                     unsigned(token.config_revision as u64),
                     number(now),
                     text(&token.id),
@@ -677,8 +683,9 @@ fn latest_statement(
               (machine_pk, workspace_pk, agent_id, observed_at, received_at, state,
                cpu_permille, memory_used_bytes, memory_total_bytes, storage_used_bytes,
                storage_total_bytes, network_rx_bps, network_tx_bps, network_rx_total,
-               network_tx_total, report_id, container_inventory_json)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               network_tx_total, load_1m_milli, uptime_seconds, report_id,
+               container_inventory_json)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(machine_pk) DO UPDATE SET
                workspace_pk = excluded.workspace_pk,
                agent_id = excluded.agent_id,
@@ -694,6 +701,8 @@ fn latest_statement(
                network_tx_bps = excluded.network_tx_bps,
                network_rx_total = excluded.network_rx_total,
                network_tx_total = excluded.network_tx_total,
+               load_1m_milli = excluded.load_1m_milli,
+               uptime_seconds = excluded.uptime_seconds,
                report_id = excluded.report_id,
                container_inventory_json = COALESCE(
                  excluded.container_inventory_json, machine_latest.container_inventory_json
@@ -716,6 +725,10 @@ fn latest_statement(
             unsigned(latest.network_tx_bytes_per_second),
             unsigned(latest.network_rx_bytes_total),
             unsigned(latest.network_tx_bytes_total),
+            latest
+                .load_1m_milli
+                .map_or(JsValue::NULL, |value| unsigned(u64::from(value))),
+            latest.uptime_seconds.map_or(JsValue::NULL, unsigned),
             blob(&report.report_id),
             optional_text(container_inventory.as_deref()),
         ])?)

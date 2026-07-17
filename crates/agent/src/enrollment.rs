@@ -45,6 +45,10 @@ pub fn build_enrollment_proof(token: &str, machine_claim_id: &str) -> Result<Enr
         supported_protocol_versions: vec![PROTOCOL_VERSION],
         pq_hybrid: true,
         signature: Vec::new(),
+        hostname: sysinfo::System::host_name().unwrap_or_default(),
+        os_name: sysinfo::System::name().unwrap_or_default(),
+        os_version: sysinfo::System::os_version().unwrap_or_default(),
+        kernel_version: sysinfo::System::kernel_version().unwrap_or_default(),
     };
     request.signature = SigningKey::from_bytes(&identity_private_key)
         .sign(&encode_message(&request))

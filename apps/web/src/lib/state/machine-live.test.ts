@@ -32,13 +32,15 @@ describe("machine live browser boundaries", () => {
           networkTxBps: 256,
           networkRxTotal: 65_536,
           networkTxTotal: 32_768,
+          load1mMilli: 1_250,
+          uptimeSeconds: 86_400,
           agentVersion: "0.1.0",
           platform: "linux",
           arch: "x86_64",
           containersEnabled: true,
         },
       }),
-    ).toMatchObject({ state: "healthy", cpuPermille: 420 });
+    ).toMatchObject({ state: "healthy", cpuPermille: 420, load1mMilli: 1_250 });
   });
 
   it("rejects plaintext sockets, expired tickets, and malformed metrics", () => {

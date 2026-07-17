@@ -30,6 +30,8 @@ export interface LiveViewerSnapshot {
   networkTxBps: number;
   networkRxTotal: number;
   networkTxTotal: number;
+  load1mMilli: number | null;
+  uptimeSeconds: number | null;
 }
 
 function safeNumber(value: bigint): number {
@@ -102,14 +104,16 @@ export function decodeLiveMetricSample(
   if (bytes.byteLength === 0 || bytes.byteLength > 2_048) {
     throw new Error("invalid_live_metric_size");
   }
-  const values = Array.from({ length: 10 }, () => 0);
+  const values: Array<number | null> = Array.from({ length: 12 }, (_, index) =>
+    index < 10 ? 0 : null,
+  );
   let offset = 0;
   while (offset < bytes.length) {
     const tag = readVarint(bytes, offset);
     offset = tag.next;
     const field = Number(tag.value >> 3n);
     const wireType = Number(tag.value & 0x07n);
-    if (field >= 1 && field <= 10) {
+    if (field >= 1 && field <= 12) {
       if (wireType !== 0) throw new Error("invalid_live_metric_wire_type");
       const decoded = readVarint(bytes, offset);
       values[field - 1] = safeNumber(decoded.value);
@@ -132,6 +136,8 @@ export function decodeLiveMetricSample(
     networkTxBps: values[7] ?? 0,
     networkRxTotal: values[8] ?? 0,
     networkTxTotal: values[9] ?? 0,
+    load1mMilli: values[10] ?? null,
+    uptimeSeconds: values[11] ?? null,
   };
 }
 
@@ -190,6 +196,10 @@ function metricValue(data: Readonly<Record<string, unknown>>, key: string): numb
   return value;
 }
 
+function optionalMetricValue(data: Readonly<Record<string, unknown>>, key: string): number | null {
+  return data[key] === null ? null : metricValue(data, key);
+}
+
 export function parseLiveViewerMessage(value: string): LiveViewerSnapshot {
   if (value.length > 4_096) throw new Error("invalid_live_viewer_message");
   const parsed = JSON.parse(value) as unknown;
@@ -207,6 +217,8 @@ export function parseLiveViewerMessage(value: string): LiveViewerSnapshot {
   const networkTxBps = metricValue(data, "networkTxBps");
   const networkRxTotal = metricValue(data, "networkRxTotal");
   const networkTxTotal = metricValue(data, "networkTxTotal");
+  const load1mMilli = optionalMetricValue(data, "load1mMilli");
+  const uptimeSeconds = optionalMetricValue(data, "uptimeSeconds");
   if (
     data.type !== "snapshot" ||
     typeof data.topic !== "string" ||
@@ -228,5 +240,7 @@ export function parseLiveViewerMessage(value: string): LiveViewerSnapshot {
     networkTxBps,
     networkRxTotal,
     networkTxTotal,
+    load1mMilli,
+    uptimeSeconds,
   };
 }

@@ -428,6 +428,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             network_tx_bytes_per_second: 2_048 + u64::from(index),
             network_rx_bytes_total: 1_000_000 + u64::from(index) * 40_960,
             network_tx_bytes_total: 500_000 + u64::from(index) * 20_480,
+            load_1m_milli: Some(1_200 + index * 10),
+            uptime_seconds: Some(86_400 + u64::from(index)),
         })
         .collect();
     let report = MachineReport {
@@ -436,7 +438,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         workspace_pk: enrollment.workspace_pk,
         nominal_minute_ms: nominal_minute,
         samples,
-        schema_version: 3,
+        schema_version: 4,
         container_inventory: Some(container_inventory(now)),
         probe_results: Vec::new(),
         applied_config_revision: enrollment.config_revision,

@@ -94,7 +94,19 @@ export interface MachineDetail {
     version: string;
     platform: string;
     arch: string;
+    hostname: string | null;
+    osName: string | null;
+    osVersion: string | null;
+    kernelVersion: string | null;
     appliedConfigRevision: number;
+    enrolledAt: number;
+    lastSeenAt: number | null;
+  } | null;
+  lastError: {
+    code: string;
+    source: "agent-command" | "container-runtime";
+    sourceLabel: string;
+    occurredAt: number;
   } | null;
   agentCommands: readonly {
     id: string;

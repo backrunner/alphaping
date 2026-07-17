@@ -15,6 +15,8 @@ export const machineLatest = sqliteTable("machine_latest", {
   networkTxBps: integer("network_tx_bps").notNull(),
   networkRxTotal: integer("network_rx_total").notNull(),
   networkTxTotal: integer("network_tx_total").notNull(),
+  load1mMilli: integer("load_1m_milli"),
+  uptimeSeconds: integer("uptime_seconds"),
   reportId: blob("report_id", { mode: "buffer" }).notNull(),
   containerInventoryJson: text("container_inventory_json"),
 });

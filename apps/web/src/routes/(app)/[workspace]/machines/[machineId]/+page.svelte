@@ -34,10 +34,10 @@
 
   const tabs = $derived([
     { id: "overview" as const, label: "Overview" },
-    { id: "probes" as const, label: "Probe tasks" },
+    { id: "probes" as const, label: "Probes" },
     ...(data.machine.containersEnabled ? [{ id: "containers" as const, label: "Containers" }] : []),
     { id: "events" as const, label: "Events" },
-    ...(data.canManage ? [{ id: "config" as const, label: "Configuration" }] : []),
+    ...(data.canManage ? [{ id: "config" as const, label: "Config" }] : []),
   ]);
 
   function handleTabKeydown(event: KeyboardEvent, index: number) {
@@ -65,6 +65,8 @@
       networkTxBps: snapshot.networkTxBps,
       networkRxTotal: snapshot.networkRxTotal,
       networkTxTotal: snapshot.networkTxTotal,
+      load1mMilli: snapshot.load1mMilli,
+      uptimeSeconds: snapshot.uptimeSeconds,
     };
   }
 
@@ -248,6 +250,14 @@
   }
 
   @media (max-width: 520px) {
+    .tabs {
+      gap: 0;
+    }
+
+    .tabs button {
+      padding-inline: 8px;
+    }
+
     .title-row {
       align-items: flex-start;
       flex-wrap: wrap;

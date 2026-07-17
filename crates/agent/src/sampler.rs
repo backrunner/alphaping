@@ -50,6 +50,9 @@ impl Sampler {
                     )
                 });
         let elapsed_seconds = elapsed.as_secs_f64().max(0.001);
+        let load_1m_milli = (System::load_average().one.max(0.0) * 1_000.0)
+            .round()
+            .min(f64::from(u32::MAX)) as u32;
 
         MetricSample {
             observed_at_ms,
@@ -62,6 +65,8 @@ impl Sampler {
             network_tx_bytes_per_second: (tx_delta as f64 / elapsed_seconds).round() as u64,
             network_rx_bytes_total: rx_total,
             network_tx_bytes_total: tx_total,
+            load_1m_milli: Some(load_1m_milli),
+            uptime_seconds: Some(System::uptime()),
         }
     }
 }

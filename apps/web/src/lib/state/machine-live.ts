@@ -84,6 +84,8 @@ export function parseMachineLiveFallback(value: unknown): DashboardMachine {
   const networkTxBps = metric(latest.networkTxBps);
   const networkRxTotal = metric(latest.networkRxTotal);
   const networkTxTotal = metric(latest.networkTxTotal);
+  const load1mMilli = latest.load1mMilli === null ? null : metric(latest.load1mMilli);
+  const uptimeSeconds = latest.uptimeSeconds === null ? null : metric(latest.uptimeSeconds);
   const machineLabels = labels(latest.labels);
   if (
     typeof latest.id !== "string" ||
@@ -101,6 +103,8 @@ export function parseMachineLiveFallback(value: unknown): DashboardMachine {
     networkTxBps === null ||
     networkRxTotal === null ||
     networkTxTotal === null ||
+    (load1mMilli === null && latest.load1mMilli !== null) ||
+    (uptimeSeconds === null && latest.uptimeSeconds !== null) ||
     (latest.agentVersion !== null && typeof latest.agentVersion !== "string") ||
     (latest.platform !== null && typeof latest.platform !== "string") ||
     (latest.arch !== null && typeof latest.arch !== "string") ||
@@ -123,6 +127,8 @@ export function parseMachineLiveFallback(value: unknown): DashboardMachine {
     networkTxBps,
     networkRxTotal,
     networkTxTotal,
+    load1mMilli,
+    uptimeSeconds,
     agentVersion: latest.agentVersion,
     platform: latest.platform,
     arch: latest.arch,

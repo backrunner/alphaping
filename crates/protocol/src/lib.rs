@@ -62,6 +62,8 @@ mod tests {
             cpu_permille: 412,
             memory_used_bytes: 1_024,
             memory_total_bytes: 2_048,
+            load_1m_milli: Some(1_250),
+            uptime_seconds: Some(86_400),
             ..MetricSample::default()
         };
         let compressed = compress_message(&sample).expect("sample should compress");

@@ -130,6 +130,7 @@ Better Auth 核心表由其 schema 生成并纳入统一 migration：
 - `id`, `workspace_id`, `machine_id`
 - `identity_public_key`
 - `platform`, `arch`, `agent_version`, `protocol_version`
+- `hostname`, `os_name`, `os_version`, `kernel_version`，只在 enrollment 时采集有界系统标识
 - `status`: `active|revoked`
 - `applied_config_revision`
 - `created_at`, `last_seen_at`, `revoked_at`
@@ -199,19 +200,19 @@ Better Auth 核心表由其 schema 生成并纳入统一 migration：
 - `machine_id`, `workspace_id`, `agent_id`
 - `observed_at`, `received_at`
 - `status`, `status_reason`
-- `cpu_basis_points`
+- `cpu_permille`
 - `load_1m_milli`
 - `memory_used_bytes`, `memory_total_bytes`
 - `storage_used_bytes`, `storage_total_bytes`
 - `network_rx_bps`, `network_tx_bps`
-- `network_rx_total_bytes`, `network_tx_total_bytes`
+- `network_rx_total`, `network_tx_total`
 - `uptime_seconds`
 - `agent_version`, `config_revision`
 - `container_inventory_json`，只放经过边界校验的当前 runtime/container 投影；不含 runtime 内部 container ID、环境变量、secret、日志或挂载内容
 
 主键 `machine_id`。Dashboard 先从 `CONTROL_DB` 取得已授权 machine PK，再以主键 `IN (...)` 查询 latest 并计算总览。30 台规模不写 `workspace_status_summary`；对 500 台目标也只需分块读取 500 行，在实测证明有瓶颈前不增加高频汇总写入。
 
-Ingest 从每个 durable report 的最后一个样本计算 `healthy|degraded|down|maintenance`，其中 `degraded/down` 分别映射 UI 的“降级/故障”。计算发生在已有 latest UPSERT 内，不增加稳态 D1 写；只有状态发生变化时才向 `state_events` 追加一条由 report ID 幂等约束的事件。
+`load_1m_milli` 与 `uptime_seconds` 是可空兼容字段：旧 Agent 的报告保持可接受，界面明确显示未知；新 Agent 在 durable report 和按需 live frame 中发送 optional 标量。Ingest 从每个 durable report 的最后一个样本计算 `healthy|degraded|down|maintenance`，其中 `degraded/down` 分别映射 UI 的“降级/故障”。计算发生在已有 latest UPSERT 内，不增加稳态 D1 写；只有状态发生变化时才向 `state_events` 追加一条由 report ID 幂等约束的事件。
 
 ## 6. 机器历史汇总
 
