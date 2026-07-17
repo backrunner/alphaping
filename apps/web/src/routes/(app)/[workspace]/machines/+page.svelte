@@ -1,6 +1,7 @@
 <script lang="ts">
   import { page } from "$app/state";
   import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Search, Server } from "lucide-svelte";
+  import { SvelteURLSearchParams } from "svelte/reactivity";
 
   import MachineCard from "$components/machines/machine-card.svelte";
   import Button from "$components/ui/button/button.svelte";
@@ -38,7 +39,7 @@
   }
 
   function filterHref(name: string, value: string): string {
-    const params = new URLSearchParams(page.url.searchParams);
+    const params = new SvelteURLSearchParams(page.url.searchParams);
     if (value === "" || value === "all" || value === "priority") params.delete(name);
     else params.set(name, value);
     params.delete("page");
@@ -47,7 +48,7 @@
   }
 
   function paginationHref(value: number): string {
-    const params = new URLSearchParams(page.url.searchParams);
+    const params = new SvelteURLSearchParams(page.url.searchParams);
     if (value <= 1) params.delete("page");
     else params.set("page", String(value));
     const query = params.toString();

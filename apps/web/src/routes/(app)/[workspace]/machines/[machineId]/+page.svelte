@@ -148,7 +148,6 @@
     {:else if activeTab === "config" && data.canManage}
       <MachineConfig machine={data.machine} result={form ?? null} />
       <MachineEnrollment
-        machineId={data.machine.id}
         tokens={data.enrollmentTokens}
         result={form ?? null}
         ingestOrigin={data.ingestOrigin}

@@ -14,7 +14,6 @@
   };
 
   let {
-    machineId,
     tokens,
     result,
     ingestOrigin,
@@ -22,7 +21,6 @@
     checksums,
     manageHref,
   }: {
-    machineId: string;
     tokens: readonly Token[];
     result: Record<string, unknown> | null;
     ingestOrigin: string;

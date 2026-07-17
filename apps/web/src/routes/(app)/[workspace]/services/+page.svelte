@@ -8,6 +8,7 @@
     Search,
     SquareActivity,
   } from "lucide-svelte";
+  import { SvelteURLSearchParams } from "svelte/reactivity";
 
   import ServiceMonitorTable from "$components/services/service-monitor-table.svelte";
   import Button from "$components/ui/button/button.svelte";
@@ -34,7 +35,7 @@
   type StatusFilter = (typeof statusOptions)[number];
 
   function filterHref(name: string, value: string): string {
-    const params = new URLSearchParams(page.url.searchParams);
+    const params = new SvelteURLSearchParams(page.url.searchParams);
     if (value === "" || value === "all") params.delete(name);
     else params.set(name, value);
     params.delete("page");
@@ -43,7 +44,7 @@
   }
 
   function paginationHref(value: number): string {
-    const params = new URLSearchParams(page.url.searchParams);
+    const params = new SvelteURLSearchParams(page.url.searchParams);
     if (value <= 1) params.delete("page");
     else params.set("page", String(value));
     const query = params.toString();
