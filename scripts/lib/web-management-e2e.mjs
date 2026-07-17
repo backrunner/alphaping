@@ -1156,8 +1156,11 @@ export async function runWebManagementE2e({
   }
   response = await fetch(`${baseUrl}/status/operations`);
   assertResponse(response, 200, "public status page");
-  if (response.headers.get("cache-control") !== "public, max-age=30, stale-while-revalidate=300") {
+  if (response.headers.get("cache-control") !== "public, max-age=30, must-revalidate") {
     throw new Error("public status page cache policy is incorrect");
+  }
+  if (response.headers.get("x-alphaping-status-source") !== "live") {
+    throw new Error("public status page did not identify its live projection source");
   }
   const publicPage = await response.text();
   for (const expected of [
@@ -1171,6 +1174,35 @@ export async function runWebManagementE2e({
   }
   for (const privateValue of ["192.0.2.10", "e2e-private-value", "Expired maintenance notice"]) {
     if (publicPage.includes(privateValue)) throw new Error(`public status leaked ${privateValue}`);
+  }
+  for (const [binding, table] of [
+    ["telemetry", "machine_latest"],
+    ["control", "workspaces"],
+  ]) {
+    const query = binding === "telemetry" ? queryTelemetryDb : queryControlDb;
+    query(`ALTER TABLE ${table} RENAME TO ${table}_unavailable`);
+    try {
+      response = await fetch(`${baseUrl}/status/operations?fallback=${binding}-${Date.now()}`);
+      assertResponse(response, 200, `public status ${binding} database fallback`);
+      if (
+        response.headers.get("cache-control") !== "public, max-age=0, must-revalidate" ||
+        response.headers.get("x-alphaping-status-source") !== "snapshot"
+      ) {
+        throw new Error(
+          `public status ${binding} fallback cache policy is incorrect: ${response.headers.get("cache-control")} / ${response.headers.get("x-alphaping-status-source")}`,
+        );
+      }
+      const fallbackPage = await response.text();
+      if (
+        !fallbackPage.includes("Live status is temporarily unavailable") ||
+        !fallbackPage.includes("AlphaPing API E2E") ||
+        fallbackPage.includes("e2e-private-value")
+      ) {
+        throw new Error(`public status ${binding} fallback was stale or leaked private data`);
+      }
+    } finally {
+      query(`ALTER TABLE ${table}_unavailable RENAME TO ${table}`);
+    }
   }
 
   await submitAction(

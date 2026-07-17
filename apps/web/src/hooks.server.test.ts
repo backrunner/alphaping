@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { requiresPrivateCaching } from "./hooks.server.js";
+import { isPublicStatusPath, requiresPrivateCaching } from "./hooks.server.js";
 
 describe("private response caching", () => {
   it("keeps authenticated and credential-bearing routes out of shared caches", () => {
@@ -12,5 +12,7 @@ describe("private response caching", () => {
 
   it("allows public status responses to define their own caching", () => {
     expect(requiresPrivateCaching("/status/operations", false)).toBe(false);
+    expect(isPublicStatusPath("/status/operations")).toBe(true);
+    expect(isPublicStatusPath("/operations/status")).toBe(false);
   });
 });

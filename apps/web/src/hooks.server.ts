@@ -21,6 +21,10 @@ export function requiresPrivateCaching(pathname: string, authenticated: boolean)
   );
 }
 
+export function isPublicStatusPath(pathname: string): boolean {
+  return pathname.startsWith("/status/");
+}
+
 export const handle: Handle = async ({ event, resolve }) => {
   event.locals.auth = null;
   event.locals.session = null;
@@ -33,6 +37,12 @@ export const handle: Handle = async ({ event, resolve }) => {
     const response = await resolve(event);
     for (const [name, value] of Object.entries(SECURITY_HEADERS)) response.headers.set(name, value);
     response.headers.set("cache-control", "private, no-store");
+    return response;
+  }
+
+  if (isPublicStatusPath(pathname)) {
+    const response = await resolve(event);
+    for (const [name, value] of Object.entries(SECURITY_HEADERS)) response.headers.set(name, value);
     return response;
   }
 
