@@ -83,4 +83,5 @@ Time Travel 是 destructive 操作，执行前必须记录当前 bookmark/恢复
 - 建议每月一次长期 export，并在 destructive migration 前额外执行一次。
 - 备份保留 3 个或 90 天作为默认起点，按组织合规要求调整。
 - 私有 R2 Standard 的前 10 GB-month、每月 1 million Class A 和 10 million Class B 在 included usage 内；备份只产生少量对象操作。超过 included 后按当前 R2 价格计费。
-- 通过 R2 lifecycle 删除到期 backup prefix，不让 retention Worker 扫描在线 telemetry object，因为在线 telemetry object 不存在。
+- 上传到私有 R2 时给每个 backup object 写入 `alphaping-expires-at-ms` custom metadata。Retention Worker 每小时只扫描 `backups/v1/`/`exports/v1/` 的有界页并删除显式到期对象；无 metadata 对象不会自动删除。
+- R2 lifecycle 可以作为 90 天 age-based 灾备兜底，但不能替代 Worker 的精确到期元数据。两者都不扫描或存放在线 telemetry object。

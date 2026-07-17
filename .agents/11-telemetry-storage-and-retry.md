@@ -353,7 +353,7 @@ delay = cap(attempt)/2 + random(0, cap(attempt)/2)
 - DELETE 也计入 D1 rows written，成本估算必须同时计算 INSERT 和过期 DELETE。
 - Cron 至少一次，所有 batch 幂等可续跑。
 - CONTROL_DB 中超过 30 天审计窗口的 terminal/未送达 Agent command 直接删除；近期到期的 `pending|delivered` 命令更新为 `expired`。公告失效 7 天后再物理删除。
-- R2 retention 只处理 export/backup artifact。
+- R2 retention 只 list `exports/v1/` 和 `backups/v1/`，每个 prefix 每小时最多 500 object。对象只有带合法 `alphaping-expires-at-ms` custom metadata 且已到期才删除；无元数据对象保留，避免误删旧格式或手工 artifact。prefix cursor 与 5 分钟 lease 保存在 D1，失败后可续跑。
 
 ## 12. 成本与扩展摘要
 

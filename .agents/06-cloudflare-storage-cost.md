@@ -10,7 +10,7 @@
 - Rust Ingest Worker 验证后直接以 D1 batch/transaction 持久化，只在成功后返回加密 durable ACK。
 - Live Worker 使用按 workspace 路由的 Durable Object Hibernation WebSocket，Dashboard 有订阅时让 Agent 每 10 秒发一个非持久 live snapshot。
 - Checks Worker 每分钟 Cron 扫描 due task，最多 5 并发直接执行 HTTP/TCP 检查。
-- Retention Worker 按 resource/time cursor 分批删除 D1 过期行。
+- Retention Worker 按 resource/time cursor 分批删除 D1 过期行，并按两个固定 prefix 清理显式到期的 R2 artifact。
 - 不使用 Telemetry Queue、Telemetry Worker、Durable Objects 持久遥测或 R2 遥测对象。Durable Object 只是可丢失的 live coordination layer。
 - R2 只放用户主动生成的导出和备份 artifact。
 
@@ -65,6 +65,7 @@
 - Queues：1 million operations included，超出 0.40 USD/million；正常消息交付通常是 write/read/delete 三次 operation。
 - Durable Objects：1 million requests included，超出 0.15 USD/million，另有 duration 和 SQLite storage 费用。AlphaPing 只用 Hibernation WebSocket live hub，不用其 SQLite 保存权威遥测。
 - R2：在本架构中不产生遥测主路径费用。
+- R2 Standard 包含 10 GB-month、1 million Class A 和 10 million Class B；Class A 超出后为 4.50 USD/million，`DeleteObject` 免费。Retention 每小时只做两次 `ListObjects`。
 
 ## 4. 30 台机器精确流量
 
@@ -151,6 +152,8 @@ Agent command delivery 在每个 report 增加一次 `(agent_id,state,not_before
 机器离线收敛复用 Checks Worker 现有每分钟 Cron，不增加 Worker request。每台每分钟最多读取一条 CONTROL_DB 配置和一条 TELEMETRY_DB latest；100 台增加 8.64m rows read/月。按 100+100 的 dashboard、scheduler、Agent path、liveness 和 5m reserve 合计约 68.36m rows read/月，只占 Paid included reads 的 0.273%。离线/恢复只在状态转换时写 latest/event，低频写入由 25% margin 覆盖。
 
 Retention 每个 workspace 每小时最多写 7 个 resource cursor、1 次 workspace lease claim 和 1 次 lease release，即 `9 * 720 = 6,480` cursor rows written/月。一个常见单 workspace 部署只占 30 台模型 2.484m margin 的 0.261%。Agent command expiry/completion partial indexes 只随低频管理命令变化，不进入稳态遥测账本。
+
+R2 artifact retention 每小时对 `exports/v1/` 和 `backups/v1/` 各执行一次最多 500 object 的 list，并为每个 prefix 做一次 D1 lease claim 和 release。固定成本为每月 `2 * 720 = 1,440` Class A 和 `4 * 720 = 2,880` D1 cursor writes；分别只占 R2 included Class A 的 0.144% 和 D1 write margin 的 0.116%。DeleteObject 免费。该成本不随 machine/service 数量增长，只随积压 artifact 跨更多 hourly cursor 周期收敛。
 
 软删除 finalizer 复用同一 hourly invocation 和 workspace lease。无待删除资源时只增加有界候选读取；物理删除只发生在用户删除资源之后，并替代该资源未来的常规 retention DELETE，因此不进入稳态按月写入基线，也不新增 Worker request。
 

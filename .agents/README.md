@@ -19,6 +19,7 @@
 | [11-telemetry-storage-and-retry.md](./11-telemetry-storage-and-retry.md) | 可查询遥测主存储、Agent 本地缓冲、补报与退避 |
 | [12-release-and-agent-updates.md](./12-release-and-agent-updates.md) | 发布密钥仪式、签名元数据、首次安装信任、更新命令与回滚 |
 | [13-d1-backup-and-recovery.md](./13-d1-backup-and-recovery.md) | D1 Time Travel、可验证 SQL 备份、恢复演练与生产切换顺序 |
+| [14-implementation-evidence.md](./14-implementation-evidence.md) | V1 验收标准到代码、测试、成本和外部环境证据的映射 |
 | [skills](./skills) | 项目内 Codex skills，约束后续实现和评审 |
 
 ## 已确定的核心决策
@@ -29,7 +30,7 @@
 4. Agent 每 60 秒通过 HTTPS/HTTP2 发送 durable report，并在响应中拉取配置和命令。另外保持 Hibernation WebSocket，只在 Dashboard 有 viewer 时每 10 秒发非持久 live snapshot。
 5. Cloudflare 侧支持 HTTP 和 TCP 检查，不承诺 ICMP。ICMP Ping 由 Agent 执行。
 6. `CONTROL_DB` 保存 Better Auth、RBAC 和配置，`TELEMETRY_DB` 保存最新状态、状态事件和可查询时序数据。每个 60 秒 report 写入 5 分钟 block 的一个固定 slot，完整保留其中 6 个 10 秒 samples。
-7. R2 不作为在线遥测主存储，只保存用户主动生成的导出或备份 artifact。独立 retention Worker 负责 `TELEMETRY_DB` 分批清理。
+7. R2 不作为在线遥测主存储，只保存用户主动生成的导出或备份 artifact。独立 retention Worker 负责 `TELEMETRY_DB` 分批清理和两个固定 R2 artifact prefix 的到期删除。
 8. Agent 到 Cloudflare 使用 TLS 1.3 `X25519MLKEM768` 混合密钥协商，并用轮换的 AES-256-GCM 应用数据密钥加密 Protobuf 报文。
 9. 权限模型包含管理员、普通用户和游客。普通用户获得资源级 `view`/`manage` 权限，游客只能访问显式公开的投影数据。
 10. 项目使用 Apache-2.0 发布，目标仓库为 `alkinum/alphaping`，开发提交身份为 `BackRunner <dev@backrunner.top>`。
