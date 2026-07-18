@@ -39,6 +39,22 @@ async function fetchDashboard(baseUrl, adminCookie) {
   return { durationMs, html };
 }
 
+async function fetchMachineCollection(baseUrl, adminCookie) {
+  const response = await fetch(`${baseUrl}/operations/machines`, {
+    headers: { cookie: adminCookie },
+  });
+  const html = await response.text();
+  if (response.status !== 200) {
+    throw new Error(
+      `500-machine collection returned ${response.status}, expected 200; body starts with ${JSON.stringify(html.slice(0, 500))}`,
+    );
+  }
+  if (response.headers.get("cache-control") !== "private, no-store") {
+    throw new Error("500-machine collection was not marked private");
+  }
+  return html;
+}
+
 export async function runWebPerformanceE2e({
   baseUrl,
   adminCookie,
@@ -125,6 +141,14 @@ export async function runWebPerformanceE2e({
   ).count;
   if (latestCount !== MACHINE_TARGET) {
     throw new Error(`performance fixture contains ${latestCount} latest rows, expected 500`);
+  }
+
+  const machineCollection = await fetchMachineCollection(baseUrl, adminCookie);
+  if (
+    !machineCollection.includes(machineRows[0].name) ||
+    !machineCollection.includes(machineRows.at(-1).name)
+  ) {
+    throw new Error("500-machine collection did not render the complete bounded resource set");
   }
 
   await fetchDashboard(baseUrl, adminCookie);
