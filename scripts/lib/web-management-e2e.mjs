@@ -483,6 +483,20 @@ export async function runWebManagementE2e({
   });
   assertResponse(response, 200, "administrator machine container projection");
   const machineDetail = await response.text();
+  const machineConfigResponse = await fetch(
+    `${baseUrl}/operations/machines/${machine.id}?tab=config`,
+    { headers: { cookie: adminCookie } },
+  );
+  assertResponse(machineConfigResponse, 200, "administrator machine Config tab");
+  const machineConfigDetail = await machineConfigResponse.text();
+  const agentVersionPattern = String.raw`[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.\-]+)?(\+[0-9A-Za-z.\-]+)?`;
+  if (!machineConfigDetail.includes(`pattern="${agentVersionPattern}"`)) {
+    throw new Error("machine Config tab omitted the browser-safe exact version pattern");
+  }
+  const browserVersionPattern = new RegExp(`^(?:${agentVersionPattern})$`, "v");
+  if (!browserVersionPattern.test("1.2.3-rc.1+build.7") || browserVersionPattern.test("invalid")) {
+    throw new Error("browser exact version pattern did not enforce semantic version syntax");
+  }
   for (const expected of [
     "docker",
     "colima-docker",
@@ -500,7 +514,7 @@ export async function runWebManagementE2e({
       throw new Error(`machine detail omitted container projection value ${expected}`);
     }
   }
-  await submitAction(
+  const checkUpdateAction = await submitAction(
     baseUrl,
     `/operations/machines/${machine.id}?/checkUpdate`,
     adminCookie,
@@ -508,6 +522,11 @@ export async function runWebManagementE2e({
     "administrator forced update check",
     { type: "redirect", actionStatus: 303 },
   );
+  if (!checkUpdateAction.serialized.includes(`machines/${machine.id}?tab=config`)) {
+    throw new Error(
+      "Agent command did not return the administrator to the visible lifecycle panel",
+    );
+  }
   const queuedCommand = onlyRow(
     queryControlDb(
       `SELECT type, payload_json, state, attempt_limit, payload_schema_version
@@ -523,6 +542,40 @@ export async function runWebManagementE2e({
     queuedCommand.payload_schema_version !== 1
   ) {
     throw new Error("forced update check was not queued with the allowlisted command schema");
+  }
+  const installVersionAction = await submitAction(
+    baseUrl,
+    `/operations/machines/${machine.id}?/installVersion`,
+    adminCookie,
+    { version: "1.2.3-rc.1+build.7", bypassRollout: "on" },
+    "administrator exact version install",
+    { type: "redirect", actionStatus: 303 },
+  );
+  if (!installVersionAction.serialized.includes(`machines/${machine.id}?tab=config`)) {
+    throw new Error("version install did not return the administrator to the lifecycle panel");
+  }
+  const installCommand = onlyRow(
+    queryControlDb(
+      `SELECT payload_json FROM agent_commands
+       WHERE agent_id = '${agentId}' AND type = 'install_version'`,
+    ),
+    "queued exact version install lookup",
+  );
+  if (installCommand.payload_json !== '{"version":"1.2.3-rc.1+build.7","bypassRollout":true}') {
+    throw new Error("exact version install did not preserve the complete semantic version");
+  }
+  const invalidCommandPage = await submitHtmlAction(
+    baseUrl,
+    `/operations/machines/${machine.id}?/installVersion`,
+    adminCookie,
+    { version: "invalid" },
+    "invalid Agent version feedback",
+  );
+  if (
+    !invalidCommandPage.includes("Version must be an exact semantic version") ||
+    !invalidCommandPage.includes("Agent lifecycle")
+  ) {
+    throw new Error("invalid Agent command feedback was hidden outside the Config panel");
   }
 
   await submitAction(

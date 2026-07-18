@@ -50,7 +50,7 @@
         <input
           name="version"
           required
-          pattern="[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?"
+          pattern="[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.\-]+)?(\+[0-9A-Za-z.\-]+)?"
           placeholder="0.2.0"
         />
       </label>

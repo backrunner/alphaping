@@ -20,6 +20,7 @@
     return data.canManage &&
       (form?.kind === "machineConfig" ||
         form?.kind === "enrollment" ||
+        form?.command !== undefined ||
         data.requestedTab === "config")
       ? "config"
       : "overview";
@@ -31,6 +32,7 @@
   }
 
   let currentLatest = $state<DashboardMachine>(initialLatest());
+  const deleteError = $derived(form?.kind === "delete" && "message" in form ? form.message : null);
 
   const tabs = $derived([
     { id: "overview" as const, label: "Overview" },
@@ -115,6 +117,8 @@
       onFallback={applyDurableFallback}
     />
   </header>
+
+  {#if deleteError}<p class="page-error" role="alert">{deleteError}</p>{/if}
 
   <div class="tabs" role="tablist" aria-label="Machine details">
     {#each tabs as tab, index}
@@ -222,6 +226,15 @@
   .page-header p span::before {
     margin-right: 9px;
     content: "·";
+  }
+
+  .page-error {
+    margin: 10px 0 0;
+    padding: 8px 10px;
+    border-radius: 6px;
+    color: var(--status-down);
+    background: var(--status-down-bg);
+    font-size: 11px;
   }
 
   .tabs {

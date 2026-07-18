@@ -55,7 +55,9 @@ async function commandAction(
   event: Parameters<Actions[string]>[0],
   type: "check_update" | "install_version" | "redetect_runtimes",
 ) {
-  if (!event.locals.session || !event.platform) return fail(401, { message: "Unauthorized" });
+  if (!event.locals.session || !event.platform) {
+    return fail(401, { command: type, message: "Unauthorized" });
+  }
   const form = await event.request.formData();
   try {
     await queueAgentCommand(
@@ -73,12 +75,14 @@ async function commandAction(
     const message = isHttpError(cause) ? cause.body.message : "Agent command failed";
     return fail(isHttpError(cause) ? cause.status : 400, { command: type, message });
   }
-  throw redirect(303, `/${event.params.workspace}/machines/${event.params.machineId}`);
+  throw redirect(303, `/${event.params.workspace}/machines/${event.params.machineId}?tab=config`);
 }
 
 export const actions: Actions = {
   delete: async ({ locals, params, platform }) => {
-    if (!locals.session || !platform) return fail(401, { message: "Unauthorized" });
+    if (!locals.session || !platform) {
+      return fail(401, { kind: "delete", message: "Unauthorized" });
+    }
     try {
       await softDeleteResource(
         platform.env.CONTROL_DB,
@@ -89,7 +93,7 @@ export const actions: Actions = {
       );
     } catch (cause) {
       const message = isHttpError(cause) ? cause.body.message : "Machine deletion failed";
-      return fail(isHttpError(cause) ? cause.status : 400, { message });
+      return fail(isHttpError(cause) ? cause.status : 400, { kind: "delete", message });
     }
     throw redirect(303, `/${params.workspace}/machines`);
   },
