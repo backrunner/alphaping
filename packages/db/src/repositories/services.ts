@@ -491,12 +491,13 @@ export async function loadServiceDetail(
       ? (
           await controlDb
             .prepare(
-              `SELECT check_id, source, operator, selector, expected_json, severity
-               FROM check_assertions
-               WHERE check_id IN (${placeholders(checks.length)})
-               ORDER BY check_id, sort_order LIMIT 400`,
+              `SELECT a.check_id, a.source, a.operator, a.selector, a.expected_json, a.severity
+               FROM check_assertions a
+               JOIN check_configs c ON c.id = a.check_id
+               WHERE c.workspace_id = ? AND c.service_id = ?
+               ORDER BY a.check_id, a.sort_order LIMIT 400`,
             )
-            .bind(...checks.map((check) => check.id))
+            .bind(access.workspace.id, service.id)
             .all<CheckAssertionRow>()
         ).results
       : [];

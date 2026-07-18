@@ -9,6 +9,8 @@ const SSR_HTML_LIMIT_BYTES = 250_000;
 const TELEMETRY_PK_BASE = 1_000_000;
 const SERVICE_TELEMETRY_PK_BASE = 2_000_000;
 const CHECK_TELEMETRY_PK_BASE = 3_000_000;
+const SERVICE_DETAIL_CHECK_TARGET = 101;
+const SERVICE_DETAIL_CHECK_PK_BASE = 4_000_000;
 
 function onlyRow(rows, label) {
   if (rows.length !== 1) throw new Error(`${label} returned ${rows.length} rows, expected one`);
@@ -70,6 +72,22 @@ async function fetchServiceCollection(baseUrl, adminCookie) {
   }
   if (response.headers.get("cache-control") !== "private, no-store") {
     throw new Error("200-service collection was not marked private");
+  }
+  return html;
+}
+
+async function fetchServiceDetail(baseUrl, adminCookie, serviceId) {
+  const response = await fetch(`${baseUrl}/operations/services/${serviceId}`, {
+    headers: { cookie: adminCookie },
+  });
+  const html = await response.text();
+  if (response.status !== 200) {
+    throw new Error(
+      `101-check service detail returned ${response.status}, expected 200; body starts with ${JSON.stringify(html.slice(0, 500))}`,
+    );
+  }
+  if (response.headers.get("cache-control") !== "private, no-store") {
+    throw new Error("101-check service detail was not marked private");
   }
   return html;
 }
@@ -194,6 +212,23 @@ export async function runWebPerformanceE2e({
               ${now}, ${now}
        FROM services WHERE id LIKE 'performance-service-%'`,
     );
+    queryControlDb(
+      `WITH RECURSIVE sequence(value) AS (
+         VALUES (1)
+         UNION ALL SELECT value + 1 FROM sequence WHERE value < ${SERVICE_DETAIL_CHECK_TARGET}
+       )
+       INSERT INTO check_configs
+         (id, telemetry_pk, workspace_id, service_id, name, kind, executor_kind,
+          enabled, interval_seconds, phase_seconds, timeout_ms, request_json,
+          created_at, updated_at)
+       SELECT printf('performance-detail-check-%03d', value),
+              ${SERVICE_DETAIL_CHECK_PK_BASE} + value, ${sqlString(workspace.id)},
+              'performance-service-001', printf('Scale check %03d', value),
+              'http', 'cloudflare', 1, 300, 0, 5000,
+              '{"url":"https://example.com/detail","method":"GET","expectedStatus":[200],"assertions":[]}',
+              ${now}, ${now}
+       FROM sequence`,
+    );
     queryTelemetryDb(
       `WITH RECURSIVE sequence(value) AS (
          VALUES (1)
@@ -239,7 +274,7 @@ export async function runWebPerformanceE2e({
   }
 
   const serviceRows = queryControlDb(
-    `SELECT name FROM services
+    `SELECT id, name FROM services
      WHERE workspace_id = ${sqlString(workspace.id)} AND deleted_at IS NULL
      ORDER BY name`,
   );
@@ -318,6 +353,14 @@ export async function runWebPerformanceE2e({
     !serviceCollection.includes(serviceRows.at(-1).name)
   ) {
     throw new Error("200-service collection did not render the complete bounded resource set");
+  }
+  const detailService = serviceRows.find((service) => service.id === "performance-service-001");
+  if (!detailService) throw new Error("performance service detail fixture is missing");
+  const serviceDetail = await fetchServiceDetail(baseUrl, adminCookie, detailService.id);
+  if (
+    !serviceDetail.includes(`Scale check ${String(SERVICE_DETAIL_CHECK_TARGET).padStart(3, "0")}`)
+  ) {
+    throw new Error("101-check service detail omitted the final check");
   }
   const publicStatus = await fetchPublicStatus(baseUrl);
   for (const resource of [
