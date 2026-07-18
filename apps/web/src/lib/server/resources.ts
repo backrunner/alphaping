@@ -461,8 +461,9 @@ export async function revokeMachineEnrollmentToken(
     before: enrollmentTokenSummary(token, now),
     after: { ...enrollmentTokenSummary(token, now), revokedAt: now, state: "revoked" },
     now,
+    onlyIfPreviousStatementChanged: true,
   });
-  await db.batch([
+  const [updateResult] = await db.batch([
     db
       .prepare(
         `UPDATE agent_enrollment_tokens SET revoked_at = ?
@@ -472,6 +473,9 @@ export async function revokeMachineEnrollmentToken(
       .bind(now, tokenId, access.workspaceId, machineId),
     audit,
   ]);
+  if (updateResult?.meta.changes !== 1) {
+    throw error(409, "Enrollment token is no longer revocable");
+  }
 }
 
 export async function regenerateMachineEnrollmentToken(
@@ -546,7 +550,7 @@ function advanceServiceAgentConfigurationsStatement(
   return db
     .prepare(
       `UPDATE machines SET desired_config_revision = desired_config_revision + 1, updated_at = ?
-       WHERE workspace_id = ? AND deleted_at IS NULL AND id IN (
+       WHERE changes() = 1 AND workspace_id = ? AND deleted_at IS NULL AND id IN (
          SELECT a.machine_id FROM check_configs c
          JOIN agents a ON a.id = c.executor_agent_id AND a.status = 'active'
          WHERE c.workspace_id = ? AND c.service_id = ? AND c.executor_kind = 'agent'
@@ -584,18 +588,23 @@ export async function softDeleteResource(
     before: { name: resource.name, deletedAt: null },
     after: { name: resource.name, deletedAt: now },
     now,
+    onlyIfPreviousStatementChanged: true,
   });
-  await db.batch([
+  const [updateResult] = await db.batch([
     db
       .prepare(
-        `UPDATE ${table} SET deleted_at = ?, updated_at = ? WHERE id = ? AND workspace_id = ?`,
+        `UPDATE ${table} SET deleted_at = ?, updated_at = ?
+         WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL`,
       )
       .bind(now, now, resourceId, access.workspaceId),
+    audit,
     ...(type === "service"
       ? [advanceServiceAgentConfigurationsStatement(db, access.workspaceId, resourceId, now)]
       : []),
-    audit,
   ]);
+  if (updateResult?.meta.changes !== 1) {
+    throw error(409, "Resource state changed; reload and try again");
+  }
 }
 
 export async function listDeletedResources(
@@ -662,16 +671,21 @@ export async function restoreResource(
     before: { name: resource.name, deletedAt: resource.deleted_at },
     after: { name: resource.name, deletedAt: null },
     now,
+    onlyIfPreviousStatementChanged: true,
   });
-  await db.batch([
+  const [updateResult] = await db.batch([
     db
       .prepare(
-        `UPDATE ${table} SET deleted_at = NULL, updated_at = ? WHERE id = ? AND workspace_id = ?`,
+        `UPDATE ${table} SET deleted_at = NULL, updated_at = ?
+         WHERE id = ? AND workspace_id = ? AND deleted_at = ?`,
       )
-      .bind(now, resourceId, access.workspaceId),
+      .bind(now, resourceId, access.workspaceId, resource.deleted_at),
+    audit,
     ...(type === "service"
       ? [advanceServiceAgentConfigurationsStatement(db, access.workspaceId, resourceId, now)]
       : []),
-    audit,
   ]);
+  if (updateResult?.meta.changes !== 1) {
+    throw error(409, "Resource state changed; reload and try again");
+  }
 }

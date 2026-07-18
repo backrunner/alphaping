@@ -173,7 +173,7 @@ export async function revokeWorkspaceInvitation(
     .first<{ id: string; role: "admin" | "member"; expires_at: number }>();
   if (!invitation) throw error(404, "Invitation not found");
   const now = Date.now();
-  await db.batch([
+  const [updateResult] = await db.batch([
     db
       .prepare(
         `UPDATE workspace_invitations SET revoked_at = ?
@@ -189,8 +189,12 @@ export async function revokeWorkspaceInvitation(
       before: { role: invitation.role, expiresAt: invitation.expires_at },
       after: { revokedAt: now },
       now,
+      onlyIfPreviousStatementChanged: true,
     }),
   ]);
+  if (updateResult?.meta.changes !== 1) {
+    throw error(409, "Invitation is no longer revocable");
+  }
 }
 
 export async function acceptInvitationForUser(

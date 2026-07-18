@@ -223,4 +223,39 @@ describe("service deletion assignment revision", () => {
         .first<{ revision: number }>(),
     ).resolves.toEqual({ revision: 2 });
   });
+
+  it("does not advance Agent assignments when the service delete is stale", async () => {
+    await database.batch([
+      database.prepare("INSERT INTO services VALUES ('service-1', 'workspace-1', 'API', 1, NULL)"),
+      database.prepare("INSERT INTO agents VALUES ('agent-1', 'machine-1', 'active')"),
+      database.prepare(
+        `INSERT INTO check_configs VALUES
+          ('check-1', 'workspace-1', 'service-1', 'agent', 'agent-1', 1)`,
+      ),
+    ]);
+    const stale = new Proxy(database, {
+      get(target, property) {
+        if (property !== "batch") {
+          const value = Reflect.get(target, property);
+          return typeof value === "function" ? value.bind(target) : value;
+        }
+        return async <T>(statements: D1PreparedStatement[]) => {
+          await target.prepare("UPDATE services SET deleted_at = 10 WHERE id = 'service-1'").run();
+          return target.batch<T>(statements);
+        };
+      },
+    });
+
+    await expect(
+      softDeleteResource(stale, "operations", "user-1", "service", "service-1"),
+    ).rejects.toMatchObject({ status: 409 });
+    await expect(
+      database
+        .prepare("SELECT desired_config_revision AS revision FROM machines WHERE id = 'machine-1'")
+        .first<{ revision: number }>(),
+    ).resolves.toEqual({ revision: 1 });
+    await expect(
+      database.prepare("SELECT COUNT(*) AS count FROM audit_logs").first<{ count: number }>(),
+    ).resolves.toEqual({ count: 0 });
+  });
 });

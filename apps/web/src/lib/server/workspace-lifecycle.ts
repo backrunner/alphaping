@@ -200,7 +200,7 @@ export async function softDeleteWorkspace(
   }
   if (confirmation !== workspace.slug) throw error(400, "Workspace confirmation does not match");
   const now = Date.now();
-  await db.batch([
+  const [updateResult] = await db.batch([
     db
       .prepare(
         `UPDATE workspaces SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL`,
@@ -215,8 +215,12 @@ export async function softDeleteWorkspace(
       before: { name: workspace.name, slug: workspace.slug, deletedAt: null },
       after: { name: workspace.name, slug: workspace.slug, deletedAt: now },
       now,
+      onlyIfPreviousStatementChanged: true,
     }),
   ]);
+  if (updateResult?.meta.changes !== 1) {
+    throw error(409, "Workspace state changed; reload and try again");
+  }
 }
 
 export async function restoreWorkspace(
@@ -248,7 +252,7 @@ export async function restoreWorkspace(
   if (workspace.deleted_at <= now - graceDays * 86_400_000) {
     throw error(409, "The workspace recovery window has expired");
   }
-  await db.batch([
+  const [updateResult] = await db.batch([
     db
       .prepare(
         `UPDATE workspaces SET deleted_at = NULL, updated_at = ? WHERE id = ? AND deleted_at = ?`,
@@ -263,7 +267,11 @@ export async function restoreWorkspace(
       before: { name: workspace.name, slug: workspace.slug, deletedAt: workspace.deleted_at },
       after: { name: workspace.name, slug: workspace.slug, deletedAt: null },
       now,
+      onlyIfPreviousStatementChanged: true,
     }),
   ]);
+  if (updateResult?.meta.changes !== 1) {
+    throw error(409, "Workspace state changed; reload and try again");
+  }
   return { slug: workspace.slug };
 }
