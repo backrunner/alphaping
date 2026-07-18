@@ -150,6 +150,18 @@ try {
           AGENT_RELEASE_MANIFEST_JSON:
             '{"linux-x86_64":{"version":"0.1.0","length":0,"sha256":"0000000000000000000000000000000000000000000000000000000000000000"}}',
         },
+        ratelimits: [
+          {
+            name: "AUTH_EDGE_RATE_LIMITER",
+            namespace_id: "18001",
+            simple: { limit: 60, period: 60 },
+          },
+          {
+            name: "AUTH_ACCOUNT_RATE_LIMITER",
+            namespace_id: "18002",
+            simple: { limit: 10, period: 60 },
+          },
+        ],
         d1_databases: [
           {
             binding: "CONTROL_DB",
