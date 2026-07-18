@@ -226,16 +226,43 @@ export async function updateWorkspaceMembership(
     before: member,
     after: { role: input.role, status: input.status },
     now,
+    onlyIfPreviousStatementChanged: true,
   });
-  await db.batch([
+  const [updateResult] = await db.batch([
     db
       .prepare(
         `UPDATE memberships SET role = ?, status = ?, updated_at = ?
-         WHERE workspace_id = ? AND user_id = ?`,
+         WHERE workspace_id = ? AND user_id = ? AND role = ? AND status = ?
+           AND EXISTS (
+             SELECT 1 FROM memberships actor
+             WHERE actor.workspace_id = memberships.workspace_id AND actor.user_id = ?
+               AND actor.role = 'admin' AND actor.status = 'active'
+           )
+           AND (
+             ? = 0 OR EXISTS (
+               SELECT 1 FROM memberships replacement
+               WHERE replacement.workspace_id = memberships.workspace_id
+                 AND replacement.user_id != memberships.user_id
+                 AND replacement.role = 'admin' AND replacement.status = 'active'
+             )
+           )`,
       )
-      .bind(input.role, input.status, now, access.workspaceId, input.memberId),
+      .bind(
+        input.role,
+        input.status,
+        now,
+        access.workspaceId,
+        input.memberId,
+        member.role,
+        member.status,
+        actorUserId,
+        removesActiveAdmin ? 1 : 0,
+      ),
     audit,
   ]);
+  if (updateResult?.meta.changes !== 1) {
+    throw error(409, "Workspace membership changed; reload and try again");
+  }
 }
 
 export async function setMemberResourcePermission(
