@@ -224,6 +224,24 @@ try {
   if (response.headers.get("referrer-policy") !== "same-origin") {
     throw new Error("setup referrer policy would suppress the native form Origin header");
   }
+  const contentSecurityPolicy = response.headers.get("content-security-policy") ?? "";
+  if (
+    !contentSecurityPolicy.includes("default-src 'self'") ||
+    !contentSecurityPolicy.includes("object-src 'none'") ||
+    !contentSecurityPolicy.includes("frame-ancestors 'none'") ||
+    !/script-src [^;]*'nonce-/.test(contentSecurityPolicy) ||
+    /script-src [^;]*'unsafe-inline'/.test(contentSecurityPolicy)
+  ) {
+    throw new Error("setup page did not enforce the nonce-based script policy");
+  }
+  if (
+    response.headers.get("permissions-policy") !==
+      "camera=(), geolocation=(), microphone=(), payment=(), usb=()" ||
+    response.headers.get("cross-origin-resource-policy") !== "same-origin" ||
+    response.headers.get("strict-transport-security") !== "max-age=31536000"
+  ) {
+    throw new Error("setup page omitted browser security headers");
+  }
   const setupPage = await response.text();
   if (!setupPage.includes("Initialize this AlphaPing deployment")) {
     throw new Error("setup page did not render initialization UI");

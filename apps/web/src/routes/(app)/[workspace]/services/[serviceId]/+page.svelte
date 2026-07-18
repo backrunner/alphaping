@@ -47,7 +47,12 @@
 
     <div class="header-actions">
       {#if data.publicAccess}
-        <a class="status-link" href={`/status/${data.workspace.slug}`} target="_blank">
+        <a
+          class="status-link"
+          href={`/status/${data.workspace.slug}`}
+          target="_blank"
+          rel="noreferrer"
+        >
           <ExternalLink size={14} />View status page
         </a>
       {/if}

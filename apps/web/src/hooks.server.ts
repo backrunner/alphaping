@@ -6,7 +6,10 @@ import { createAuth } from "$lib/server/auth";
 
 const SECURITY_HEADERS: Readonly<Record<string, string>> = {
   "cross-origin-opener-policy": "same-origin",
+  "cross-origin-resource-policy": "same-origin",
+  "permissions-policy": "camera=(), geolocation=(), microphone=(), payment=(), usb=()",
   "referrer-policy": "same-origin",
+  "strict-transport-security": "max-age=31536000",
   "x-content-type-options": "nosniff",
   "x-frame-options": "DENY",
 };
