@@ -25,6 +25,7 @@ const steps = [
     ],
   ],
   ["Rust tests", "node", ["scripts/run-cargo.mjs", "test", "--workspace"]],
+  ["Agent resources", "node", ["scripts/check-agent-resources.mjs"]],
   ["build", pnpm, ["build"]],
   ["web E2E", "node", ["scripts/test-web-e2e.mjs", "--skip-build"]],
   ["Worker dry-run", pnpm, ["workers:deploy", "--all", "--env", "production", "--dry-run"]],

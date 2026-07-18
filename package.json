@@ -9,6 +9,7 @@
     "node": ">=22"
   },
   "scripts": {
+    "agent:benchmark": "node scripts/check-agent-resources.mjs",
     "agent:build": "node scripts/run-cargo.mjs build -p alphaping-agent --release",
     "agent:package": "node scripts/release/package-agent.mjs",
     "agent:release:assemble": "node scripts/release/assemble-release.mjs",
