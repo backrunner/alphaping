@@ -143,8 +143,24 @@ export interface DashboardSnapshot {
 
 export class DashboardNotFoundError extends Error {}
 
+const D1_IN_BATCH_SIZE = 90;
+
 function placeholders(length: number): string {
   return Array.from({ length }, () => "?").join(", ");
+}
+
+async function queryInBatches<Row>(
+  database: D1Database,
+  values: readonly number[] | readonly string[],
+  prepare: (batch: readonly (number | string)[]) => D1PreparedStatement,
+): Promise<Row[]> {
+  if (values.length === 0) return [];
+  const statements = [];
+  for (let offset = 0; offset < values.length; offset += D1_IN_BATCH_SIZE) {
+    statements.push(prepare(values.slice(offset, offset + D1_IN_BATCH_SIZE)));
+  }
+  const results = await database.batch<Row>(statements);
+  return results.flatMap((result) => result.results);
 }
 
 function parseLabels(value: string): Readonly<Record<string, string>> {
@@ -215,21 +231,17 @@ export async function loadDashboardSnapshot(
   );
 
   const machinePks = allowedMachines.map((machine) => machine.telemetry_pk);
-  const latestMachines =
-    machinePks.length === 0
-      ? []
-      : (
-          await telemetryDb
-            .prepare(
-              `SELECT machine_pk, observed_at, received_at, state, cpu_permille,
-                      memory_used_bytes, memory_total_bytes, storage_used_bytes,
-                      storage_total_bytes, network_rx_bps, network_tx_bps,
-                      network_rx_total, network_tx_total, load_1m_milli, uptime_seconds
-               FROM machine_latest WHERE machine_pk IN (${placeholders(machinePks.length)})`,
-            )
-            .bind(...machinePks)
-            .all<MachineLatestRow>()
-        ).results;
+  const latestMachines = await queryInBatches<MachineLatestRow>(telemetryDb, machinePks, (batch) =>
+    telemetryDb
+      .prepare(
+        `SELECT machine_pk, observed_at, received_at, state, cpu_permille,
+                  memory_used_bytes, memory_total_bytes, storage_used_bytes,
+                  storage_total_bytes, network_rx_bps, network_tx_bps,
+                  network_rx_total, network_tx_total, load_1m_milli, uptime_seconds
+           FROM machine_latest WHERE machine_pk IN (${placeholders(batch.length)})`,
+      )
+      .bind(...batch),
+  );
   const latestByMachine = new Map(latestMachines.map((latest) => [latest.machine_pk, latest]));
   const machines: readonly DashboardMachine[] = allowedMachines.map((machine) => {
     const latest = latestByMachine.get(machine.telemetry_pk);
@@ -271,19 +283,18 @@ export async function loadDashboardSnapshot(
       .all<IncidentRow>()
   ).results;
   const activeIncidentIds = activeIncidents.map((incident) => incident.id);
-  const activeIncidentResources =
-    activeIncidentIds.length === 0
-      ? []
-      : (
-          await controlDb
-            .prepare(
-              `SELECT incident_id, resource_id FROM incident_resources
-               WHERE resource_type = 'service'
-                 AND incident_id IN (${placeholders(activeIncidentIds.length)})`,
-            )
-            .bind(...activeIncidentIds)
-            .all<IncidentResourceRow>()
-        ).results;
+  const activeIncidentResources = await queryInBatches<IncidentResourceRow>(
+    controlDb,
+    activeIncidentIds,
+    (batch) =>
+      controlDb
+        .prepare(
+          `SELECT incident_id, resource_id FROM incident_resources
+           WHERE resource_type = 'service'
+             AND incident_id IN (${placeholders(batch.length)})`,
+        )
+        .bind(...batch),
+  );
   const activeIncidentCount = activeIncidents.filter(
     (incident) =>
       workspace.role === "admin" ||
@@ -306,35 +317,32 @@ export async function loadDashboardSnapshot(
   const historyStart = Math.floor((now - 30 * 300_000) / 300_000) * 300_000;
   const servicePks = allowedServices.map((service) => service.telemetry_pk);
   const [latestChecks, latestServices, serviceBuckets] = await Promise.all([
-    checkPks.length === 0
-      ? Promise.resolve({ results: [] as CheckLatestRow[] })
-      : telemetryDb
-          .prepare(
-            `SELECT check_pk, state, observed_at FROM check_latest
-             WHERE check_pk IN (${placeholders(checkPks.length)})`,
-          )
-          .bind(...checkPks)
-          .all<CheckLatestRow>(),
-    servicePks.length === 0
-      ? Promise.resolve({ results: [] as ServiceLatestRow[] })
-      : telemetryDb
-          .prepare(
-            `SELECT service_pk, state FROM service_latest
-             WHERE workspace_pk = ? AND service_pk IN (${placeholders(servicePks.length)})`,
-          )
-          .bind(workspace.telemetry_pk, ...servicePks)
-          .all<ServiceLatestRow>(),
-    servicePks.length === 0
-      ? Promise.resolve({ results: [] as ServiceBucketRow[] })
-      : telemetryDb
-          .prepare(
-            `SELECT resource_pk, bucket_start, state FROM status_buckets
+    queryInBatches<CheckLatestRow>(telemetryDb, checkPks, (batch) =>
+      telemetryDb
+        .prepare(
+          `SELECT check_pk, state, observed_at FROM check_latest
+           WHERE check_pk IN (${placeholders(batch.length)})`,
+        )
+        .bind(...batch),
+    ),
+    queryInBatches<ServiceLatestRow>(telemetryDb, servicePks, (batch) =>
+      telemetryDb
+        .prepare(
+          `SELECT service_pk, state FROM service_latest
+           WHERE workspace_pk = ? AND service_pk IN (${placeholders(batch.length)})`,
+        )
+        .bind(workspace.telemetry_pk, ...batch),
+    ),
+    queryInBatches<ServiceBucketRow>(telemetryDb, servicePks, (batch) =>
+      telemetryDb
+        .prepare(
+          `SELECT resource_pk, bucket_start, state FROM status_buckets
              WHERE workspace_pk = ? AND resource_type = 2 AND bucket_seconds = 300
-               AND resource_pk IN (${placeholders(servicePks.length)}) AND bucket_start >= ?
+               AND resource_pk IN (${placeholders(batch.length)}) AND bucket_start >= ?
              ORDER BY bucket_start`,
-          )
-          .bind(workspace.telemetry_pk, ...servicePks, historyStart)
-          .all<ServiceBucketRow>(),
+        )
+        .bind(workspace.telemetry_pk, ...batch, historyStart),
+    ),
   ]);
   const checksByService = new Map<string, number[]>();
   for (const check of checks) {
@@ -342,18 +350,15 @@ export async function loadDashboardSnapshot(
     group.push(check.telemetry_pk);
     checksByService.set(check.service_id, group);
   }
-  const latestByCheck = new Map(latestChecks.results.map((latest) => [latest.check_pk, latest]));
+  const latestByCheck = new Map(latestChecks.map((latest) => [latest.check_pk, latest]));
   const criticalByCheck = new Map(
     checks.map((check) => [check.telemetry_pk, check.critical === 1]),
   );
   const latestByService = new Map(
-    latestServices.results.map((latest) => [latest.service_pk, latest.state]),
+    latestServices.map((latest) => [latest.service_pk, latest.state]),
   );
   const bucketByServiceAndTime = new Map(
-    serviceBuckets.results.map((bucket) => [
-      `${bucket.resource_pk}:${bucket.bucket_start}`,
-      bucket.state,
-    ]),
+    serviceBuckets.map((bucket) => [`${bucket.resource_pk}:${bucket.bucket_start}`, bucket.state]),
   );
   const services: readonly DashboardService[] = allowedServices.map((service) => {
     const serviceChecks = checksByService.get(service.id) ?? [];
