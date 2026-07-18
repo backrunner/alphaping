@@ -20,7 +20,12 @@
 <aside id="workspace-navigation" class:open class="sidebar">
   <div class="brand">
     <span>A</span><strong>AlphaPing</strong>
-    <button class="close" aria-label="Close navigation" onclick={onclose}><X size={16} /></button>
+    <button
+      id="workspace-navigation-close"
+      class="close"
+      aria-label="Close navigation"
+      onclick={onclose}><X size={16} /></button
+    >
   </div>
   <nav aria-label="Primary navigation">
     <a class:active={isActive(rootPath, true)} href={rootPath} onclick={onclose}
@@ -156,14 +161,19 @@
       position: fixed;
       left: 0;
       z-index: 70;
+      visibility: hidden;
       translate: -100% 0;
       width: 216px;
       box-shadow: var(--navigation-shadow);
-      transition: translate 140ms ease;
+      transition:
+        translate 140ms ease,
+        visibility 0s linear 140ms;
     }
 
     .sidebar.open {
+      visibility: visible;
       translate: 0 0;
+      transition-delay: 0s;
     }
 
     .close {
