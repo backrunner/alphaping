@@ -21,7 +21,8 @@ use crate::{
     check_results::{ProbePersistenceError, persist_probe_results},
     client_ip_rate_key, enrollment_token_digest, is_protobuf_content_type,
     live_session::issue_live_session,
-    machine_health_state, validate_enrollment_request, validate_report, within_clock_skew,
+    looks_like_uuid, machine_health_state, validate_enrollment_request, validate_report,
+    within_clock_skew,
 };
 
 const MAX_CLOCK_SKEW_MS: i64 = 5 * 60_000;
@@ -1295,6 +1296,9 @@ async fn handle_report(mut request: Request, env: Env) -> Result<Response, Inges
     let envelope: EncryptedEnvelope = decode_message(&body).map_err(|_| IngestError::BadRequest)?;
     let header = envelope.header.ok_or(IngestError::BadRequest)?;
     if header.protocol_version != PROTOCOL_VERSION
+        || header.agent_id.len() != 36
+        || header.report_id.len() != 16
+        || header.key_epoch == 0
         || header.sequence == 0
         || header.sequence > MAX_SAFE_SEQUENCE
         || !within_clock_skew(now_ms(), header.sent_at_ms, MAX_CLOCK_SKEW_MS as u64)
@@ -1302,6 +1306,9 @@ async fn handle_report(mut request: Request, env: Env) -> Result<Response, Inges
         return Err(IngestError::Unauthorized);
     }
     let agent_id = std::str::from_utf8(&header.agent_id).map_err(|_| IngestError::Unauthorized)?;
+    if !looks_like_uuid(agent_id) {
+        return Err(IngestError::Unauthorized);
+    }
     enforce_rate_limit(
         &env,
         "REPORT_AGENT_RATE_LIMITER",

@@ -97,7 +97,7 @@ pub fn machine_health_state(sample: &MetricSample, maintenance: bool) -> Machine
     }
 }
 
-fn looks_like_uuid(value: &str) -> bool {
+pub fn looks_like_uuid(value: &str) -> bool {
     value.len() == 36
         && value.bytes().enumerate().all(|(index, byte)| match index {
             8 | 13 | 18 | 23 => byte == b'-',
@@ -204,7 +204,7 @@ pub fn validate_report(
     authenticated_agent_id: &str,
     now_ms: i64,
 ) -> Result<(), ValidationError> {
-    if report.report_id != authenticated_report_id {
+    if authenticated_report_id.len() != 16 || report.report_id != authenticated_report_id {
         return Err(ValidationError::ReportIdentity);
     }
     if report.machine_pk != machine_pk || report.workspace_pk != workspace_pk {
@@ -367,7 +367,7 @@ mod tests {
 
     use super::{
         EnrollmentValidationError, MachineHealthState, ValidationError, client_ip_rate_key,
-        enrollment_token_digest, is_protobuf_content_type, machine_health_state,
+        enrollment_token_digest, is_protobuf_content_type, looks_like_uuid, machine_health_state,
         validate_enrollment_request, validate_report, within_clock_skew,
     };
 
@@ -389,6 +389,13 @@ mod tests {
         assert_eq!(client_ip_rate_key(None), "ip:unknown");
         assert_eq!(client_ip_rate_key(Some("203.0.113.8:forged")), "ip:unknown");
         assert_eq!(client_ip_rate_key(Some(&"1".repeat(65))), "ip:unknown");
+    }
+
+    #[test]
+    fn opaque_agent_ids_require_uuid_shape() {
+        assert!(looks_like_uuid("018f5f7e-7d28-7e12-a521-23456789abcd"));
+        assert!(!looks_like_uuid("agent-1"));
+        assert!(!looks_like_uuid(&"a".repeat(64 * 1_024)));
     }
 
     #[test]
@@ -478,6 +485,10 @@ mod tests {
         );
         assert_eq!(
             validate_report(&report, &[2; 16], 7, 2, "agent-1", 180_000),
+            Err(ValidationError::ReportIdentity)
+        );
+        assert_eq!(
+            validate_report(&report, &[1; 15], 7, 2, "agent-1", 180_000),
             Err(ValidationError::ReportIdentity)
         );
     }
