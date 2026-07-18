@@ -1,7 +1,8 @@
 import { executeHttp, executeTcp, executeWithRetries } from "./executor.js";
-import { reconcileMachineLiveness } from "./machine-liveness.js";
+import { loadMachineLivenessCandidates, reconcileMachineLiveness } from "./machine-liveness.js";
 import { persistCheckResult } from "./persistence.js";
-import { dueSlot, isDue } from "./schedule.js";
+import { dueSlot } from "./schedule.js";
+import { acquireSchedulerLease, releaseSchedulerLease } from "./scheduler-state.js";
 import { applyHttpSecrets, applyTcpSecrets, resolveCheckSecrets } from "./secrets.js";
 import type { CheckConfigRow } from "./types.js";
 import { parseHttpRequest, parseTcpRequest } from "./validation.js";
@@ -74,9 +75,15 @@ async function processCheck(env: Env, row: CheckConfigRow, nowMs: number): Promi
   }
 }
 
-async function runChecks(env: Env, scheduledAt: number): Promise<void> {
-  const candidates = await env.CONTROL_DB.prepare(
-    `SELECT c.id, c.telemetry_pk, c.workspace_id,
+export async function loadDueChecks(
+  db: D1Database,
+  scheduledAt: number,
+  cursor: number,
+): Promise<CheckConfigRow[]> {
+  const scheduledSeconds = Math.floor(scheduledAt / 1_000);
+  const candidates = await db
+    .prepare(
+      `SELECT c.id, c.telemetry_pk, c.workspace_id,
             w.telemetry_pk AS workspace_telemetry_pk, s.telemetry_pk AS service_telemetry_pk,
             s.maintenance_until AS service_maintenance_until,
             c.kind, c.interval_seconds, c.phase_seconds, c.timeout_ms,
@@ -88,16 +95,23 @@ async function runChecks(env: Env, scheduledAt: number): Promise<void> {
      JOIN services s ON s.id = c.service_id AND s.deleted_at IS NULL
      WHERE w.deleted_at IS NULL AND c.enabled = 1 AND c.executor_kind = 'cloudflare'
        AND c.kind IN ('http', 'tcp')
+       AND CAST((? - c.phase_seconds) / c.interval_seconds AS INTEGER)
+             * c.interval_seconds + c.phase_seconds > c.last_claimed_slot
+     ORDER BY CASE WHEN c.telemetry_pk > ? THEN 0 ELSE 1 END, c.telemetry_pk
      LIMIT ?`,
-  )
-    .bind(MAX_CANDIDATES)
+    )
+    .bind(scheduledSeconds, cursor, MAX_CANDIDATES)
     .all<CheckConfigRow>();
-  const due = candidates.results.filter((row) =>
-    isDue(scheduledAt, row.interval_seconds, row.phase_seconds, row.last_claimed_slot),
-  );
+  return candidates.results;
+}
 
+async function runChecks(
+  env: Env,
+  scheduledAt: number,
+  candidates: readonly CheckConfigRow[],
+): Promise<void> {
   const serviceGroups = new Map<number, CheckConfigRow[]>();
-  for (const row of due) {
+  for (const row of candidates) {
     const group = serviceGroups.get(row.service_telemetry_pk) ?? [];
     group.push(row);
     serviceGroups.set(row.service_telemetry_pk, group);
@@ -118,21 +132,47 @@ async function runChecks(env: Env, scheduledAt: number): Promise<void> {
 }
 
 export async function runScheduled(env: Env, scheduledAt: number): Promise<void> {
-  const [liveness, checks] = await Promise.allSettled([
-    reconcileMachineLiveness(env.CONTROL_DB, env.TELEMETRY_DB, scheduledAt),
-    runChecks(env, scheduledAt),
-  ]);
-  if (liveness.status === "fulfilled" && liveness.value.transitioned > 0) {
-    console.log(
-      JSON.stringify({
-        event: "machine_liveness_reconciled",
-        scanned: liveness.value.scanned,
-        transitioned: liveness.value.transitioned,
-      }),
+  const lease = await acquireSchedulerLease(env.CONTROL_DB, Date.now());
+  if (lease === null) return;
+
+  let checkCursor = lease.checkCursor;
+  let machineCursor = lease.machineCursor;
+  try {
+    const [checks, machines] = await Promise.all([
+      loadDueChecks(env.CONTROL_DB, scheduledAt, checkCursor),
+      loadMachineLivenessCandidates(env.CONTROL_DB, machineCursor),
+    ]);
+    if (checks.length > 0) checkCursor = checks[checks.length - 1]!.telemetry_pk;
+    if (machines.length > 0) machineCursor = machines[machines.length - 1]!.telemetry_pk;
+
+    const [liveness, checkExecution] = await Promise.allSettled([
+      reconcileMachineLiveness(env.TELEMETRY_DB, scheduledAt, machines),
+      runChecks(env, scheduledAt, checks),
+    ]);
+    if (liveness.status === "fulfilled" && liveness.value.transitioned > 0) {
+      console.log(
+        JSON.stringify({
+          event: "machine_liveness_reconciled",
+          scanned: liveness.value.scanned,
+          transitioned: liveness.value.transitioned,
+        }),
+      );
+    }
+    const failedTasks =
+      Number(liveness.status === "rejected") + Number(checkExecution.status === "rejected");
+    if (failedTasks > 0) throw new Error(`scheduled_tasks_failed:${failedTasks}`);
+  } finally {
+    const released = await releaseSchedulerLease(
+      env.CONTROL_DB,
+      lease,
+      checkCursor,
+      machineCursor,
+      Date.now(),
     );
+    if (!released) {
+      console.warn(JSON.stringify({ event: "check_scheduler_lease_release_stale" }));
+    }
   }
-  const failedTasks = Number(liveness.status === "rejected") + Number(checks.status === "rejected");
-  if (failedTasks > 0) throw new Error(`scheduled_tasks_failed:${failedTasks}`);
 }
 
 export default {

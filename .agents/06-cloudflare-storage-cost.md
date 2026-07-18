@@ -118,12 +118,13 @@ Agent executor 即使配置 5/10 秒周期，也把同一 check/minute 的 obser
 
 ```text
 machine/check known rows written     9,936,000/month
+check scheduler cursor writes           86,400/month
 fixed retention cursor writes            9,360/month
-combined known rows written          9,945,360/month
-25% implementation/retry margin      2,486,340/month
-budgeted total                      12,431,700/month
+combined known rows written         10,031,760/month
+25% implementation/retry margin      2,507,940/month
+budgeted total                      12,539,700/month
 Paid included                       50,000,000/month
-remaining headroom                  37,568,300/month
+remaining headroom                  37,460,300/month
 D1 write overage                          0.00 USD
 ```
 
@@ -221,7 +222,7 @@ Cloudflare 对 DO 入站 WebSocket 消息按 20:1 折算 request；WebSocket upg
 
 | 方案 | 30 machines + 30 checks | 100 machines + 100 checks |
 | --- | ---: | ---: |
-| 按需 10s Live Hub + 60s durable D1 writes | 9.945m | 33.129m |
+| 按需 10s Live Hub + 60s durable D1 writes | 10.032m | 33.216m |
 | 每 10s 全部 durable D1 writes | 28.858m | 96.192m |
 | 每 10s 全部 durable 的估算总费 | 约 5.24 USD | 至少 58.20 USD，未计 storage |
 
@@ -322,12 +323,13 @@ machine reports/check executions      4,320,000 each/month
 machine known D1 writes              15,696,000/month
 check known D1 writes                17,424,000/month
 combined known D1 writes             33,120,000/month
+check scheduler cursor writes            86,400/month
 fixed retention cursor writes             9,360/month
-combined deployment writes           33,129,360/month
-25% margin                            8,282,340/month
-budgeted D1 writes                   41,411,700/month
+combined deployment writes           33,215,760/month
+25% margin                            8,303,940/month
+budgeted D1 writes                   41,519,700/month
 Paid included                        50,000,000/month
-headroom                              8,588,300/month
+headroom                              8,480,300/month
 ```
 
 Workers requests：
@@ -380,7 +382,7 @@ D1 storage overage at 0.75 USD/GB       4.1048 USD/month
 
 这个极端档位的总费约为 9.10 USD/月，加上保守 CPU 约为 9.56 USD/月；同时单 TELEMETRY_DB 会在到达硬上限前触发 8 GB 分片门槛。产品必须在预测接近该档位时缩短 raw retention、限制单机高频容器数或按 workspace/resource hash 分片，不能等到 D1 10 GB 硬上限。
 
-即使按每台 64 个容器每天发生一次完整 catalog 变化，100 台每月最多约增加 387,000 CONTROL_DB logical writes（每次最多 64 upsert、soft-delete sweep 更新 64 行，再更新一次 machine digest），仍被 100+100 的 8.28m 写入 margin 覆盖。catalog report 相比常规 report 的额外存储上限约 24.6 MB/月，不改变上述价格档位。
+即使按每台 64 个容器每天发生一次完整 catalog 变化，100 台每月最多约增加 387,000 CONTROL_DB logical writes（每次最多 64 upsert、soft-delete sweep 更新 64 行，再更新一次 machine digest），仍被 100+100 的 8.30m 写入 margin 覆盖。catalog report 相比常规 report 的额外存储上限约 24.6 MB/月，不改变上述价格档位。
 
 ### 更大规模
 
@@ -388,11 +390,11 @@ D1 storage overage at 0.75 USD/GB       4.1048 USD/month
 
 | Machines + checks | D1 known writes | Requests | Target storage | 估算总费 |
 | --- | ---: | ---: | ---: | ---: |
-| 30 + 30 | 9.945m | 1.64m | 约 1.63 GB | 5.00 USD |
-| 100 + 100 | 33.129m | 4.97m | 约 4.28 GB | 5.00-5.45 USD |
-| 150 + 150 | 49.689m | 7.34m | 约 6.17 GB | 约 18.97 USD，含 25% write margin 与保守 CPU |
-| 200 + 200 | 66.249m | 9.72m | 约 8.06 GB | 约 41.61 USD，含 25% write margin 与保守 CPU |
-| 300 + 300 | 99.369m | 14.47m | 约 11.84 GB | 约 88.30 USD，含 25% write margin、请求与保守 CPU |
+| 30 + 30 | 10.032m | 1.64m | 约 1.63 GB | 5.00 USD |
+| 100 + 100 | 33.216m | 4.97m | 约 4.28 GB | 5.00-5.45 USD |
+| 150 + 150 | 49.776m | 7.34m | 约 6.17 GB | 约 19.08 USD，含 25% write margin 与保守 CPU |
+| 200 + 200 | 66.336m | 9.72m | 约 8.06 GB | 约 41.72 USD，含 25% write margin 与保守 CPU |
+| 300 + 300 | 99.456m | 14.47m | 约 11.84 GB | 约 88.41 USD，含 25% write margin、请求与保守 CPU |
 
 增长最终由 D1 rows written 主导，大约在 100+100 之后开始逼近 included 边界。每台 60 秒 machine report 将已知月写入增加 156,960；每个 60 秒 centralized check 因增加可直接查询的 5 分钟 service status bucket，将已知月写入增加 174,240。将 interval 从 60 秒改为 300 秒时，该 check 的执行、CPU 和主要写入约降为五分之一。
 
@@ -400,7 +402,7 @@ D1 storage overage at 0.75 USD/GB       4.1048 USD/month
 
 - `CONTROL_DB` 与 `TELEMETRY_DB` 分库，避免 retention/补报影响登录和配置管理。
 - Dashboard 只在展开图表时查历史，时间范围与 resource ID 始终走主键。
-- Checks Worker 用一个 Cron invocation 执行一分钟内的 due tasks，不为每个 check 创建 Worker request/Queue message。30 台默认扫描全部 enabled check；超过 500 个 central check 时再切换到稳定 schedule shard/bucket。
+- Checks Worker 用一个 Cron invocation 执行一分钟内的 due tasks，不为每个 check 创建 Worker request/Queue message。SQL 在 500 行上限前过滤 due task，并用持久化 stable telemetry PK cursor 轮转 central checks；机器离线收敛也用独立 cursor 轮转每批最多 1000 台机器。singleton lease 防止重叠 Cron 并行放大，acquire/release 的保守上界为每月 86,400 D1 writes。
 - 单库持续出现 D1 overloaded、存储达 8 GB 或预测含 margin 的月写入超 40 million 时，启动按 workspace/resource hash 分片评估。分片提升容量和并发，但不会重置账户级 included usage。
 - 需要子分钟中央调度时才评估 Durable Objects alarms；一分钟以下 ICMP/HTTP/TCP 优先由 Agent 执行。
 - 10 秒 live update 由 Durable Objects WebSocket Hibernation 提供；D1 始终是 60 秒 durable latest/history 的权威回退。

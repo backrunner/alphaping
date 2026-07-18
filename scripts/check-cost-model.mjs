@@ -24,6 +24,7 @@ const TYPICAL_REPORT_BYTES = 2 * 1024;
 const MAX_CONTAINER_COUNT = 64;
 const MAX_REPORT_BYTES = 8 * 1024;
 const HOURLY_RUNS = 720;
+const CHECK_SCHEDULER_CURSOR_WRITES = 2 * MONTH_MINUTES;
 const WORKSPACE_RETENTION_CURSOR_WRITES = 9 * HOURLY_RUNS;
 const ARTIFACT_RETENTION_CURSOR_WRITES = 4 * HOURLY_RUNS;
 const FIXED_RETENTION_WRITES = WORKSPACE_RETENTION_CURSOR_WRITES + ARTIFACT_RETENTION_CURSOR_WRITES;
@@ -83,6 +84,7 @@ export function estimateScale(
     machines * writesPerMachine() +
     checks * writesPerCheck() +
     catalogWrites +
+    CHECK_SCHEDULER_CURSOR_WRITES +
     FIXED_RETENTION_WRITES;
   const budgetedWrites = knownWrites * IMPLEMENTATION_MARGIN;
   const modeledReads =
@@ -114,6 +116,7 @@ export function estimateScale(
     checks,
     containersPerMachine,
     catalogWrites,
+    checkSchedulerCursorWrites: CHECK_SCHEDULER_CURSOR_WRITES,
     fixedRetentionWrites: FIXED_RETENTION_WRITES,
     r2ClassAOperations: R2_ARTIFACT_LIST_OPERATIONS,
     knownWrites,
@@ -168,11 +171,12 @@ if (baseline.modeledReads !== 68_360_000) {
   throw new Error(`D1 read ledger drifted: ${baseline.modeledReads}`);
 }
 if (
+  baseline.checkSchedulerCursorWrites !== 86_400 ||
   baseline.fixedRetentionWrites !== 9_360 ||
   baseline.r2ClassAOperations !== 1_440 ||
   baseline.r2ClassAOperations > R2_INCLUDED_CLASS_A_OPERATIONS
 ) {
-  throw new Error("retention operation ledger drifted");
+  throw new Error("scheduler or retention operation ledger drifted");
 }
 const maximumContainerDensity = estimateScale(100, 100, {
   containersPerMachine: 64,

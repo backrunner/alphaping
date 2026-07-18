@@ -149,6 +149,14 @@ export const retentionPolicies = sqliteTable("retention_policies", {
   updatedAt: integer("updated_at").notNull(),
 });
 
+export const checkSchedulerState = sqliteTable("check_scheduler_state", {
+  singleton: integer("singleton").primaryKey().default(1),
+  checkCursor: integer("check_cursor").notNull().default(0),
+  machineCursor: integer("machine_cursor").notNull().default(0),
+  leaseUntil: integer("lease_until").notNull().default(0),
+  updatedAt: integer("updated_at").notNull(),
+});
+
 export const auditLogs = sqliteTable(
   "audit_logs",
   {

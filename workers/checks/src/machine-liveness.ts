@@ -2,7 +2,7 @@ const MAX_MACHINE_CANDIDATES = 1_000;
 const LATEST_QUERY_BATCH = 50;
 const TRANSITION_BATCH = 25;
 
-interface MachineControlRow {
+export interface MachineControlRow {
   telemetry_pk: number;
   offline_after_seconds: number;
   maintenance_until: number | null;
@@ -25,6 +25,23 @@ interface OfflineTransition {
 export interface MachineLivenessResult {
   scanned: number;
   transitioned: number;
+}
+
+export async function loadMachineLivenessCandidates(
+  controlDb: D1Database,
+  cursor: number,
+): Promise<MachineControlRow[]> {
+  const machines = await controlDb
+    .prepare(
+      `SELECT m.telemetry_pk, m.offline_after_seconds, m.maintenance_until
+       FROM machines m JOIN workspaces w ON w.id = m.workspace_id
+       WHERE m.deleted_at IS NULL AND w.deleted_at IS NULL
+       ORDER BY CASE WHEN m.telemetry_pk > ? THEN 0 ELSE 1 END, m.telemetry_pk
+       LIMIT ?`,
+    )
+    .bind(cursor, MAX_MACHINE_CANDIDATES)
+    .all<MachineControlRow>();
+  return machines.results;
 }
 
 export function offlineTransitionAt(
@@ -110,22 +127,13 @@ async function persistOfflineTransitions(
 }
 
 export async function reconcileMachineLiveness(
-  controlDb: D1Database,
   telemetryDb: D1Database,
   now: number,
+  machines: readonly MachineControlRow[],
 ): Promise<MachineLivenessResult> {
-  const machines = await controlDb
-    .prepare(
-      `SELECT m.telemetry_pk, m.offline_after_seconds, m.maintenance_until
-       FROM machines m JOIN workspaces w ON w.id = m.workspace_id
-       WHERE m.deleted_at IS NULL AND w.deleted_at IS NULL
-       ORDER BY m.telemetry_pk LIMIT ?`,
-    )
-    .bind(MAX_MACHINE_CANDIDATES)
-    .all<MachineControlRow>();
-  const latestByMachine = await loadLatestRows(telemetryDb, machines.results);
+  const latestByMachine = await loadLatestRows(telemetryDb, machines);
   const transitions: OfflineTransition[] = [];
-  for (const machine of machines.results) {
+  for (const machine of machines) {
     const latest = latestByMachine.get(machine.telemetry_pk);
     if (!latest) continue;
     const occurredAt = offlineTransitionAt(machine, latest, now);
@@ -139,7 +147,7 @@ export async function reconcileMachineLiveness(
     });
   }
   return {
-    scanned: machines.results.length,
+    scanned: machines.length,
     transitioned: await persistOfflineTransitions(telemetryDb, transitions),
   };
 }
