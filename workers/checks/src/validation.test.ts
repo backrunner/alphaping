@@ -4,9 +4,46 @@ import { assertPublicHostname, parseHttpRequest, parseTcpRequest } from "./valid
 
 describe("central check validation", () => {
   it("blocks private and local targets", () => {
-    for (const hostname of ["localhost", "127.0.0.1", "10.0.0.8", "service.internal", "::1"]) {
+    for (const hostname of [
+      "localhost",
+      "127.0.0.1",
+      "10.0.0.8",
+      "service.internal",
+      "::1",
+      "[::1]",
+      "::",
+      "[::ffff:127.0.0.1]",
+      "0.0.0.0",
+      "100.64.0.1",
+      "198.18.0.1",
+      "224.0.0.1",
+      "2130706433",
+      "0177.0.0.1",
+      "0x7f000001",
+      "ff02::1",
+    ]) {
       expect(() => assertPublicHostname(hostname)).toThrow("blocked_target");
     }
+  });
+
+  it("allows public DNS and unicast IP targets", () => {
+    for (const hostname of [
+      "status.example.com",
+      "8.8.8.8",
+      "2606:4700:4700::1111",
+      "[2606:4700:4700::1111]",
+    ]) {
+      expect(() => assertPublicHostname(hostname)).not.toThrow();
+    }
+  });
+
+  it("rejects bracketed and non-canonical loopback check targets", () => {
+    expect(() => parseHttpRequest(JSON.stringify({ url: "http://[::1]/health" }))).toThrow(
+      "blocked_target",
+    );
+    expect(() => parseTcpRequest(JSON.stringify({ hostname: "2130706433", port: 80 }))).toThrow(
+      "blocked_target",
+    );
   });
 
   it("parses bounded HTTP assertion settings", () => {

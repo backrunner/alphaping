@@ -1,3 +1,5 @@
+import ipaddr from "ipaddr.js";
+
 import type {
   AssertionOperator,
   AssertionSource,
@@ -18,8 +20,6 @@ const BLOCKED_HEADERS = new Set([
   "transfer-encoding",
   "upgrade",
 ]);
-const PRIVATE_V4 = /^(?:10\.|127\.|169\.254\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)/;
-const PRIVATE_V6 = /^(?:::1$|f[cd][0-9a-f]{2}:|fe[89ab][0-9a-f]:)/i;
 const ASSERTION_SOURCES = new Set<AssertionSource>(["header", "jsonpath", "body"]);
 const ASSERTION_OPERATORS = new Set<AssertionOperator>([
   "exists",
@@ -38,15 +38,33 @@ function asRecord(value: unknown): Readonly<Record<string, unknown>> {
   return value as Readonly<Record<string, unknown>>;
 }
 
+function withoutIpv6Brackets(hostname: string): string {
+  return hostname.startsWith("[") && hostname.endsWith("]") ? hostname.slice(1, -1) : hostname;
+}
+
+function parseAddressLiteral(hostname: string): ipaddr.IPv4 | ipaddr.IPv6 | null {
+  const candidates = [withoutIpv6Brackets(hostname)];
+  try {
+    candidates.push(withoutIpv6Brackets(new URL(`http://${hostname}`).hostname));
+  } catch {
+    // Raw IPv6 literals are valid TCP hostnames but invalid URL authorities without brackets.
+  }
+  for (const candidate of candidates) {
+    if (ipaddr.isValid(candidate)) return ipaddr.parse(candidate);
+  }
+  return null;
+}
+
 export function assertPublicHostname(hostname: string): void {
   const normalized = hostname.toLowerCase().replace(/\.$/, "");
+  const address = parseAddressLiteral(normalized);
   if (
     normalized.length === 0 ||
+    normalized.length > 253 ||
     normalized.endsWith(".local") ||
     normalized.endsWith(".internal") ||
     BLOCKED_HOSTNAMES.has(normalized) ||
-    PRIVATE_V4.test(normalized) ||
-    PRIVATE_V6.test(normalized)
+    (address !== null && address.range() !== "unicast")
   ) {
     throw new Error("blocked_target");
   }

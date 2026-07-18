@@ -172,6 +172,9 @@ importers:
       '@alphaping/db':
         specifier: workspace:*
         version: link:../../packages/db
+      ipaddr.js:
+        specifier: 2.4.0
+        version: 2.4.0
       jsonpath-plus:
         specifier: 10.4.0
         version: 10.4.0
@@ -1913,6 +1916,10 @@ packages:
 
   inline-style-parser@0.2.7:
     resolution: {integrity: sha512-Nb2ctOyNR8DqQoR0OwRG95uNWIC0C1lCgf5Naz5H6Ji72KZ8OcFZLz2P5sNgwlyoJ8Yif11oMuYs5pBQa86csA==, tarball: https://registry.npmjs.org/inline-style-parser/-/inline-style-parser-0.2.7.tgz}
+
+  ipaddr.js@2.4.0:
+    resolution: {integrity: sha512-9VGk3HGanVE6JoZXHiCpnGy5X0jYDnN4EA4lntFPj+1vIWlFhIylq2CrrCOJH9EAhc5CYhq18F2Av2tgoAPsYQ==, tarball: https://registry.npmjs.org/ipaddr.js/-/ipaddr.js-2.4.0.tgz}
+    engines: {node: '>= 10'}
 
   is-arrayish@0.3.4:
     resolution: {integrity: sha512-m6UrgzFVUYawGBh1dUsWR5M2Clqic9RVXC/9f8ceNlv2IcO9j9J/z8UoCLPqtsPBFNzEpfR3xftohbfqDx8EQA==, tarball: https://registry.npmjs.org/is-arrayish/-/is-arrayish-0.3.4.tgz}
@@ -3867,6 +3874,8 @@ snapshots:
   imurmurhash@0.1.4: {}
 
   inline-style-parser@0.2.7: {}
+
+  ipaddr.js@2.4.0: {}
 
   is-arrayish@0.3.4: {}
 

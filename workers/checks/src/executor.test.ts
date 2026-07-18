@@ -86,6 +86,23 @@ describe("HTTP check execution", () => {
     expect(secondHeaders.has("x-private-token")).toBe(false);
   });
 
+  it("rejects redirects to non-unicast IP literals before another fetch", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(null, {
+        status: 302,
+        headers: { location: "http://[::1]/metadata" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const config = parseHttpRequest(JSON.stringify({ url: "https://api.example.com/health" }));
+
+    await expect(executeHttp(config, 1_000)).resolves.toMatchObject({
+      state: "down",
+      failureCode: "network",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("classifies timeout and oversized response failures", async () => {
     vi.stubGlobal(
       "fetch",
