@@ -198,13 +198,40 @@ describe("LiveHub", () => {
     };
     expect(snapshot).toMatchObject({ topic: "machine:7", cpuPermille: 420 });
     expect(otherTopicReceived).toBe(false);
-    const afterSize = await runInDurableObject(stub, (_instance, state) =>
-      Promise.resolve(state.storage.sql.databaseSize),
-    );
-    expect(afterSize).toBe(beforeSize);
+    const persistedState = await runInDurableObject(stub, (_instance, state) => {
+      const agentSocket = state.getWebSockets("agent")[0];
+      const agentAttachment = agentSocket?.deserializeAttachment() as
+        | { highestSequence?: unknown }
+        | undefined;
+      return Promise.resolve({
+        databaseSize: state.storage.sql.databaseSize,
+        highestSequence: agentAttachment?.highestSequence,
+      });
+    });
+    expect(persistedState).toEqual({ databaseSize: beforeSize, highestSequence: 1 });
 
     const closed = nextClose(agent);
     agent.send(frame);
+    await expect(closed).resolves.toMatchObject({ code: 1008 });
+  });
+
+  it("reserves a sequence before asynchronous decryption", async () => {
+    const agent = await connect(await agentTicket(10));
+    await nextMessage(agent);
+    const viewerTicket = await signViewerLiveTicket(
+      { workspaceId: WORKSPACE, subjectId: "viewer-1", machinePk: 10 },
+      SECRET,
+    );
+    const viewer = await connect(viewerTicket.ticket);
+    await nextMessage(agent);
+
+    const frame = await liveFrame(10, 1);
+    const closed = nextClose(agent);
+    agent.send(frame);
+    agent.send(frame);
+
+    const snapshot = JSON.parse(String(await nextMessage(viewer))) as { topic: string };
+    expect(snapshot.topic).toBe("machine:10");
     await expect(closed).resolves.toMatchObject({ code: 1008 });
   });
 

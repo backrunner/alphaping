@@ -19,6 +19,7 @@ interface AgentSocketAttachment extends BaseSocketAttachment {
   projection: "internal";
   sessionId: string;
   noncePrefix: string;
+  highestSequence: number | null;
 }
 
 interface ViewerSocketAttachment extends BaseSocketAttachment {
@@ -27,6 +28,11 @@ interface ViewerSocketAttachment extends BaseSocketAttachment {
 }
 
 type SocketAttachment = AgentSocketAttachment | ViewerSocketAttachment;
+
+interface SessionSequenceState {
+  committed: number | null;
+  readonly pending: Set<number>;
+}
 
 const DEMAND_TTL_MS = 30_000;
 const MAX_LIVE_SEQUENCE = 1_000_000;
@@ -55,6 +61,16 @@ function attachment(socket: WebSocket): SocketAttachment | null {
     typeof data.sessionId === "string" &&
     typeof data.noncePrefix === "string"
   ) {
+    if (
+      data.highestSequence !== undefined &&
+      data.highestSequence !== null &&
+      (typeof data.highestSequence !== "number" ||
+        !Number.isSafeInteger(data.highestSequence) ||
+        data.highestSequence < 1 ||
+        data.highestSequence > MAX_LIVE_SEQUENCE)
+    ) {
+      return null;
+    }
     return {
       version: 1,
       role: "agent",
@@ -64,6 +80,7 @@ function attachment(socket: WebSocket): SocketAttachment | null {
       expiresAt: data.expiresAt,
       sessionId: data.sessionId,
       noncePrefix: data.noncePrefix,
+      highestSequence: typeof data.highestSequence === "number" ? data.highestSequence : null,
     };
   }
   if (data.role === "viewer" && data.projection === "machine-summary") {
@@ -87,7 +104,7 @@ function topicMachinePk(topic: string): number | null {
 }
 
 export class LiveHub extends DurableObject<Env> {
-  private readonly highestSequences = new Map<string, number>();
+  private readonly sequenceStates = new Map<string, SessionSequenceState>();
 
   private hasViewer(topic: string, excluded?: WebSocket): boolean {
     const now = Date.now();
@@ -172,6 +189,7 @@ export class LiveHub extends DurableObject<Env> {
         expiresAt,
         sessionId,
         noncePrefix,
+        highestSequence: null,
       };
     } else {
       if (projection !== "machine-summary") return new Response("Unauthorized", { status: 401 });
@@ -188,7 +206,9 @@ export class LiveHub extends DurableObject<Env> {
     const pair = new WebSocketPair();
     const client = pair[0];
     const server = pair[1];
-    this.ctx.acceptWebSocket(server, [role, `topic:${topics[0]}`]);
+    const tags = [role, `topic:${topics[0]}`];
+    if (socketAttachment.role === "agent") tags.push(`session:${socketAttachment.sessionId}`);
+    this.ctx.acceptWebSocket(server, tags);
     server.serializeAttachment(socketAttachment);
     this.sendDemand(topics[0]);
     return new Response(null, {
@@ -251,19 +271,66 @@ export class LiveHub extends DurableObject<Env> {
       ) {
         throw new Error("invalid_live_frame_bounds");
       }
-      const highest = this.highestSequences.get(current.sessionId);
+      const sessionSockets = new Set([
+        socket,
+        ...this.ctx.getWebSockets(`session:${current.sessionId}`),
+      ]);
+      let committed = current.highestSequence;
+      for (const sessionSocket of sessionSockets) {
+        const sessionAttachment = attachment(sessionSocket);
+        if (
+          sessionAttachment?.role === "agent" &&
+          sessionAttachment.sessionId === current.sessionId &&
+          sessionAttachment.highestSequence !== null
+        ) {
+          committed = Math.max(committed ?? 0, sessionAttachment.highestSequence);
+        }
+      }
+
+      let sequenceState = this.sequenceStates.get(current.sessionId);
+      if (!sequenceState) {
+        sequenceState = { committed, pending: new Set() };
+        this.sequenceStates.set(current.sessionId, sequenceState);
+      } else if (committed !== null) {
+        sequenceState.committed = Math.max(sequenceState.committed ?? 0, committed);
+      }
+      let highest = sequenceState.committed;
+      for (const pending of sequenceState.pending) highest = Math.max(highest ?? 0, pending);
       if (
-        highest !== undefined &&
+        highest !== null &&
         (frame.sequence <= highest || frame.sequence > highest + MAX_SEQUENCE_JUMP)
       ) {
         throw new Error("live_frame_replay");
       }
-      const snapshot = await decryptAgentLiveFrame(frame, this.env.LIVE_TICKET_SECRET, {
-        sessionId: current.sessionId,
-        noncePrefix: current.noncePrefix,
-        machinePk,
-      });
-      this.highestSequences.set(current.sessionId, frame.sequence);
+
+      sequenceState.pending.add(frame.sequence);
+      let snapshot: Awaited<ReturnType<typeof decryptAgentLiveFrame>>;
+      try {
+        snapshot = await decryptAgentLiveFrame(frame, this.env.LIVE_TICKET_SECRET, {
+          sessionId: current.sessionId,
+          noncePrefix: current.noncePrefix,
+          machinePk,
+        });
+      } catch (error) {
+        sequenceState.pending.delete(frame.sequence);
+        throw error;
+      }
+
+      sequenceState.pending.delete(frame.sequence);
+      sequenceState.committed = Math.max(sequenceState.committed ?? 0, frame.sequence);
+      for (const sessionSocket of sessionSockets) {
+        const sessionAttachment = attachment(sessionSocket);
+        if (
+          sessionAttachment?.role === "agent" &&
+          sessionAttachment.sessionId === current.sessionId &&
+          (sessionAttachment.highestSequence ?? 0) < sequenceState.committed
+        ) {
+          sessionSocket.serializeAttachment({
+            ...sessionAttachment,
+            highestSequence: sequenceState.committed,
+          });
+        }
+      }
       const projection = JSON.stringify(snapshot);
       for (const viewer of this.ctx.getWebSockets(`topic:${current.topics[0]}`)) {
         const viewerAttachment = attachment(viewer);
@@ -287,7 +354,20 @@ export class LiveHub extends DurableObject<Env> {
   override webSocketClose(socket: WebSocket): void {
     const current = attachment(socket);
     if (current?.role === "viewer") this.sendDemand(current.topics[0], socket);
-    if (current?.role === "agent") this.highestSequences.delete(current.sessionId);
+    if (
+      current?.role === "agent" &&
+      !this.ctx
+        .getWebSockets(`session:${current.sessionId}`)
+        .some(
+          (candidate) =>
+            candidate !== socket &&
+            candidate.readyState === WebSocket.OPEN &&
+            attachment(candidate)?.role === "agent",
+        ) &&
+      (this.sequenceStates.get(current.sessionId)?.pending.size ?? 0) === 0
+    ) {
+      this.sequenceStates.delete(current.sessionId);
+    }
   }
 
   override webSocketError(socket: WebSocket): void {
