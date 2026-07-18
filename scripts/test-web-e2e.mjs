@@ -7,6 +7,7 @@ import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { runWebManagementE2e } from "./lib/web-management-e2e.mjs";
+import { runWebPerformanceE2e } from "./lib/web-performance-e2e.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
@@ -96,6 +97,7 @@ const persistTo = join(temporary, "state");
 const setupToken = "e2e-setup-token-32-characters-long";
 const authSecret = "e2e-auth-secret-that-is-at-least-32-bytes-long";
 let child = null;
+const processOutput = { text: "", exited: false };
 
 class SetupInspectionComplete extends Error {}
 
@@ -167,7 +169,6 @@ try {
   );
   const port = await unusedPort();
   const baseUrl = `http://127.0.0.1:${port}`;
-  const processOutput = { text: "", exited: false };
   child = spawn(
     pnpm,
     [
@@ -400,13 +401,19 @@ try {
     const output = result.stdout.trim();
     const jsonStart = output.lastIndexOf("\n[");
     const payload = JSON.parse(jsonStart === -1 ? output : output.slice(jsonStart + 1));
-    const execution = Array.isArray(payload) ? payload[0] : payload;
+    const execution = Array.isArray(payload) ? payload.at(-1) : payload;
     if (!execution?.success || !Array.isArray(execution.results)) {
       throw new Error(`${binding} query did not return rows`);
     }
     return execution.results;
   };
   await runWebManagementE2e({
+    baseUrl,
+    adminCookie: cookie,
+    queryControlDb: (sql) => queryD1("CONTROL_DB", sql),
+    queryTelemetryDb: (sql) => queryD1("TELEMETRY_DB", sql),
+  });
+  await runWebPerformanceE2e({
     baseUrl,
     adminCookie: cookie,
     queryControlDb: (sql) => queryD1("CONTROL_DB", sql),
@@ -425,9 +432,17 @@ try {
     throw new SetupInspectionComplete();
   }
 
-  console.log("Web E2E setup, management, RBAC, dashboard, and public status flows passed");
+  console.log(
+    "Web E2E setup, management, RBAC, dashboard, performance, and public status flows passed",
+  );
 } catch (cause) {
-  if (!(cause instanceof SetupInspectionComplete)) throw cause;
+  if (!(cause instanceof SetupInspectionComplete)) {
+    const workerOutput = processOutput.text.trim();
+    if (workerOutput) {
+      console.error(`Web Worker output tail:\n${workerOutput.slice(-4_000)}`);
+    }
+    throw cause;
+  }
 } finally {
   if (child) await stopServer(child);
   rmSync(temporary, { force: true, recursive: true });
