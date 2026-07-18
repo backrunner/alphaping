@@ -93,7 +93,7 @@ export function estimateScale(
   const budgetedWrites = knownWrites * IMPLEMENTATION_MARGIN;
   const modeledReads =
     DASHBOARD_REQUESTS * (machines + checks) +
-    checks * MONTH_MINUTES +
+    checks * MONTH_MINUTES * 2 +
     machines * MONTH_MINUTES * 5 +
     machines * MONTH_MINUTES * 2 +
     5_000_000;
@@ -171,7 +171,7 @@ if (baseline.workersRequests !== 4_968_994 || baseline.durableObjectRequests !==
     `live request ledger drifted: ${baseline.workersRequests} Worker / ${baseline.durableObjectRequests} DO requests`,
   );
 }
-if (baseline.modeledReads !== 68_360_000) {
+if (baseline.modeledReads !== 72_680_000) {
   throw new Error(`D1 read ledger drifted: ${baseline.modeledReads}`);
 }
 if (

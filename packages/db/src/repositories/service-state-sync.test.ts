@@ -33,7 +33,7 @@ beforeEach(async () => {
     controlDb.prepare(
       `CREATE TABLE check_configs (
         id TEXT PRIMARY KEY, workspace_id TEXT, service_id TEXT, telemetry_pk INTEGER,
-        enabled INTEGER, critical INTEGER
+        enabled INTEGER, critical INTEGER, executor_kind TEXT, config_revision INTEGER
       )`,
     ),
     controlDb.prepare(
@@ -47,13 +47,16 @@ beforeEach(async () => {
     controlDb.prepare("INSERT INTO services VALUES ('service-1', 'workspace-1', 10, NULL, NULL)"),
     controlDb.prepare(
       `INSERT INTO check_configs VALUES
-        ('check-a', 'workspace-1', 'service-1', 101, 0, 1),
-        ('check-b', 'workspace-1', 'service-1', 102, 1, 1)`,
+        ('check-a', 'workspace-1', 'service-1', 101, 0, 1, 'cloudflare', 1),
+        ('check-b', 'workspace-1', 'service-1', 102, 1, 1, 'cloudflare', 1)`,
     ),
   ]);
   await telemetryDb.batch([
     telemetryDb.prepare(
-      "CREATE TABLE check_latest (check_pk INTEGER PRIMARY KEY, service_pk INTEGER, state TEXT, critical INTEGER)",
+      `CREATE TABLE check_latest (
+        check_pk INTEGER PRIMARY KEY, service_pk INTEGER, state TEXT, critical INTEGER,
+        config_revision INTEGER NOT NULL DEFAULT 0
+      )`,
     ),
     telemetryDb.prepare(
       `CREATE TABLE service_latest (
@@ -68,8 +71,8 @@ beforeEach(async () => {
         PRIMARY KEY (resource_type, resource_pk, occurred_at, event_id)
       )`,
     ),
-    telemetryDb.prepare("INSERT INTO check_latest VALUES (101, 10, 'down', 1)"),
-    telemetryDb.prepare("INSERT INTO check_latest VALUES (102, 10, 'healthy', 1)"),
+    telemetryDb.prepare("INSERT INTO check_latest VALUES (101, 10, 'down', 1, 1)"),
+    telemetryDb.prepare("INSERT INTO check_latest VALUES (102, 10, 'healthy', 1, 1)"),
     telemetryDb.prepare("INSERT INTO service_latest VALUES (10, 1, 'down', 1, 'check_down', 1, 1)"),
   ]);
 });
@@ -103,7 +106,7 @@ describe("service state synchronization", () => {
     ).resolves.toEqual({ state: "healthy" });
 
     await telemetryDb.batch([
-      telemetryDb.prepare("INSERT INTO check_latest VALUES (101, 10, 'down', 1)"),
+      telemetryDb.prepare("INSERT INTO check_latest VALUES (101, 10, 'down', 1, 1)"),
       telemetryDb.prepare("UPDATE service_latest SET state = 'down' WHERE service_pk = 10"),
     ]);
     await expect(
@@ -115,6 +118,48 @@ describe("service state synchronization", () => {
     await expect(
       controlDb.prepare("SELECT COUNT(*) AS count FROM service_state_sync_jobs").first(),
     ).resolves.toEqual({ count: 0 });
+  });
+
+  it("removes an older central revision without deleting the current result", async () => {
+    await controlDb
+      .prepare("UPDATE check_configs SET enabled = 1, config_revision = 2 WHERE id = 'check-a'")
+      .run();
+    const job = createServiceStateSyncJob({
+      workspaceId: "workspace-1",
+      workspacePk: 1,
+      serviceId: "service-1",
+      servicePk: 10,
+      checkId: "check-a",
+      checkPk: 101,
+      reasonCode: "check_configuration",
+      updatedAt: 1_000,
+    });
+    await prepareServiceStateSyncJob(controlDb, job).run();
+
+    await expect(
+      reconcileServiceStateSyncJobs(controlDb, telemetryDb, job.protectUntil - 1),
+    ).resolves.toEqual({ processed: 1, completed: 0, failed: 0 });
+    await expect(
+      telemetryDb.prepare("SELECT check_pk FROM check_latest ORDER BY check_pk").all(),
+    ).resolves.toMatchObject({ results: [{ check_pk: 102 }] });
+
+    await telemetryDb.prepare("INSERT INTO check_latest VALUES (101, 10, 'down', 1, 2)").run();
+    await expect(
+      reconcileServiceStateSyncJobs(controlDb, telemetryDb, job.protectUntil),
+    ).resolves.toEqual({ processed: 1, completed: 1, failed: 0 });
+    await expect(
+      telemetryDb
+        .prepare("SELECT check_pk, config_revision FROM check_latest ORDER BY check_pk")
+        .all(),
+    ).resolves.toMatchObject({
+      results: [
+        { check_pk: 101, config_revision: 2 },
+        { check_pk: 102, config_revision: 1 },
+      ],
+    });
+    await expect(
+      telemetryDb.prepare("SELECT state FROM service_latest WHERE service_pk = 10").first(),
+    ).resolves.toEqual({ state: "down" });
   });
 
   it("keeps a job when telemetry synchronization fails", async () => {

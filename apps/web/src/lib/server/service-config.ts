@@ -682,6 +682,7 @@ function parseSecretReferences(value: string): CompiledServiceConfig["secretRefs
 
 export async function replaceServiceCheckConfiguration(
   controlDb: D1Database,
+  telemetryDb: D1Database,
   workspaceSlug: string,
   userId: string,
   wrappingKey: string,
@@ -807,6 +808,17 @@ export async function replaceServiceCheckConfiguration(
   if (row.executor_kind === "agent" && !agentMachineId) {
     throw error(409, "The Agent executor is unavailable");
   }
+  const syncJob = createServiceStateSyncJob({
+    workspaceId: access.workspaceId,
+    workspacePk: row.workspace_telemetry_pk,
+    serviceId,
+    servicePk: row.service_telemetry_pk,
+    checkId,
+    checkPk: row.telemetry_pk,
+    reasonCode: "check_configuration",
+    updatedAt: now,
+  });
+  const mutationIndex = agentMachineId ? 1 : 0;
   const statements: D1PreparedStatement[] = [
     ...(agentMachineId
       ? [
@@ -822,7 +834,8 @@ export async function replaceServiceCheckConfiguration(
     controlDb
       .prepare(
         `UPDATE check_configs SET name = ?, request_json = ?, secret_refs_json = ?,
-           config_bytes = ?, assignment_revision = CASE WHEN ? IS NULL THEN assignment_revision ELSE (
+           config_bytes = ?, config_revision = config_revision + 1,
+           assignment_revision = CASE WHEN ? IS NULL THEN assignment_revision ELSE (
              SELECT desired_config_revision FROM machines
              WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL
              ${AGENT_CAPACITY_CONDITION}
@@ -845,6 +858,7 @@ export async function replaceServiceCheckConfiguration(
         serviceId,
         access.workspaceId,
       ),
+    prepareServiceStateSyncJob(controlDb, syncJob, true),
     controlDb.prepare(`DELETE FROM check_assertions WHERE check_id = ?`).bind(checkId),
   ];
   for (const [index, assertion] of finalCompiled.assertions.entries()) {
@@ -911,12 +925,17 @@ export async function replaceServiceCheckConfiguration(
       now,
     }),
   );
+  let results: D1Result[];
   try {
-    await controlDb.batch(statements);
+    results = await controlDb.batch(statements);
   } catch (cause) {
     if (capacity) await assertAgentCapacity(controlDb, capacity);
     throw cause;
   }
+  if (results[mutationIndex]?.meta.changes !== 1) {
+    throw error(409, "Check configuration changed; reload and try again");
+  }
+  await applyServiceStateSyncOrDefer(controlDb, telemetryDb, syncJob);
 }
 
 export async function updateServiceCheckPolicy(
@@ -1020,7 +1039,7 @@ export async function updateServiceCheckPolicy(
       .prepare(
         `UPDATE check_configs SET enabled = ?, interval_seconds = ?, phase_seconds = ?,
            timeout_ms = ?, retry_count = ?, failure_confirmations = ?,
-           recovery_confirmations = ?, critical = ?,
+           recovery_confirmations = ?, critical = ?, config_revision = config_revision + 1,
            assignment_revision = CASE WHEN ? IS NULL THEN assignment_revision ELSE (
              SELECT desired_config_revision FROM machines
              WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL

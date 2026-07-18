@@ -38,9 +38,10 @@ async function processCheck(env: Env, row: CheckConfigRow, nowMs: number): Promi
   const slotSeconds = dueSlot(nowMs, row.interval_seconds, row.phase_seconds);
   const claim = await env.CONTROL_DB.prepare(
     `UPDATE check_configs SET last_claimed_slot = ?
-     WHERE id = ? AND enabled = 1 AND executor_kind = 'cloudflare' AND last_claimed_slot < ?`,
+     WHERE id = ? AND telemetry_pk = ? AND config_revision = ?
+       AND enabled = 1 AND executor_kind = 'cloudflare' AND last_claimed_slot < ?`,
   )
-    .bind(slotSeconds, row.id, slotSeconds)
+    .bind(slotSeconds, row.id, row.telemetry_pk, row.config_revision, slotSeconds)
     .run();
   if ((claim.meta.changes ?? 0) !== 1) return;
 
@@ -66,12 +67,21 @@ async function processCheck(env: Env, row: CheckConfigRow, nowMs: number): Promi
     };
   }
   try {
+    const currentClaim = await env.CONTROL_DB.prepare(
+      `SELECT 1 AS current_claim FROM check_configs
+       WHERE id = ? AND telemetry_pk = ? AND config_revision = ?
+         AND enabled = 1 AND executor_kind = 'cloudflare' AND last_claimed_slot = ?`,
+    )
+      .bind(row.id, row.telemetry_pk, row.config_revision, slotSeconds)
+      .first<{ current_claim: number }>();
+    if (currentClaim === null) return;
     await persistCheckResult(env.TELEMETRY_DB, row, slotSeconds * 1_000, Date.now(), result);
   } catch (error) {
     await env.CONTROL_DB.prepare(
-      "UPDATE check_configs SET last_claimed_slot = ? WHERE id = ? AND last_claimed_slot = ?",
+      `UPDATE check_configs SET last_claimed_slot = ?
+       WHERE id = ? AND telemetry_pk = ? AND config_revision = ? AND last_claimed_slot = ?`,
     )
-      .bind(row.last_claimed_slot, row.id, slotSeconds)
+      .bind(row.last_claimed_slot, row.id, row.telemetry_pk, row.config_revision, slotSeconds)
       .run();
     throw error;
   }
@@ -88,7 +98,7 @@ export async function loadDueChecks(
       `SELECT c.id, c.telemetry_pk, c.workspace_id,
             w.telemetry_pk AS workspace_telemetry_pk, s.telemetry_pk AS service_telemetry_pk,
             s.maintenance_until AS service_maintenance_until,
-            c.kind, c.interval_seconds, c.phase_seconds, c.timeout_ms,
+            c.config_revision, c.kind, c.interval_seconds, c.phase_seconds, c.timeout_ms,
             c.retry_count, c.critical,
             c.request_json, c.secret_refs_json, c.failure_confirmations,
             c.recovery_confirmations, c.last_claimed_slot

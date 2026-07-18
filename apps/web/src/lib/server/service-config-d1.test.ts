@@ -143,6 +143,7 @@ beforeEach(async () => {
         kind TEXT NOT NULL,
         executor_kind TEXT NOT NULL,
         executor_agent_id TEXT,
+        config_revision INTEGER NOT NULL DEFAULT 1,
         assignment_revision INTEGER NOT NULL,
         enabled INTEGER NOT NULL,
         interval_seconds INTEGER NOT NULL,
@@ -174,6 +175,19 @@ beforeEach(async () => {
         protect_until INTEGER NOT NULL,
         last_attempted_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
+      )`,
+    ),
+    database.prepare(
+      `CREATE TABLE check_assertions (
+        id TEXT PRIMARY KEY,
+        check_id TEXT NOT NULL,
+        sort_order INTEGER NOT NULL,
+        source TEXT NOT NULL,
+        operator TEXT NOT NULL,
+        selector TEXT,
+        expected_json TEXT NOT NULL,
+        severity TEXT NOT NULL,
+        created_at INTEGER NOT NULL
       )`,
     ),
     database.prepare(
@@ -240,7 +254,8 @@ beforeEach(async () => {
         check_pk INTEGER PRIMARY KEY,
         service_pk INTEGER NOT NULL,
         state TEXT NOT NULL,
-        critical INTEGER NOT NULL
+        critical INTEGER NOT NULL,
+        config_revision INTEGER NOT NULL DEFAULT 0
       )`,
     ),
     telemetryDatabase.prepare(
@@ -289,9 +304,9 @@ async function seedServiceChecks(): Promise<void> {
     database.prepare(
       `INSERT INTO check_configs VALUES
         ('check-a', 101, 'workspace-1', 'service-1', 'A', 'http', 'cloudflare', NULL,
-         0, 1, 60, 1, 5000, 0, 1, '{}', '{}', 2, 2, 512, 0, 1, 1),
+         1, 0, 1, 60, 1, 5000, 0, 1, '{}', '{}', 2, 2, 512, 0, 1, 1),
         ('check-b', 102, 'workspace-1', 'service-1', 'B', 'http', 'cloudflare', NULL,
-         0, 1, 60, 2, 5000, 0, 1, '{}', '{}', 2, 2, 512, 0, 1, 1)`,
+         1, 0, 1, 60, 2, 5000, 0, 1, '{}', '{}', 2, 2, 512, 0, 1, 1)`,
     ),
   ]);
 }
@@ -433,7 +448,7 @@ async function seedAgentChecks(count: number, configBytes: number): Promise<void
         .prepare(
           `INSERT INTO check_configs VALUES
             (?, ?, 'workspace-1', 'seed-service', ?, 'http', 'agent', 'agent-1',
-             1, 1, 60, 0, 5000, 0, 1, '{}', '{}', 2, 2, ?, 0, 1, 1)`,
+             1, 1, 1, 60, 0, 5000, 0, 1, '{}', '{}', 2, 2, ?, 0, 1, 1)`,
         )
         .bind(`seed-${index}`, 1_000 + index, `Seed ${index}`, configBytes),
     );
@@ -513,6 +528,7 @@ describe("Agent executor authorization", () => {
     await expect(
       replaceServiceCheckConfiguration(
         database,
+        telemetryDatabase,
         "operations",
         "user-1",
         "unused",
@@ -566,8 +582,10 @@ describe("Agent executor authorization", () => {
       ),
     ).resolves.toBeUndefined();
     await expect(
-      first<{ enabled: number }>("SELECT enabled FROM check_configs WHERE id = 'check-a'"),
-    ).resolves.toEqual({ enabled: 0 });
+      first<{ enabled: number; config_revision: number }>(
+        "SELECT enabled, config_revision FROM check_configs WHERE id = 'check-a'",
+      ),
+    ).resolves.toEqual({ enabled: 0, config_revision: 2 });
   });
 
   it("rejects an inactive Agent for execution while preserving revocation paths", async () => {
@@ -799,11 +817,56 @@ describe("service check invariants", () => {
 });
 
 describe("service telemetry synchronization", () => {
+  it("increments a replaced central configuration and invalidates its old latest", async () => {
+    await seedServiceChecks();
+    await telemetryDatabase.batch([
+      telemetryDatabase.prepare("INSERT INTO check_latest VALUES (101, 10, 'down', 1, 1)"),
+      telemetryDatabase.prepare("INSERT INTO check_latest VALUES (102, 10, 'healthy', 1, 1)"),
+      telemetryDatabase.prepare(
+        "INSERT INTO service_latest VALUES (10, 1, 'down', 1, 'check_down', 1, 1)",
+      ),
+    ]);
+
+    await expect(
+      replaceServiceCheckConfiguration(
+        database,
+        telemetryDatabase,
+        "operations",
+        "user-1",
+        "unused",
+        "service-1",
+        "check-a",
+        {
+          ...input,
+          checkName: "Replacement target",
+          executorKind: "cloudflare",
+          executorAgentId: "",
+          retryCount: 0,
+          replaceSecrets: false,
+        },
+      ),
+    ).resolves.toBeUndefined();
+    await expect(
+      first<{ config_revision: number }>(
+        "SELECT config_revision FROM check_configs WHERE id = 'check-a'",
+      ),
+    ).resolves.toEqual({ config_revision: 2 });
+    await expect(
+      first<{ count: number }>("SELECT COUNT(*) AS count FROM service_state_sync_jobs"),
+    ).resolves.toEqual({ count: 1 });
+    await expect(
+      telemetryDatabase.prepare("SELECT check_pk FROM check_latest ORDER BY check_pk").all(),
+    ).resolves.toMatchObject({ results: [{ check_pk: 102 }] });
+    await expect(
+      telemetryDatabase.prepare("SELECT state FROM service_latest WHERE service_pk = 10").first(),
+    ).resolves.toEqual({ state: "healthy" });
+  });
+
   it("commits policy changes and retains a retry job when TELEMETRY_DB is unavailable", async () => {
     await seedServiceChecks();
     await telemetryDatabase.batch([
-      telemetryDatabase.prepare("INSERT INTO check_latest VALUES (101, 10, 'down', 1)"),
-      telemetryDatabase.prepare("INSERT INTO check_latest VALUES (102, 10, 'healthy', 1)"),
+      telemetryDatabase.prepare("INSERT INTO check_latest VALUES (101, 10, 'down', 1, 1)"),
+      telemetryDatabase.prepare("INSERT INTO check_latest VALUES (102, 10, 'healthy', 1, 1)"),
       telemetryDatabase.prepare(
         "INSERT INTO service_latest VALUES (10, 1, 'down', 1, 'check_down', 1, 1)",
       ),
@@ -862,7 +925,7 @@ describe("service telemetry synchronization", () => {
   it("persists maintenance synchronization with the control mutation", async () => {
     await seedServiceChecks();
     await telemetryDatabase
-      .prepare("INSERT INTO check_latest VALUES (101, 10, 'healthy', 1)")
+      .prepare("INSERT INTO check_latest VALUES (101, 10, 'healthy', 1, 1)")
       .run();
     const maintenanceUntil = Date.now() + 60_000;
 

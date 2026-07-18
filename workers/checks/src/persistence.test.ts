@@ -10,6 +10,7 @@ const config: CheckConfigRow = {
   workspace_id: "workspace",
   service_telemetry_pk: 1,
   service_maintenance_until: null,
+  config_revision: 1,
   kind: "http",
   interval_seconds: 60,
   phase_seconds: 0,

@@ -74,6 +74,10 @@
         {
           "file": "0018_service_state_sync_jobs.sql",
           "sha256": "9a58e57e9208fcd19642019e99914504d8f82e2541c1da578a54175d2ffc841a"
+        },
+        {
+          "file": "0019_check_config_revision.sql",
+          "sha256": "5d575c5f32f71e663678f34f6b3718ee4a60a6295c07fd175333f92b430da4d4"
         }
       ],
       "objects": [
@@ -309,7 +313,7 @@
           "type": "table",
           "name": "check_configs",
           "table": "check_configs",
-          "sql": "CREATE TABLE check_configs (\n  id TEXT PRIMARY KEY NOT NULL,\n  telemetry_pk INTEGER NOT NULL UNIQUE,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  service_id TEXT NOT NULL REFERENCES services (id) ON DELETE CASCADE,\n  name TEXT NOT NULL,\n  kind TEXT NOT NULL CHECK (kind IN ('http', 'tcp', 'icmp')),\n  executor_kind TEXT NOT NULL CHECK (executor_kind IN ('cloudflare', 'agent')),\n  executor_agent_id TEXT REFERENCES agents (id),\n  enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),\n  interval_seconds INTEGER NOT NULL DEFAULT 60 CHECK (interval_seconds BETWEEN 5 AND 86400),\n  phase_seconds INTEGER NOT NULL DEFAULT 0 CHECK (phase_seconds BETWEEN 0 AND 86399),\n  timeout_ms INTEGER NOT NULL DEFAULT 5000 CHECK (timeout_ms BETWEEN 100 AND 30000),\n  request_json TEXT NOT NULL,\n  last_claimed_slot INTEGER NOT NULL DEFAULT 0,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL\n, failure_confirmations INTEGER NOT NULL DEFAULT 3\n  CHECK (failure_confirmations BETWEEN 1 AND 20), recovery_confirmations INTEGER NOT NULL DEFAULT 2\n  CHECK (recovery_confirmations BETWEEN 1 AND 20), secret_refs_json TEXT NOT NULL DEFAULT '{}', assignment_revision INTEGER NOT NULL DEFAULT 0, config_bytes INTEGER NOT NULL DEFAULT 0, retry_count INTEGER NOT NULL DEFAULT 0\n  CHECK (retry_count BETWEEN 0 AND 3), critical INTEGER NOT NULL DEFAULT 1\n  CHECK (critical IN (0, 1))) STRICT"
+          "sql": "CREATE TABLE check_configs (\n  id TEXT PRIMARY KEY NOT NULL,\n  telemetry_pk INTEGER NOT NULL UNIQUE,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  service_id TEXT NOT NULL REFERENCES services (id) ON DELETE CASCADE,\n  name TEXT NOT NULL,\n  kind TEXT NOT NULL CHECK (kind IN ('http', 'tcp', 'icmp')),\n  executor_kind TEXT NOT NULL CHECK (executor_kind IN ('cloudflare', 'agent')),\n  executor_agent_id TEXT REFERENCES agents (id),\n  enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),\n  interval_seconds INTEGER NOT NULL DEFAULT 60 CHECK (interval_seconds BETWEEN 5 AND 86400),\n  phase_seconds INTEGER NOT NULL DEFAULT 0 CHECK (phase_seconds BETWEEN 0 AND 86399),\n  timeout_ms INTEGER NOT NULL DEFAULT 5000 CHECK (timeout_ms BETWEEN 100 AND 30000),\n  request_json TEXT NOT NULL,\n  last_claimed_slot INTEGER NOT NULL DEFAULT 0,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL\n, failure_confirmations INTEGER NOT NULL DEFAULT 3\n  CHECK (failure_confirmations BETWEEN 1 AND 20), recovery_confirmations INTEGER NOT NULL DEFAULT 2\n  CHECK (recovery_confirmations BETWEEN 1 AND 20), secret_refs_json TEXT NOT NULL DEFAULT '{}', assignment_revision INTEGER NOT NULL DEFAULT 0, config_bytes INTEGER NOT NULL DEFAULT 0, retry_count INTEGER NOT NULL DEFAULT 0\n  CHECK (retry_count BETWEEN 0 AND 3), critical INTEGER NOT NULL DEFAULT 1\n  CHECK (critical IN (0, 1)), config_revision INTEGER NOT NULL DEFAULT 1\n  CHECK (config_revision > 0)) STRICT"
         },
         {
           "type": "table",
@@ -445,6 +449,18 @@
         },
         {
           "type": "trigger",
+          "name": "check_configs_config_revision_compat",
+          "table": "check_configs",
+          "sql": "CREATE TRIGGER check_configs_config_revision_compat\nAFTER UPDATE OF name, request_json, secret_refs_json, config_bytes,\n                enabled, interval_seconds, phase_seconds, timeout_ms,\n                retry_count, critical, failure_confirmations, recovery_confirmations\nON check_configs\nWHEN NEW.config_revision = OLD.config_revision\nBEGIN\n  UPDATE check_configs\n  SET config_revision = OLD.config_revision + 1\n  WHERE id = NEW.id;\nEND"
+        },
+        {
+          "type": "trigger",
+          "name": "check_configs_config_revision_monotonic",
+          "table": "check_configs",
+          "sql": "CREATE TRIGGER check_configs_config_revision_monotonic\nBEFORE UPDATE OF config_revision ON check_configs\nWHEN NEW.config_revision <= OLD.config_revision\nBEGIN\n  SELECT RAISE(ABORT, 'check config revision must increase');\nEND"
+        },
+        {
+          "type": "trigger",
           "name": "memberships_keep_active_admin_on_delete",
           "table": "memberships",
           "sql": "CREATE TRIGGER memberships_keep_active_admin_on_delete\nBEFORE DELETE ON memberships\nWHEN OLD.role = 'admin'\n  AND OLD.status = 'active'\n  AND NOT EXISTS (\n    SELECT 1 FROM memberships\n    WHERE workspace_id = OLD.workspace_id\n      AND user_id != OLD.user_id\n      AND role = 'admin'\n      AND status = 'active'\n  )\nBEGIN\n  SELECT RAISE(ABORT, 'workspace requires an active administrator');\nEND"
@@ -498,6 +514,10 @@
         {
           "file": "0010_retention_run_history.sql",
           "sha256": "a53bdde319ef48ef186a88b1b9f636b5cf7ff2c2678c50cb247e3a502ed53062"
+        },
+        {
+          "file": "0011_central_check_revision.sql",
+          "sha256": "70f26fe04f740c1bd5c43dcdd6a9eb33cea1d92bb768800db60dead37fd22400"
         }
       ],
       "objects": [
@@ -751,13 +771,13 @@
           "type": "table",
           "name": "check_configs",
           "table": "check_configs",
-          "sql": "CREATE TABLE check_configs (\n  id TEXT PRIMARY KEY NOT NULL,\n  telemetry_pk INTEGER NOT NULL UNIQUE,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  service_id TEXT NOT NULL REFERENCES services (id) ON DELETE CASCADE,\n  name TEXT NOT NULL,\n  kind TEXT NOT NULL CHECK (kind IN ('http', 'tcp', 'icmp')),\n  executor_kind TEXT NOT NULL CHECK (executor_kind IN ('cloudflare', 'agent')),\n  executor_agent_id TEXT REFERENCES agents (id),\n  enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),\n  interval_seconds INTEGER NOT NULL DEFAULT 60 CHECK (interval_seconds BETWEEN 5 AND 86400),\n  phase_seconds INTEGER NOT NULL DEFAULT 0 CHECK (phase_seconds BETWEEN 0 AND 86399),\n  timeout_ms INTEGER NOT NULL DEFAULT 5000 CHECK (timeout_ms BETWEEN 100 AND 30000),\n  request_json TEXT NOT NULL,\n  last_claimed_slot INTEGER NOT NULL DEFAULT 0,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL\n, failure_confirmations INTEGER NOT NULL DEFAULT 3\n  CHECK (failure_confirmations BETWEEN 1 AND 20), recovery_confirmations INTEGER NOT NULL DEFAULT 2\n  CHECK (recovery_confirmations BETWEEN 1 AND 20), secret_refs_json TEXT NOT NULL DEFAULT '{}', assignment_revision INTEGER NOT NULL DEFAULT 0, config_bytes INTEGER NOT NULL DEFAULT 0, retry_count INTEGER NOT NULL DEFAULT 0\n  CHECK (retry_count BETWEEN 0 AND 3), critical INTEGER NOT NULL DEFAULT 1\n  CHECK (critical IN (0, 1))) STRICT"
+          "sql": "CREATE TABLE check_configs (\n  id TEXT PRIMARY KEY NOT NULL,\n  telemetry_pk INTEGER NOT NULL UNIQUE,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  service_id TEXT NOT NULL REFERENCES services (id) ON DELETE CASCADE,\n  name TEXT NOT NULL,\n  kind TEXT NOT NULL CHECK (kind IN ('http', 'tcp', 'icmp')),\n  executor_kind TEXT NOT NULL CHECK (executor_kind IN ('cloudflare', 'agent')),\n  executor_agent_id TEXT REFERENCES agents (id),\n  enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),\n  interval_seconds INTEGER NOT NULL DEFAULT 60 CHECK (interval_seconds BETWEEN 5 AND 86400),\n  phase_seconds INTEGER NOT NULL DEFAULT 0 CHECK (phase_seconds BETWEEN 0 AND 86399),\n  timeout_ms INTEGER NOT NULL DEFAULT 5000 CHECK (timeout_ms BETWEEN 100 AND 30000),\n  request_json TEXT NOT NULL,\n  last_claimed_slot INTEGER NOT NULL DEFAULT 0,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL\n, failure_confirmations INTEGER NOT NULL DEFAULT 3\n  CHECK (failure_confirmations BETWEEN 1 AND 20), recovery_confirmations INTEGER NOT NULL DEFAULT 2\n  CHECK (recovery_confirmations BETWEEN 1 AND 20), secret_refs_json TEXT NOT NULL DEFAULT '{}', assignment_revision INTEGER NOT NULL DEFAULT 0, config_bytes INTEGER NOT NULL DEFAULT 0, retry_count INTEGER NOT NULL DEFAULT 0\n  CHECK (retry_count BETWEEN 0 AND 3), critical INTEGER NOT NULL DEFAULT 1\n  CHECK (critical IN (0, 1)), config_revision INTEGER NOT NULL DEFAULT 1\n  CHECK (config_revision > 0)) STRICT"
         },
         {
           "type": "table",
           "name": "check_latest",
           "table": "check_latest",
-          "sql": "CREATE TABLE check_latest (\n  check_pk INTEGER PRIMARY KEY NOT NULL,\n  workspace_pk INTEGER NOT NULL,\n  observed_at INTEGER NOT NULL,\n  state TEXT NOT NULL CHECK (state IN ('healthy', 'degraded', 'down', 'unknown')),\n  latency_ms INTEGER,\n  failure_code TEXT,\n  result_id BLOB NOT NULL\n, service_pk INTEGER, failure_summary TEXT, consecutive_failures INTEGER NOT NULL DEFAULT 0, consecutive_successes INTEGER NOT NULL DEFAULT 0, critical INTEGER NOT NULL DEFAULT 1\n  CHECK (critical IN (0, 1))) STRICT"
+          "sql": "CREATE TABLE check_latest (\n  check_pk INTEGER PRIMARY KEY NOT NULL,\n  workspace_pk INTEGER NOT NULL,\n  observed_at INTEGER NOT NULL,\n  state TEXT NOT NULL CHECK (state IN ('healthy', 'degraded', 'down', 'unknown')),\n  latency_ms INTEGER,\n  failure_code TEXT,\n  result_id BLOB NOT NULL\n, service_pk INTEGER, failure_summary TEXT, consecutive_failures INTEGER NOT NULL DEFAULT 0, consecutive_successes INTEGER NOT NULL DEFAULT 0, critical INTEGER NOT NULL DEFAULT 1\n  CHECK (critical IN (0, 1)), config_revision INTEGER NOT NULL DEFAULT 0\n  CHECK (config_revision >= 0)) STRICT"
         },
         {
           "type": "table",
@@ -968,6 +988,18 @@
           "name": "workspaces",
           "table": "workspaces",
           "sql": "CREATE TABLE workspaces (\n  id TEXT PRIMARY KEY NOT NULL,\n  telemetry_pk INTEGER NOT NULL UNIQUE,\n  slug TEXT NOT NULL UNIQUE,\n  name TEXT NOT NULL,\n  default_dashboard_id TEXT,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  deleted_at INTEGER\n, default_sampling_interval_seconds INTEGER NOT NULL DEFAULT 10\n  CHECK (default_sampling_interval_seconds BETWEEN 5 AND 300), purge_started_at INTEGER) STRICT"
+        },
+        {
+          "type": "trigger",
+          "name": "check_configs_config_revision_compat",
+          "table": "check_configs",
+          "sql": "CREATE TRIGGER check_configs_config_revision_compat\nAFTER UPDATE OF name, request_json, secret_refs_json, config_bytes,\n                enabled, interval_seconds, phase_seconds, timeout_ms,\n                retry_count, critical, failure_confirmations, recovery_confirmations\nON check_configs\nWHEN NEW.config_revision = OLD.config_revision\nBEGIN\n  UPDATE check_configs\n  SET config_revision = OLD.config_revision + 1\n  WHERE id = NEW.id;\nEND"
+        },
+        {
+          "type": "trigger",
+          "name": "check_configs_config_revision_monotonic",
+          "table": "check_configs",
+          "sql": "CREATE TRIGGER check_configs_config_revision_monotonic\nBEFORE UPDATE OF config_revision ON check_configs\nWHEN NEW.config_revision <= OLD.config_revision\nBEGIN\n  SELECT RAISE(ABORT, 'check config revision must increase');\nEND"
         },
         {
           "type": "trigger",

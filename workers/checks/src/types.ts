@@ -5,6 +5,7 @@ export interface CheckConfigRow {
   workspace_id: string;
   service_telemetry_pk: number;
   service_maintenance_until: number | null;
+  config_revision: number;
   kind: "http" | "tcp";
   interval_seconds: number;
   phase_seconds: number;

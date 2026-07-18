@@ -33,6 +33,7 @@ export const checkLatest = sqliteTable("check_latest", {
   consecutiveFailures: integer("consecutive_failures").notNull().default(0),
   consecutiveSuccesses: integer("consecutive_successes").notNull().default(0),
   critical: integer("critical", { mode: "boolean" }).notNull().default(true),
+  configRevision: integer("config_revision").notNull().default(0),
   resultId: blob("result_id", { mode: "buffer" }).notNull(),
 });
 

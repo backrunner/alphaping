@@ -161,13 +161,13 @@ Ingest 暴露不访问 D1 的 `GET|HEAD /healthz` liveness。数据库读写健�
 
 1. Cron 每分钟唤醒 checks Worker。
 2. 30 台目标规模下，Worker 读取少量 enabled task，根据稳定 interval/phase 计算 nominal slot。
-3. 对 due task 使用 `UPDATE ... WHERE last_claimed_slot < ?` 原子领取，避免为每分钟改变的 `next_run_at` 维护二级索引。
+3. 对 due task 使用 `UPDATE ... WHERE config_revision = ? AND last_claimed_slot < ?` 原子领取，避免为每分钟改变的 `next_run_at` 维护二级索引；执行结束后再次验证 revision/claim，配置替换期间的旧执行不得写成新配置的 latest。
 4. V1 以最多 5 个并发直接执行 Cloudflare HTTP/TCP 任务；不为 30 台规模引入 Queue。
 5. Agent 任务写入对应 machine 的 config revision，由 Agent 下次 report 拉取。
 6. Checks Worker 或 Agent 产生统一 `CheckResult`，通过共享 domain repository 写入 TELEMETRY_DB。
 7. 同一写入流程更新 check latest、time bucket、服务状态和 incident 事件。
 8. 同一 Cron 以有界主键批次比较机器 `received_at` 和离线阈值；只在状态转换时条件更新 latest 并写确定性离线事件，不新增调度请求。
-9. Web 的 check policy/delete/maintenance mutation 在同一 CONTROL_DB 事务写 `service_state_sync_jobs`。Web 立即尝试同步，Checks Worker 在检查执行结束后每分钟重放最多 50 个 job，并在 15 分钟在途保护窗内重复校正；TELEMETRY_DB 短时失败不能丢失配置 mutation 或永久留下旧 service state。
+9. Web 的 check target/policy/delete/maintenance mutation 在同一 CONTROL_DB 事务写 `service_state_sync_jobs`。Web 立即尝试同步，Checks Worker 在检查执行结束后每分钟重放最多 50 个 job，并在 15 分钟在途保护窗内重复校正；job 按中央检查 `config_revision` 删除迟到旧 latest，TELEMETRY_DB 短时失败不能丢失配置 mutation 或永久留下旧 service state。
 
 ### 6.7 Retention
 

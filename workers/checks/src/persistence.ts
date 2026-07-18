@@ -34,6 +34,7 @@ interface ConfirmationState {
 }
 
 interface PreviousCheckLatest extends ConfirmationState {
+  config_revision: number;
   result_id: unknown;
 }
 
@@ -334,8 +335,16 @@ function prepareStatusBucket(
     );
 }
 
-async function executionId(checkId: string, nominalMinute: number): Promise<ArrayBuffer> {
-  return crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${checkId}:${nominalMinute}`));
+async function executionId(
+  checkId: string,
+  configRevision: number,
+  nominalMinute: number,
+): Promise<ArrayBuffer> {
+  const material =
+    configRevision === 1
+      ? `${checkId}:${nominalMinute}`
+      : `${checkId}:${configRevision}:${nominalMinute}`;
+  return crypto.subtle.digest("SHA-256", new TextEncoder().encode(material));
 }
 
 function hex(bytes: ArrayBuffer): string {
@@ -359,11 +368,11 @@ export async function persistCheckResult(
   result: ExecutedCheck,
 ): Promise<void> {
   const [resultId, previousCheck, serviceChecks, previousService] = await Promise.all([
-    executionId(config.id, nominalMinute),
+    executionId(config.id, config.config_revision, nominalMinute),
     db
       .prepare(
         `SELECT state, failure_code, failure_summary, consecutive_failures,
-              consecutive_successes, result_id
+              consecutive_successes, config_revision, result_id
        FROM check_latest WHERE check_pk = ?`,
       )
       .bind(config.telemetry_pk)
@@ -377,6 +386,7 @@ export async function persistCheckResult(
       .bind(config.service_telemetry_pk)
       .first<PreviousServiceLatest>(),
   ]);
+  if (previousCheck !== null && previousCheck.config_revision > config.config_revision) return;
   if (
     previousCheck !== null &&
     equalBytes(d1BlobToArrayBuffer(previousCheck.result_id), resultId)
@@ -388,6 +398,7 @@ export async function persistCheckResult(
     JSON.stringify({
       v: 1,
       id: hex(resultId),
+      configRevision: config.config_revision,
       observedAt,
       state: result.state,
       latencyMs: result.latencyMs,
@@ -409,8 +420,9 @@ export async function persistCheckResult(
     .prepare(
       `INSERT INTO check_latest
       (check_pk, workspace_pk, service_pk, observed_at, state, latency_ms, failure_code,
-       failure_summary, consecutive_failures, consecutive_successes, critical, result_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       failure_summary, consecutive_failures, consecutive_successes, critical,
+       config_revision, result_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(check_pk) DO UPDATE SET
       workspace_pk = excluded.workspace_pk,
       service_pk = excluded.service_pk,
@@ -422,8 +434,11 @@ export async function persistCheckResult(
       consecutive_failures = excluded.consecutive_failures,
       consecutive_successes = excluded.consecutive_successes,
       critical = excluded.critical,
+      config_revision = excluded.config_revision,
       result_id = excluded.result_id
-     WHERE excluded.observed_at >= check_latest.observed_at`,
+     WHERE excluded.config_revision > check_latest.config_revision
+        OR (excluded.config_revision = check_latest.config_revision
+            AND excluded.observed_at >= check_latest.observed_at)`,
     )
     .bind(
       config.telemetry_pk,
@@ -437,6 +452,7 @@ export async function persistCheckResult(
       confirmed.consecutiveFailures,
       confirmed.consecutiveSuccesses,
       config.critical,
+      config.config_revision,
       resultId,
     );
 
@@ -457,7 +473,11 @@ export async function persistCheckResult(
         .prepare(
           `INSERT INTO service_latest
           (service_pk, workspace_pk, state, status_since, reason_code, last_transition_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
+         SELECT ?, ?, ?, ?, ?, ?, ?
+         WHERE EXISTS (
+           SELECT 1 FROM check_latest
+           WHERE check_pk = ? AND config_revision = ? AND result_id = ?
+         )
          ON CONFLICT(service_pk) DO UPDATE SET
            workspace_pk = excluded.workspace_pk,
            state = excluded.state,
@@ -474,6 +494,9 @@ export async function persistCheckResult(
           serviceReason(nextServiceState),
           observedAt,
           observedAt,
+          config.telemetry_pk,
+          config.config_revision,
+          resultId,
         ),
     );
     if (previousState !== nextServiceState) {
@@ -483,7 +506,11 @@ export async function persistCheckResult(
             `INSERT OR IGNORE INTO state_events
           (workspace_pk, resource_type, resource_pk, occurred_at, event_id,
            previous_state, current_state, reason_code)
-         VALUES (?, 2, ?, ?, ?, ?, ?, ?)`,
+         SELECT ?, 2, ?, ?, ?, ?, ?, ?
+         WHERE EXISTS (
+           SELECT 1 FROM check_latest
+           WHERE check_pk = ? AND config_revision = ? AND result_id = ?
+         )`,
           )
           .bind(
             config.workspace_telemetry_pk,
@@ -493,6 +520,9 @@ export async function persistCheckResult(
             previousState,
             nextServiceState,
             serviceReason(nextServiceState),
+            config.telemetry_pk,
+            config.config_revision,
+            resultId,
           ),
       );
     }

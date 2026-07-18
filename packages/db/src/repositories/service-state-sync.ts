@@ -43,6 +43,8 @@ interface DesiredServiceStateRow {
   check_pk: number | null;
   enabled: number | null;
   critical: number | null;
+  executor_kind: "cloudflare" | "agent" | null;
+  config_revision: number | null;
 }
 
 interface CheckStateRow {
@@ -145,7 +147,7 @@ async function desiredServiceState(
     .prepare(
       `SELECT w.telemetry_pk AS workspace_pk, s.telemetry_pk AS service_pk,
               s.maintenance_until, c.telemetry_pk AS check_pk,
-              c.enabled, c.critical
+              c.enabled, c.critical, c.executor_kind, c.config_revision
        FROM services s
        JOIN workspaces w ON w.id = s.workspace_id AND w.deleted_at IS NULL
        LEFT JOIN check_configs c
@@ -178,12 +180,28 @@ export async function applyServiceStateSyncJob(
   if (job.checkPk !== null) {
     const currentCheck =
       desired.check_pk === job.checkPk && desired.enabled === 1 && desired.critical !== null;
-    const statement = currentCheck
-      ? telemetryDb
-          .prepare("UPDATE check_latest SET critical = ? WHERE check_pk = ?")
-          .bind(desired.critical, job.checkPk)
-      : telemetryDb.prepare("DELETE FROM check_latest WHERE check_pk = ?").bind(job.checkPk);
-    await statement.run();
+    if (!currentCheck) {
+      await telemetryDb
+        .prepare("DELETE FROM check_latest WHERE check_pk = ?")
+        .bind(job.checkPk)
+        .run();
+    } else if (desired.executor_kind === "cloudflare" && desired.config_revision !== null) {
+      await telemetryDb.batch([
+        telemetryDb
+          .prepare("DELETE FROM check_latest WHERE check_pk = ? AND config_revision != ?")
+          .bind(job.checkPk, desired.config_revision),
+        telemetryDb
+          .prepare(
+            "UPDATE check_latest SET critical = ? WHERE check_pk = ? AND config_revision = ?",
+          )
+          .bind(desired.critical, job.checkPk, desired.config_revision),
+      ]);
+    } else {
+      await telemetryDb
+        .prepare("UPDATE check_latest SET critical = ? WHERE check_pk = ?")
+        .bind(desired.critical, job.checkPk)
+        .run();
+    }
   }
 
   const [checks, previous] = await Promise.all([

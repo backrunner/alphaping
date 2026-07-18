@@ -290,6 +290,7 @@ V1 默认不生成每容器长保留 rollup。七天内原始容器数据由 mac
 - `name`, `type`: `http|tcp|icmp`
 - `executor_type`: `cloudflare|agent`
 - `executor_agent_id` nullable
+- `config_revision`：任何 target/policy 变化时单调递增；中央执行领取、结果 ID 和 latest 写入必须绑定该 revision
 - `assignment_revision`：该任务最后一次分配/变更时目标机器的 desired config revision；旧 Agent 或旧 revision 的结果必须拒绝
 - `config_bytes`：管理写入时计算的保守快照占用；同一 Agent enabled task 合计不得超过 44 KiB
 - `interval_seconds`, `timeout_ms`, `retry_count`（0-3 次）
@@ -302,6 +303,8 @@ V1 默认不生成每容器长保留 rollup。七天内原始容器数据由 mac
 
 对 30 台目标规模不建 `enabled/next_run_at` 索引。Checks Worker 读取 enabled rows 并在应用层计算 nominal slot，用 `last_claimed_slot` 条件 update 幂等领取。`workspace_id,service_id` 索引仅服务配置页查询，高频 claim 不修改其列。
 
+CONTROL migration 使用窄 compatibility trigger 为滚动部署中的旧 Web writer 补增 `config_revision`；trigger 只监听 target/policy 字段，scheduler 的 `last_claimed_slot` 更新不触发，新 Web 显式递增也不会双增。独立 monotonic trigger 拒绝 revision 回退。
+
 ### `service_state_sync_jobs`
 
 - `job_key`, `sync_token`
@@ -309,7 +312,7 @@ V1 默认不生成每容器长保留 rollup。七天内原始容器数据由 mac
 - `check_id`, `check_pk`，maintenance job 两列都为空
 - `reason_code`, `protect_until`, `last_attempted_at`, `updated_at`
 
-Web 在 check policy/delete/maintenance 的 CONTROL_DB mutation transaction 内 upsert job。外部 ID 和 telemetry PK 固定在 job 中，Checks Worker 仍重新读取 CONTROL_DB 当前 enabled/critical/maintenance 状态后才修改 TELEMETRY_DB。每分钟按 `last_attempted_at,job_key` 最多处理 50 行，并在每次成功或失败尝试后用 `job_key,sync_token` 条件轮转；job 在 15 分钟在途保护窗内重复校正，越过保护窗的最后一次同步成功后用同一条件删除，较新的 mutation 不会被旧执行清除。
+Web 在 check target/policy/delete/maintenance 的 CONTROL_DB mutation transaction 内 upsert job。外部 ID 和 telemetry PK 固定在 job 中，Checks Worker 仍重新读取 CONTROL_DB 当前 enabled/critical/config revision/maintenance 状态后才修改 TELEMETRY_DB。每分钟按 `last_attempted_at,job_key` 最多处理 50 行，并在每次成功或失败尝试后用 `job_key,sync_token` 条件轮转；job 在 15 分钟在途保护窗内重复校正，越过保护窗的最后一次同步成功后用同一条件删除，较新的 mutation 不会被旧执行清除。
 
 ### `check_assertions`
 
@@ -322,7 +325,7 @@ Web 在 check policy/delete/maintenance 的 CONTROL_DB mutation transaction 内 
 
 结构化行便于编辑和审计，执行时可缓存为 compiled config。
 
-不单独创建每次执行的 lease row。`last_claimed_slot` 和确定性 `execution_id = hash(check_id, nominal_slot)` 共同处理 Cron 至少一次语义。
+不单独创建每次执行的 lease row。`config_revision`、`last_claimed_slot` 和确定性 `execution_id = hash(check_id, config_revision, nominal_slot)` 共同处理 Cron 至少一次语义。
 
 ### `check_latest`
 
@@ -332,6 +335,7 @@ Web 在 check policy/delete/maintenance 的 CONTROL_DB mutation transaction 内 
 - `failure_code`, `failure_summary`
 - `consecutive_failures`, `consecutive_successes`
 - `critical`，随结果投影保存，供中央和 Agent 结果使用同一聚合规则
+- `config_revision`，中央检查保存执行时 revision；Agent 行保持 0 并继续由 assignment revision 在 Ingest 入口验证
 
 ### `check_result_blocks_5m`
 

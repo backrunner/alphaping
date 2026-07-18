@@ -107,6 +107,7 @@ export const actions: Actions = {
     try {
       await replaceServiceCheckConfiguration(
         platform.env.CONTROL_DB,
+        platform.env.TELEMETRY_DB,
         params.workspace,
         locals.session.user.id,
         platform.env.CHECK_SECRET_WRAPPING_KEY,

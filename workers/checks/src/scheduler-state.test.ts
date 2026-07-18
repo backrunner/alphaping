@@ -44,6 +44,7 @@ beforeEach(async () => {
         service_id TEXT NOT NULL,
         kind TEXT NOT NULL,
         executor_kind TEXT NOT NULL,
+        config_revision INTEGER NOT NULL DEFAULT 1,
         enabled INTEGER NOT NULL,
         interval_seconds INTEGER NOT NULL,
         phase_seconds INTEGER NOT NULL,
@@ -140,6 +141,7 @@ describe("bounded scheduler scans", () => {
 
     expect(first).toHaveLength(500);
     expect(first[0]?.telemetry_pk).toBe(501);
+    expect(first[0]?.config_revision).toBe(1);
     expect(first[499]?.telemetry_pk).toBe(1000);
 
     await database
