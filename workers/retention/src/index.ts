@@ -9,6 +9,7 @@ import {
 } from "./telemetry-retention";
 
 const POLICY_BATCH = 100;
+const RUN_WORK_BUDGET_MS = 12 * 60_000;
 
 export interface RetentionPolicyBatch {
   policies: readonly RetentionPolicyRow[];
@@ -16,9 +17,39 @@ export interface RetentionPolicyBatch {
   nextWorkspaceCursor: number;
 }
 
-interface WorkspaceCleanupResult {
+export interface WorkspaceCleanupResult {
   deletedRows: number;
   processed: boolean;
+}
+
+export interface RetentionPolicyProgress {
+  deletedRows: number;
+  skippedWorkspaces: number;
+  deadlineReached: boolean;
+}
+
+export async function processRetentionPolicies(
+  policies: readonly RetentionPolicyRow[],
+  shouldContinue: () => boolean,
+  clean: (policy: RetentionPolicyRow) => Promise<WorkspaceCleanupResult>,
+): Promise<RetentionPolicyProgress> {
+  let deletedRows = 0;
+  let skippedWorkspaces = 0;
+  for (let index = 0; index < policies.length; index += 1) {
+    if (!shouldContinue()) {
+      return {
+        deletedRows,
+        skippedWorkspaces: skippedWorkspaces + policies.length - index,
+        deadlineReached: true,
+      };
+    }
+    const policy = policies[index];
+    if (!policy) throw new Error("retention policy batch changed during iteration");
+    const result = await clean(policy);
+    deletedRows += result.deletedRows;
+    if (!result.processed) skippedWorkspaces += 1;
+  }
+  return { deletedRows, skippedWorkspaces, deadlineReached: false };
 }
 
 export function resolveRetentionWorkspaceCursor(
@@ -106,6 +137,7 @@ async function cleanWorkspace(
 
 export async function runRetention(env: Env, scheduledTime: number): Promise<void> {
   const runId = `retention:${scheduledTime}`;
+  const deadline = Date.now() + RUN_WORK_BUDGET_MS;
   const claimed = await env.TELEMETRY_DB.prepare(
     "INSERT OR IGNORE INTO retention_runs (run_id, started_at, deleted_rows) VALUES (?, ?, 0)",
   )
@@ -115,17 +147,19 @@ export async function runRetention(env: Env, scheduledTime: number): Promise<voi
 
   try {
     const policyBatch = await loadRetentionPolicyBatch(env.CONTROL_DB, env.TELEMETRY_DB, runId);
-    let deleted = 0;
-    let skippedWorkspaces = 0;
-    for (const policy of policyBatch.policies) {
-      const result = await cleanWorkspace(env, policy, scheduledTime);
-      deleted += result.deletedRows;
-      if (!result.processed) skippedWorkspaces += 1;
-    }
+    const progress = await processRetentionPolicies(
+      policyBatch.policies,
+      () => Date.now() < deadline,
+      (policy) => cleanWorkspace(env, policy, scheduledTime),
+    );
+    let deleted = progress.deletedRows;
     const commands = await cleanAgentCommands(env.CONTROL_DB, scheduledTime);
     deleted += commands.deleted;
     const artifacts = await cleanArtifactBucket(env, scheduledTime);
-    const workspaceCursor = resolveRetentionWorkspaceCursor(policyBatch, skippedWorkspaces);
+    const workspaceCursor = resolveRetentionWorkspaceCursor(
+      policyBatch,
+      progress.skippedWorkspaces,
+    );
     await env.TELEMETRY_DB.prepare(
       `UPDATE retention_runs
        SET completed_at = ?, deleted_rows = ?, workspace_cursor = ?
@@ -141,7 +175,8 @@ export async function runRetention(env: Env, scheduledTime: number): Promise<voi
         scannedArtifacts: artifacts.scanned,
         deletedArtifacts: artifacts.deleted,
         skippedArtifactPrefixes: artifacts.skippedPrefixes,
-        skippedWorkspaces,
+        skippedWorkspaces: progress.skippedWorkspaces,
+        deadlineReached: progress.deadlineReached,
       }),
     );
   } catch (error) {

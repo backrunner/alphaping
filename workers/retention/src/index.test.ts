@@ -1,7 +1,11 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { loadRetentionPolicyBatch, resolveRetentionWorkspaceCursor } from "./index";
+import {
+  loadRetentionPolicyBatch,
+  processRetentionPolicies,
+  resolveRetentionWorkspaceCursor,
+} from "./index";
 
 beforeEach(async () => {
   await env.CONTROL_DB.batch([
@@ -141,5 +145,30 @@ describe("retention policy scheduler", () => {
     expect(batch.nextWorkspaceCursor).toBe(2);
     expect(resolveRetentionWorkspaceCursor(batch, 1)).toBe(1);
     expect(resolveRetentionWorkspaceCursor(batch, 0)).toBe(2);
+  });
+
+  it("stops before the wall-time reserve and retains every unprocessed workspace", async () => {
+    let processed = 0;
+    const batch = await loadRetentionPolicyBatch(
+      env.CONTROL_DB,
+      env.TELEMETRY_DB,
+      "retention:1752584400000",
+      3,
+    );
+    const progress = await processRetentionPolicies(
+      batch.policies,
+      () => processed < 1,
+      async () => {
+        processed += 1;
+        return { deletedRows: 2, processed: true };
+      },
+    );
+
+    expect(progress).toEqual({
+      deletedRows: 2,
+      skippedWorkspaces: 2,
+      deadlineReached: true,
+    });
+    expect(resolveRetentionWorkspaceCursor(batch, progress.skippedWorkspaces)).toBe(0);
   });
 });

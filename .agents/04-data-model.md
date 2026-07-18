@@ -425,7 +425,7 @@ Checks Worker 只在五分钟 block 闭合时写一次 service bucket。同一�
 - `deleted_rows`, `error_code`
 - `workspace_cursor`，成功 run 保存下一轮 policy scan 的 workspace telemetry PK；失败 run 不推进
 
-每小时 run 最多处理 100 个 workspace，并读取第 101 个候选判断是否保存 cursor。扫描到末尾后 cursor 归零，避免固定 `LIMIT` 永久饿死较大主键的 workspace。重叠 run 因已有 lease 跳过任何 workspace 时保留原 cursor，下一轮重试该页，不能越过未处理的 workspace。
+每小时 run 最多处理 100 个 workspace，并读取第 101 个候选判断是否保存 cursor。扫描到末尾后 cursor 归零，避免固定 `LIMIT` 永久饿死较大主键的 workspace。重叠 run 因已有 lease 跳过任何 workspace，或 run 达到 12 分钟工作预算时保留原 cursor，下一轮重试该页，不能越过未处理的 workspace；剩余 3 分钟用于全局清理和持久化 run 结果。
 
 ### `audit_logs`
 
