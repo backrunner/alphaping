@@ -145,10 +145,7 @@ impl UpdateClient {
             };
             candidate
         };
-        if requested_version.is_none()
-            && !bypass_rollout
-            && !self.within_rollout(&selected.2, &selected.1)
-        {
+        if !bypass_rollout && !self.within_rollout(&selected.2, &selected.1) {
             return Ok((None, versions));
         }
 

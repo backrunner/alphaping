@@ -249,3 +249,85 @@ async fn downloads_an_artifact_through_the_full_signed_metadata_chain() {
     assert_eq!(versions.targets, 3);
     server.await.expect("update fixture completed");
 }
+
+#[tokio::test]
+async fn exact_version_install_respects_rollout_selection() {
+    let now = 1_752_580_800_000;
+    let keys = vec![
+        ("targets-a".to_owned(), SigningKey::from_bytes(&[7; 32])),
+        ("targets-b".to_owned(), SigningKey::from_bytes(&[9; 32])),
+    ];
+    let trusted_root = root(&keys, now);
+    let artifact_path = "alphaping-agent-test-bin";
+    let artifact = b"signed Agent artifact fixture\n";
+    let targets = signed(
+        json!({
+            "type": "targets",
+            "spec_version": "1.0",
+            "version": 3,
+            "expires_at_ms": now + 3_600_000,
+            "targets": {
+                (artifact_path): {
+                    "version": "0.2.0",
+                    "platform": std::env::consts::OS,
+                    "arch": std::env::consts::ARCH,
+                    "channel": "stable",
+                    "length": artifact.len(),
+                    "sha256": hex::encode(Sha256::digest(artifact)),
+                    "rollout_percent": 0,
+                }
+            },
+        }),
+        &keys,
+    );
+    let snapshot = signed(
+        json!({
+            "type": "snapshot",
+            "spec_version": "1.0",
+            "version": 2,
+            "expires_at_ms": now + 3_600_000,
+            "targets": metadata_file(3, &targets),
+        }),
+        &keys[..1],
+    );
+    let timestamp = signed(
+        json!({
+            "type": "timestamp",
+            "spec_version": "1.0",
+            "version": 1,
+            "expires_at_ms": now + 3_600_000,
+            "snapshot": metadata_file(2, &snapshot),
+        }),
+        &keys[..1],
+    );
+    let files = BTreeMap::from([
+        ("/alphaping-tuf-timestamp.json".to_owned(), timestamp),
+        ("/alphaping-tuf-snapshot.json".to_owned(), snapshot),
+        ("/alphaping-tuf-targets.json".to_owned(), targets),
+    ]);
+    let (base_url, server) = serve_files(files).await;
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+    let client = UpdateClient::with_base_url(
+        reqwest::Client::builder()
+            .build()
+            .expect("update HTTP client"),
+        trusted_root,
+        "agent-update-e2e".to_owned(),
+        base_url,
+    );
+
+    let (downloaded, _) = client
+        .find_update(
+            &Version::parse("0.1.0").expect("current version"),
+            Some(&Version::parse("0.2.0").expect("requested version")),
+            "stable",
+            false,
+            MetadataVersions::default(),
+            now,
+        )
+        .await
+        .expect("verified rollout exclusion");
+
+    assert!(downloaded.is_none());
+    server.await.expect("update fixture completed");
+}
