@@ -300,6 +300,85 @@ function synchronizeCheckCounts(db: D1Database, expectedReads: number): D1Databa
   });
 }
 
+function synchronizeAgentSnapshots(db: D1Database, expectedReads: number): D1Database {
+  let completedReads = 0;
+  let releaseReads: (() => void) | undefined;
+  const allReadsCompleted = new Promise<void>((resolve) => {
+    releaseReads = resolve;
+  });
+
+  return new Proxy(db, {
+    get(target, property) {
+      if (property !== "prepare") {
+        const value = Reflect.get(target, property);
+        return typeof value === "function" ? value.bind(target) : value;
+      }
+      return (query: string) => {
+        const statement = target.prepare(query);
+        if (!query.includes("AS probe_count")) return statement;
+        return new Proxy(statement, {
+          get(statementTarget, statementProperty) {
+            if (statementProperty !== "bind") {
+              const value = Reflect.get(statementTarget, statementProperty);
+              return typeof value === "function" ? value.bind(statementTarget) : value;
+            }
+            return (...values: unknown[]) => {
+              const bound = statementTarget.bind(...values);
+              return new Proxy(bound, {
+                get(boundTarget, boundProperty) {
+                  if (boundProperty !== "first") {
+                    const value = Reflect.get(boundTarget, boundProperty);
+                    return typeof value === "function" ? value.bind(boundTarget) : value;
+                  }
+                  return async <T>() => {
+                    const row = await boundTarget.first<T>();
+                    completedReads += 1;
+                    if (completedReads === expectedReads) releaseReads?.();
+                    await allReadsCompleted;
+                    return row;
+                  };
+                },
+              });
+            };
+          },
+        });
+      };
+    },
+  });
+}
+
+async function seedAgentChecks(count: number, configBytes: number): Promise<void> {
+  const statements: D1PreparedStatement[] = [];
+  for (let index = 0; index < count; index += 1) {
+    statements.push(
+      database
+        .prepare(
+          `INSERT INTO check_configs VALUES
+            (?, ?, 'workspace-1', 'seed-service', ?, 'http', 'agent', 'agent-1',
+             1, 1, 60, 0, 5000, 0, 1, '{}', '{}', 2, 2, ?, 0, 1, 1)`,
+        )
+        .bind(`seed-${index}`, 1_000 + index, `Seed ${index}`, configBytes),
+    );
+  }
+  await database.batch(statements);
+}
+
+async function concurrentAgentServiceCreates(): Promise<
+  PromiseSettledResult<{ serviceId: string }>[]
+> {
+  const synchronized = synchronizeAgentSnapshots(database, 2);
+  return Promise.allSettled([
+    createServiceMonitor(synchronized, "operations", "user-1", "unused", {
+      ...input,
+      name: "Public API A",
+    }),
+    createServiceMonitor(synchronized, "operations", "user-1", "unused", {
+      ...input,
+      name: "Public API B",
+    }),
+  ]);
+}
+
 describe("Agent check configuration revision", () => {
   it("commits the machine and assigned check revision together", async () => {
     await expect(
@@ -340,6 +419,46 @@ describe("Agent check configuration revision", () => {
     await expect(
       first<{ count: number }>("SELECT COUNT(*) AS count FROM check_configs"),
     ).resolves.toEqual({ count: 0 });
+  });
+
+  it("serializes the 32 enabled check limit", async () => {
+    await seedAgentChecks(31, 512);
+    const outcomes = await concurrentAgentServiceCreates();
+
+    expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
+    expect(outcomes.find((outcome) => outcome.status === "rejected")).toMatchObject({
+      reason: { status: 409 },
+    });
+    await expect(
+      first<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM check_configs WHERE executor_agent_id = 'agent-1' AND enabled = 1",
+      ),
+    ).resolves.toEqual({ count: 32 });
+    await expect(
+      first<{ revision: number }>(
+        "SELECT desired_config_revision AS revision FROM machines WHERE id = 'machine-1'",
+      ),
+    ).resolves.toEqual({ revision: 2 });
+  });
+
+  it("serializes the 44 KiB Agent configuration limit", async () => {
+    await seedAgentChecks(1, 44 * 1024 - 600);
+    const outcomes = await concurrentAgentServiceCreates();
+
+    expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
+    expect(outcomes.find((outcome) => outcome.status === "rejected")).toMatchObject({
+      reason: { status: 409 },
+    });
+    await expect(
+      first<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM check_configs WHERE executor_agent_id = 'agent-1' AND enabled = 1",
+      ),
+    ).resolves.toEqual({ count: 2 });
+    await expect(
+      first<{ revision: number }>(
+        "SELECT desired_config_revision AS revision FROM machines WHERE id = 'machine-1'",
+      ),
+    ).resolves.toEqual({ revision: 2 });
   });
 });
 

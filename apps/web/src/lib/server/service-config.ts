@@ -105,18 +105,73 @@ function configurationBytes(compiled: CompiledServiceConfig, preservedSecretByte
   );
 }
 
+const MAX_AGENT_CHECKS = 32;
+const MAX_AGENT_CONFIG_BYTES = 44 * 1024;
+const AGENT_CAPACITY_CONDITION = `
+  AND (
+    ? = 0 OR (
+      (SELECT COUNT(*) FROM check_configs capacity
+       WHERE capacity.executor_agent_id = ? AND capacity.enabled = 1
+         AND (? IS NULL OR capacity.id != ?)) < ${MAX_AGENT_CHECKS}
+      AND
+      (SELECT COALESCE(SUM(capacity.config_bytes), 0) FROM check_configs capacity
+       WHERE capacity.executor_agent_id = ? AND capacity.enabled = 1
+         AND (? IS NULL OR capacity.id != ?)) + ? <= ${MAX_AGENT_CONFIG_BYTES}
+    )
+  )`;
+
+interface AgentCapacityInput {
+  agentId: string;
+  excludedCheckId: string | null;
+  configBytes: number;
+  enforce: boolean;
+}
+
+function agentCapacityBindings(input: AgentCapacityInput): readonly unknown[] {
+  return [
+    input.enforce ? 1 : 0,
+    input.agentId,
+    input.excludedCheckId,
+    input.excludedCheckId,
+    input.agentId,
+    input.excludedCheckId,
+    input.excludedCheckId,
+    input.configBytes,
+  ];
+}
+
+async function assertAgentCapacity(db: D1Database, input: AgentCapacityInput): Promise<void> {
+  if (!input.enforce) return;
+  const capacity = await db
+    .prepare(
+      `SELECT COUNT(*) AS probe_count, COALESCE(SUM(config_bytes), 0) AS config_bytes
+       FROM check_configs
+       WHERE executor_agent_id = ? AND enabled = 1 AND (? IS NULL OR id != ?)`,
+    )
+    .bind(input.agentId, input.excludedCheckId, input.excludedCheckId)
+    .first<{ probe_count: number; config_bytes: number }>();
+  if (!capacity || capacity.probe_count >= MAX_AGENT_CHECKS) {
+    throw error(409, `An Agent can run at most ${MAX_AGENT_CHECKS} enabled checks`);
+  }
+  if (capacity.config_bytes + input.configBytes > MAX_AGENT_CONFIG_BYTES) {
+    throw error(409, "The Agent configuration has reached its encrypted snapshot size limit");
+  }
+}
+
 function advanceAgentConfigurationStatement(
   db: D1Database,
   workspaceId: string,
   machineId: string,
   now: number,
+  capacity?: AgentCapacityInput,
 ): D1PreparedStatement {
   return db
     .prepare(
       `UPDATE machines SET desired_config_revision = desired_config_revision + 1, updated_at = ?
-       WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL`,
+       WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL
+       ${capacity ? AGENT_CAPACITY_CONDITION : ""}`,
     )
-    .bind(now, machineId, workspaceId);
+    .bind(now, machineId, workspaceId, ...(capacity ? agentCapacityBindings(capacity) : []));
 }
 
 function boundedPolicyInteger(
@@ -158,14 +213,22 @@ export async function createServiceMonitor(
   if (input.executorKind === "agent" && !agent) {
     throw error(400, "A valid Agent executor is required");
   }
-  if (agent && agent.probe_count >= 32) {
-    throw error(409, "An Agent can run at most 32 enabled checks");
+  if (agent && agent.probe_count >= MAX_AGENT_CHECKS) {
+    throw error(409, `An Agent can run at most ${MAX_AGENT_CHECKS} enabled checks`);
   }
   const compiled = await compileServiceConfig(input, access.workspaceId, wrappingKey);
   const configBytes = configurationBytes(compiled);
-  if (agent && agent.config_bytes + configBytes > 44 * 1024) {
+  if (agent && agent.config_bytes + configBytes > MAX_AGENT_CONFIG_BYTES) {
     throw error(409, "The Agent configuration has reached its encrypted snapshot size limit");
   }
+  const capacity = agent
+    ? {
+        agentId: agent.id,
+        excludedCheckId: null,
+        configBytes,
+        enforce: true,
+      }
+    : null;
   const [servicePk, checkPk, slug] = await Promise.all([
     nextSequence(db, "service"),
     nextSequence(db, "check"),
@@ -176,7 +239,15 @@ export async function createServiceMonitor(
   const now = Date.now();
   const statements: D1PreparedStatement[] = [
     ...(agent
-      ? [advanceAgentConfigurationStatement(db, access.workspaceId, agent.machine_id, now)]
+      ? [
+          advanceAgentConfigurationStatement(
+            db,
+            access.workspaceId,
+            agent.machine_id,
+            now,
+            capacity ?? undefined,
+          ),
+        ]
       : []),
     db
       .prepare(
@@ -211,6 +282,7 @@ export async function createServiceMonitor(
          CASE WHEN ? IS NULL THEN 0 ELSE (
            SELECT desired_config_revision FROM machines
            WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL
+           ${AGENT_CAPACITY_CONDITION}
          ) END,
          1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
       )
@@ -226,6 +298,9 @@ export async function createServiceMonitor(
         agent?.machine_id ?? null,
         agent?.machine_id ?? null,
         access.workspaceId,
+        ...agentCapacityBindings(
+          capacity ?? { agentId: "", excludedCheckId: null, configBytes, enforce: false },
+        ),
         input.intervalSeconds,
         checkPk % input.intervalSeconds,
         input.timeoutMs,
@@ -304,7 +379,12 @@ export async function createServiceMonitor(
       now,
     }),
   );
-  await db.batch(statements);
+  try {
+    await db.batch(statements);
+  } catch (cause) {
+    if (capacity) await assertAgentCapacity(db, capacity);
+    throw cause;
+  }
   return { serviceId };
 }
 
@@ -378,8 +458,8 @@ export async function addServiceCheck(
   ) {
     throw error(400, "A valid Agent executor is required");
   }
-  if (agent && agent.probe_count >= 32) {
-    throw error(409, "An Agent can run at most 32 enabled checks");
+  if (agent && agent.probe_count >= MAX_AGENT_CHECKS) {
+    throw error(409, `An Agent can run at most ${MAX_AGENT_CHECKS} enabled checks`);
   }
   const compiled = await compileServiceConfig(
     { ...input, name: service.name, description: service.description },
@@ -387,15 +467,31 @@ export async function addServiceCheck(
     wrappingKey,
   );
   const configBytes = configurationBytes(compiled);
-  if (agent && agent.config_bytes + configBytes > 44 * 1024) {
+  if (agent && agent.config_bytes + configBytes > MAX_AGENT_CONFIG_BYTES) {
     throw error(409, "The Agent configuration has reached its encrypted snapshot size limit");
   }
+  const capacity = agent
+    ? {
+        agentId: agent.id,
+        excludedCheckId: null,
+        configBytes,
+        enforce: true,
+      }
+    : null;
   const checkPk = await nextSequence(db, "check");
   const checkId = crypto.randomUUID();
   const now = Date.now();
   const statements: D1PreparedStatement[] = [
     ...(agent
-      ? [advanceAgentConfigurationStatement(db, access.workspaceId, agent.machine_id, now)]
+      ? [
+          advanceAgentConfigurationStatement(
+            db,
+            access.workspaceId,
+            agent.machine_id,
+            now,
+            capacity ?? undefined,
+          ),
+        ]
       : []),
     db
       .prepare(
@@ -409,6 +505,7 @@ export async function addServiceCheck(
            CASE WHEN ? IS NULL THEN 0 ELSE (
              SELECT desired_config_revision FROM machines
              WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL
+             ${AGENT_CAPACITY_CONDITION}
            ) END,
            1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
       )
@@ -424,6 +521,9 @@ export async function addServiceCheck(
         agent?.machine_id ?? null,
         agent?.machine_id ?? null,
         access.workspaceId,
+        ...agentCapacityBindings(
+          capacity ?? { agentId: "", excludedCheckId: null, configBytes, enforce: false },
+        ),
         input.intervalSeconds,
         checkPk % input.intervalSeconds,
         input.timeoutMs,
@@ -488,7 +588,12 @@ export async function addServiceCheck(
       now,
     }),
   );
-  await db.batch(statements);
+  try {
+    await db.batch(statements);
+  } catch (cause) {
+    if (capacity) await assertAgentCapacity(db, capacity);
+    throw cause;
+  }
   return { checkId };
 }
 
@@ -662,19 +767,19 @@ export async function replaceServiceCheckConfiguration(
     ? compiled
     : { ...compiled, secretRefs: existingReferences, secrets: [] };
   const configBytes = configurationBytes(finalCompiled, preservedSecretBytes);
-  if (row.executor_kind === "agent" && row.enabled === 1) {
-    if (!row.executor_agent_id) throw error(409, "The Agent executor is unavailable");
-    const capacity = await controlDb
-      .prepare(
-        `SELECT COALESCE(SUM(config_bytes), 0) AS config_bytes FROM check_configs
-         WHERE executor_agent_id = ? AND enabled = 1 AND id != ?`,
-      )
-      .bind(row.executor_agent_id, checkId)
-      .first<{ config_bytes: number }>();
-    if (!capacity || capacity.config_bytes + configBytes > 44 * 1024) {
-      throw error(409, "The Agent configuration has reached its encrypted snapshot size limit");
-    }
+  if (row.executor_kind === "agent" && row.enabled === 1 && !row.executor_agent_id) {
+    throw error(409, "The Agent executor is unavailable");
   }
+  const capacity: AgentCapacityInput | null =
+    row.executor_kind === "agent"
+      ? {
+          agentId: row.executor_agent_id ?? "",
+          excludedCheckId: checkId,
+          configBytes,
+          enforce: row.enabled === 1,
+        }
+      : null;
+  if (capacity) await assertAgentCapacity(controlDb, capacity);
   const now = Date.now();
   const agentMachineId = row.executor_kind === "agent" ? row.machine_id : null;
   if (row.executor_kind === "agent" && !agentMachineId) {
@@ -682,7 +787,15 @@ export async function replaceServiceCheckConfiguration(
   }
   const statements: D1PreparedStatement[] = [
     ...(agentMachineId
-      ? [advanceAgentConfigurationStatement(controlDb, access.workspaceId, agentMachineId, now)]
+      ? [
+          advanceAgentConfigurationStatement(
+            controlDb,
+            access.workspaceId,
+            agentMachineId,
+            now,
+            capacity ?? undefined,
+          ),
+        ]
       : []),
     controlDb
       .prepare(
@@ -690,6 +803,7 @@ export async function replaceServiceCheckConfiguration(
            config_bytes = ?, assignment_revision = CASE WHEN ? IS NULL THEN assignment_revision ELSE (
              SELECT desired_config_revision FROM machines
              WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL
+             ${AGENT_CAPACITY_CONDITION}
            ) END, updated_at = ?
          WHERE id = ? AND service_id = ? AND workspace_id = ?`,
       )
@@ -701,6 +815,9 @@ export async function replaceServiceCheckConfiguration(
         agentMachineId,
         agentMachineId,
         access.workspaceId,
+        ...agentCapacityBindings(
+          capacity ?? { agentId: "", excludedCheckId: checkId, configBytes, enforce: false },
+        ),
         now,
         checkId,
         serviceId,
@@ -772,7 +889,12 @@ export async function replaceServiceCheckConfiguration(
       now,
     }),
   );
-  await controlDb.batch(statements);
+  try {
+    await controlDb.batch(statements);
+  } catch (cause) {
+    if (capacity) await assertAgentCapacity(controlDb, capacity);
+    throw cause;
+  }
 }
 
 function aggregateServiceState(
@@ -897,25 +1019,19 @@ export async function updateServiceCheckPolicy(
       throw error(409, "A service must keep at least one enabled check");
     }
   }
-  if (row.executor_kind === "agent" && row.enabled === 0 && input.enabled) {
-    if (!row.machine_id || !row.executor_agent_id) {
-      throw error(409, "The Agent executor is unavailable");
-    }
-    const capacity = await controlDb
-      .prepare(
-        `SELECT COUNT(*) AS probe_count, COALESCE(SUM(config_bytes), 0) AS config_bytes
-         FROM check_configs
-         WHERE executor_agent_id = ? AND enabled = 1`,
-      )
-      .bind(row.executor_agent_id)
-      .first<{ probe_count: number; config_bytes: number }>();
-    if (!capacity || capacity.probe_count >= 32) {
-      throw error(409, "An Agent can run at most 32 enabled checks");
-    }
-    if (capacity.config_bytes + row.config_bytes > 44 * 1024) {
-      throw error(409, "The Agent configuration has reached its encrypted snapshot size limit");
-    }
+  if (row.executor_kind === "agent" && input.enabled && !row.executor_agent_id) {
+    throw error(409, "The Agent executor is unavailable");
   }
+  const capacity: AgentCapacityInput | null =
+    row.executor_kind === "agent"
+      ? {
+          agentId: row.executor_agent_id ?? "",
+          excludedCheckId: checkId,
+          configBytes: row.config_bytes,
+          enforce: input.enabled,
+        }
+      : null;
+  if (capacity) await assertAgentCapacity(controlDb, capacity);
   const now = Date.now();
   const agentMachineId = row.executor_kind === "agent" ? row.machine_id : null;
   if (row.executor_kind === "agent" && !agentMachineId) {
@@ -934,7 +1050,15 @@ export async function updateServiceCheckPolicy(
   const mutationIndex = agentMachineId ? 1 : 0;
   const statements: D1PreparedStatement[] = [
     ...(agentMachineId
-      ? [advanceAgentConfigurationStatement(controlDb, access.workspaceId, agentMachineId, now)]
+      ? [
+          advanceAgentConfigurationStatement(
+            controlDb,
+            access.workspaceId,
+            agentMachineId,
+            now,
+            capacity ?? undefined,
+          ),
+        ]
       : []),
     controlDb
       .prepare(
@@ -944,6 +1068,7 @@ export async function updateServiceCheckPolicy(
            assignment_revision = CASE WHEN ? IS NULL THEN assignment_revision ELSE (
              SELECT desired_config_revision FROM machines
              WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL
+             ${AGENT_CAPACITY_CONDITION}
            ) END, updated_at = ?
          WHERE id = ? AND service_id = ? AND workspace_id = ? AND enabled = ?
            AND (
@@ -967,6 +1092,14 @@ export async function updateServiceCheckPolicy(
         agentMachineId,
         agentMachineId,
         access.workspaceId,
+        ...agentCapacityBindings(
+          capacity ?? {
+            agentId: "",
+            excludedCheckId: checkId,
+            configBytes: row.config_bytes,
+            enforce: false,
+          },
+        ),
         now,
         checkId,
         serviceId,
@@ -986,7 +1119,13 @@ export async function updateServiceCheckPolicy(
       onlyIfPreviousStatementChanged: true,
     }),
   ];
-  const results = await controlDb.batch(statements);
+  let results: D1Result[];
+  try {
+    results = await controlDb.batch(statements);
+  } catch (cause) {
+    if (capacity) await assertAgentCapacity(controlDb, capacity);
+    throw cause;
+  }
   if (results[mutationIndex]?.meta.changes !== 1) {
     throw error(409, "Check policy changed; reload and try again");
   }
