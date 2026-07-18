@@ -9,6 +9,14 @@ use anyhow::{Context, Result, bail};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CredentialStorage {
+    #[default]
+    RestrictedFile,
+    SystemKeychain,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct AgentConfig {
     pub endpoint: String,
@@ -19,6 +27,8 @@ pub struct AgentConfig {
     pub data_key_hex: String,
     pub nonce_prefix_hex: String,
     pub identity_private_key_hex: String,
+    #[serde(default)]
+    pub credential_storage: CredentialStorage,
     pub spool_path: String,
     #[serde(default = "default_sample_interval")]
     pub sample_interval_seconds: u64,
@@ -62,8 +72,9 @@ impl AgentConfig {
             .with_context(|| format!("failed to read config at {}", path.display()))?;
         let (plaintext, legacy_plaintext) = decode_stored_config(&stored)?;
         let content = String::from_utf8(plaintext).context("agent config is not UTF-8")?;
-        let config: Self = toml::from_str(&content).context("agent config is invalid")?;
+        let mut config: Self = toml::from_str(&content).context("agent config is invalid")?;
         config.validate()?;
+        migrate_preferred_credential_storage(&mut config, path)?;
         if legacy_plaintext {
             config.save(path)?;
         }
@@ -71,6 +82,10 @@ impl AgentConfig {
     }
 
     fn validate(&self) -> Result<()> {
+        #[cfg(not(target_os = "macos"))]
+        if self.credential_storage == CredentialStorage::SystemKeychain {
+            bail!("System Keychain credential storage is only available on macOS");
+        }
         if !self.endpoint.starts_with("https://") {
             bail!("endpoint must use HTTPS");
         }
@@ -83,15 +98,11 @@ impl AgentConfig {
         {
             bail!("report interval must be divisible by sample interval");
         }
-        if hex::decode(&self.data_key_hex)?.len() != 32 {
-            bail!("data key must be 32 bytes");
-        }
         if hex::decode(&self.nonce_prefix_hex)?.len() != 4 {
             bail!("nonce prefix must be 4 bytes");
         }
-        if hex::decode(&self.identity_private_key_hex)?.len() != 32 {
-            bail!("identity private key must be 32 bytes");
-        }
+        self.data_key()?;
+        self.identity_private_key()?;
         if self.update_channel != "stable" {
             bail!("only the stable update channel is currently supported");
         }
@@ -106,9 +117,23 @@ impl AgentConfig {
     }
 
     pub fn data_key(&self) -> Result<[u8; 32]> {
-        hex::decode(&self.data_key_hex)?
-            .try_into()
-            .map_err(|_| anyhow::anyhow!("invalid data key"))
+        if !self.data_key_hex.is_empty() {
+            return hex::decode(&self.data_key_hex)?
+                .try_into()
+                .map_err(|_| anyhow::anyhow!("invalid data key"));
+        }
+        match self.credential_storage {
+            CredentialStorage::RestrictedFile => bail!("data key must be 32 bytes"),
+            CredentialStorage::SystemKeychain => {
+                #[cfg(target_os = "macos")]
+                return crate::credential_store::load_system_data_key(
+                    &self.agent_id,
+                    self.key_epoch,
+                );
+                #[cfg(not(target_os = "macos"))]
+                bail!("System Keychain credential storage is only available on macOS");
+            }
+        }
     }
 
     pub fn nonce_prefix(&self) -> Result<[u8; 4]> {
@@ -117,8 +142,46 @@ impl AgentConfig {
             .map_err(|_| anyhow::anyhow!("invalid nonce prefix"))
     }
 
+    pub fn identity_private_key(&self) -> Result<[u8; 32]> {
+        if !self.identity_private_key_hex.is_empty() {
+            return hex::decode(&self.identity_private_key_hex)?
+                .try_into()
+                .map_err(|_| anyhow::anyhow!("invalid identity private key"));
+        }
+        match self.credential_storage {
+            CredentialStorage::RestrictedFile => bail!("identity private key must be 32 bytes"),
+            CredentialStorage::SystemKeychain => {
+                #[cfg(target_os = "macos")]
+                return crate::credential_store::load_system_identity(&self.agent_id);
+                #[cfg(not(target_os = "macos"))]
+                bail!("System Keychain credential storage is only available on macOS");
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    pub fn prefer_system_keychain(&mut self) -> Result<()> {
+        let data_key: [u8; 32] = hex::decode(&self.data_key_hex)?
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("invalid data key"))?;
+        let identity_private_key: [u8; 32] = hex::decode(&self.identity_private_key_hex)?
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("invalid identity private key"))?;
+        crate::credential_store::store_system_credentials(
+            &self.agent_id,
+            self.key_epoch,
+            &data_key,
+            &identity_private_key,
+        )?;
+        self.credential_storage = CredentialStorage::SystemKeychain;
+        self.data_key_hex.clear();
+        self.identity_private_key_hex.clear();
+        Ok(())
+    }
+
     pub fn save(&self, path: &Path) -> Result<()> {
         self.validate()?;
+        let stored = config_for_storage(self)?;
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
             set_directory_permissions(parent)?;
@@ -132,12 +195,68 @@ impl AgentConfig {
             options.mode(0o600);
         }
         let mut file = options.open(&temporary)?;
-        let serialized = toml::to_string_pretty(self)?;
+        let serialized = toml::to_string_pretty(&stored)?;
         file.write_all(&encode_stored_config(serialized.as_bytes())?)?;
         file.sync_all()?;
         fs::rename(&temporary, path)?;
         Ok(())
     }
+}
+
+#[cfg(target_os = "macos")]
+fn config_for_storage(config: &AgentConfig) -> Result<AgentConfig> {
+    let mut stored = config.clone();
+    if stored.credential_storage == CredentialStorage::SystemKeychain {
+        let has_data_key = !stored.data_key_hex.is_empty();
+        let has_identity = !stored.identity_private_key_hex.is_empty();
+        if has_data_key && has_identity {
+            crate::credential_store::store_system_credentials(
+                &stored.agent_id,
+                stored.key_epoch,
+                &stored.data_key()?,
+                &stored.identity_private_key()?,
+            )?;
+        } else if has_data_key {
+            crate::credential_store::store_system_data_key(
+                &stored.agent_id,
+                stored.key_epoch,
+                &stored.data_key()?,
+            )?;
+        } else if has_identity {
+            crate::credential_store::store_system_identity(
+                &stored.agent_id,
+                &stored.identity_private_key()?,
+            )?;
+        }
+        redact_inline_credentials(&mut stored);
+    }
+    Ok(stored)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn config_for_storage(config: &AgentConfig) -> Result<AgentConfig> {
+    Ok(config.clone())
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn redact_inline_credentials(config: &mut AgentConfig) {
+    config.data_key_hex.clear();
+    config.identity_private_key_hex.clear();
+}
+
+#[cfg(target_os = "macos")]
+fn migrate_preferred_credential_storage(config: &mut AgentConfig, path: &Path) -> Result<()> {
+    if config.credential_storage == CredentialStorage::RestrictedFile
+        && config.prefer_system_keychain().is_ok()
+    {
+        config.save(path)?;
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn migrate_preferred_credential_storage(_config: &mut AgentConfig, _path: &Path) -> Result<()> {
+    Ok(())
 }
 
 #[cfg(not(windows))]
@@ -254,3 +373,7 @@ fn set_directory_permissions(path: &Path) -> Result<()> {
 fn set_directory_permissions(_path: &Path) -> Result<()> {
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "config_tests.rs"]
+mod tests;

@@ -2,6 +2,7 @@ pub mod backoff;
 pub mod commands;
 pub mod config;
 pub mod containers;
+pub mod credential_store;
 pub mod enrollment;
 pub mod key_rotation;
 pub mod live;

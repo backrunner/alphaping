@@ -17,6 +17,8 @@
 | 9 | 通过 | Retention Worker 按 workspace lease 和 resource/time cursor 分批清理 raw block、5m/1h rollup、status bucket、event、audit、announcement、command 和 soft delete。`artifact-retention.test.ts` 使用真实 Miniflare R2 验证只扫描 `exports/v1/`/`backups/v1/`、显式 expiry、500-object 有界游标、lease、无元数据保留和幂等重跑。D1 migration/schema/dry-run 已验证。 |
 | 10 | 通过 | updater 集成测试通过本地 HTTP 服务完成 threshold-signed targets、signed snapshot/timestamp、metadata hash/expiry/version、平台选择和 artifact length/SHA-256 全链；安装测试验证 pre/post health check、原子替换与失败回滚。release script tests 验证六平台 artifact、SBOM、双签 metadata 和损坏拒绝。Web + Ingest E2E 验证管理员强制检查命令、加密下发和结果持久化。 |
 
+Agent 本地 credential 也遵循平台保护：Windows 配置使用 DPAPI LocalMachine；macOS enrollment 和旧配置迁移优先写 `/Library/Keychains/System.keychain`，data key 按 epoch 使用独立 account，配置文件只保留 storage 标记和 nonce prefix。Keychain 无权限或不可用时保留 0600 restricted file 并输出结构化 capability warning。macOS 自动化使用临时 keychain 验证二进制 secret 往返，不向宿主 System Keychain 写测试项；配置测试验证旧格式默认回退和 Keychain 模式不序列化 identity/data key。真实 System Keychain 写入仍需在 root LaunchDaemon 安装验收中确认。
+
 ## 2. 最便宜存储方案证据
 
 - 权威配置在 `CONTROL_DB`，所有 latest/raw/rollup/event 在 `TELEMETRY_DB`，Dashboard 不查询 R2。

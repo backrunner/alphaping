@@ -69,7 +69,7 @@ pub fn rotated_agent_config(
 mod tests {
     use alphaping_protocol::v1::KeyRotationProposal;
 
-    use crate::config::AgentConfig;
+    use crate::config::{AgentConfig, CredentialStorage};
 
     use super::{MAX_KEY_LIFETIME_MS, rotated_agent_config, validate_key_rotation};
 
@@ -130,6 +130,7 @@ mod tests {
             data_key_hex: hex::encode([1; 32]),
             nonce_prefix_hex: hex::encode([2; 4]),
             identity_private_key_hex: hex::encode([3; 32]),
+            credential_storage: CredentialStorage::RestrictedFile,
             spool_path: "/tmp/alphaping-key-rotation-test.db".to_owned(),
             sample_interval_seconds: 10,
             report_interval_seconds: 60,

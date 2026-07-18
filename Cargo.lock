@@ -74,6 +74,7 @@ dependencies = [
  "reqwest",
  "rusqlite",
  "rustls",
+ "security-framework",
  "semver",
  "serde",
  "serde_json",

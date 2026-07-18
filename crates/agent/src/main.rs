@@ -3,9 +3,16 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use alphaping_agent::{config::AgentConfig, enrollment::enroll, runtime, spool::Spool};
+use alphaping_agent::{
+    config::{AgentConfig, CredentialStorage},
+    enrollment::enroll,
+    runtime,
+    spool::Spool,
+};
 use anyhow::{Context, Result, bail};
 use tracing::info;
+#[cfg(target_os = "macos")]
+use tracing::warn;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
@@ -121,6 +128,7 @@ async fn run_enrollment(arguments: &[std::ffi::OsString]) -> Result<()> {
         data_key_hex: hex::encode(response.data_key),
         nonce_prefix_hex: hex::encode(response.nonce_prefix),
         identity_private_key_hex: hex::encode(material.identity_private_key),
+        credential_storage: CredentialStorage::RestrictedFile,
         spool_path: default_spool_path(),
         sample_interval_seconds: u64::from(response.sample_interval_seconds),
         report_interval_seconds: u64::from(response.report_interval_seconds),
@@ -130,9 +138,27 @@ async fn run_enrollment(arguments: &[std::ffi::OsString]) -> Result<()> {
         update_channel: "stable".to_owned(),
         pinned_version: None,
     };
+    let config = preferred_credential_storage(config);
     config.save(&config_path)?;
     info!(path = %config_path.display(), "agent enrollment completed");
     Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn preferred_credential_storage(mut config: AgentConfig) -> AgentConfig {
+    if let Err(error) = config.prefer_system_keychain() {
+        warn!(
+            error = %error,
+            credential_storage = "restricted_file",
+            "macOS System Keychain is unavailable; Agent credentials remain in the restricted config file"
+        );
+    }
+    config
+}
+
+#[cfg(not(target_os = "macos"))]
+fn preferred_credential_storage(config: AgentConfig) -> AgentConfig {
+    config
 }
 
 fn default_spool_path() -> String {

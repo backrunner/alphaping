@@ -40,6 +40,13 @@ pub async fn run(
     mut service_shutdown: Option<watch::Receiver<bool>>,
 ) -> Result<()> {
     let mut config = AgentConfig::load(config_path)?;
+    #[cfg(target_os = "macos")]
+    if config.credential_storage == crate::config::CredentialStorage::RestrictedFile {
+        warn!(
+            credential_storage = "restricted_file",
+            "macOS System Keychain capability is unavailable; Agent credentials use the restricted config file"
+        );
+    }
     let mut spool = Spool::open(&config.spool_path)?;
     let mut sampler = Sampler::new();
     let initial_probe_config = spool.load_probe_config()?;
