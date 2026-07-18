@@ -17,12 +17,19 @@
       <input type="hidden" name="returnTo" value={data.returnTo} />
       {#if form?.message}<p class="login__error" role="alert">{form.message}</p>{/if}
       <label
-        ><span>Email</span><input type="email" name="email" autocomplete="email" required /></label
+        ><span>Email</span><input
+          type="email"
+          name="email"
+          maxlength="254"
+          autocomplete="email"
+          required
+        /></label
       >
       <label
         ><span>Password</span><input
           type="password"
           name="password"
+          maxlength="128"
           autocomplete="current-password"
           required
         /></label

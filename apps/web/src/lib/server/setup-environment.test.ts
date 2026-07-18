@@ -53,4 +53,18 @@ describe("setup environment", () => {
       "worker-runtime",
     ]);
   });
+
+  it("rejects oversized text secrets", () => {
+    const report = evaluateSetupEnvironment({
+      ...readySnapshot,
+      betterAuthSecret: "a".repeat(513),
+      liveTicketSecret: "l".repeat(513),
+    });
+
+    expect(report.ready).toBe(false);
+    expect(report.checks.filter((check) => !check.ready).map((check) => check.id)).toEqual([
+      "auth-secrets",
+      "data-secrets",
+    ]);
+  });
 });

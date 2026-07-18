@@ -55,7 +55,11 @@ function hasRequiredTables(actual: readonly string[] | null, required: readonly 
 }
 
 function configuredTextSecret(value: string): boolean {
-  return value.length >= 32 && !/(change[-_ ]?me|example|placeholder|replace)/i.test(value);
+  return (
+    value.length >= 32 &&
+    value.length <= 512 &&
+    !/(change[-_ ]?me|example|placeholder|replace)/i.test(value)
+  );
 }
 
 function configuredHexSecret(value: string): boolean {

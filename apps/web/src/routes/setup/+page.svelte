@@ -153,7 +153,14 @@
           </header>
           <label>
             <span>Setup token</span>
-            <input type="password" name="token" required minlength="20" autocomplete="off" />
+            <input
+              type="password"
+              name="token"
+              required
+              minlength="20"
+              maxlength="512"
+              autocomplete="off"
+            />
           </label>
           <p class="field-note">The token is never stored in the database or browser storage.</p>
         </section>
@@ -168,7 +175,14 @@
           </header>
           <label>
             <span>Administrator name</span>
-            <input name="name" required autocomplete="name" bind:value={administratorName} />
+            <input
+              name="name"
+              required
+              minlength="2"
+              maxlength="80"
+              autocomplete="name"
+              bind:value={administratorName}
+            />
           </label>
           <label>
             <span>Email</span>
@@ -176,6 +190,7 @@
               type="email"
               name="email"
               required
+              maxlength="254"
               autocomplete="email"
               bind:value={administratorEmail}
             />
@@ -187,6 +202,7 @@
               name="password"
               required
               minlength="12"
+              maxlength="128"
               autocomplete="new-password"
             />
           </label>
@@ -202,7 +218,13 @@
           </header>
           <label>
             <span>Workspace name</span>
-            <input name="workspaceName" required bind:value={workspaceName} />
+            <input
+              name="workspaceName"
+              required
+              minlength="2"
+              maxlength="80"
+              bind:value={workspaceName}
+            />
           </label>
           <label>
             <span>Workspace slug</span>

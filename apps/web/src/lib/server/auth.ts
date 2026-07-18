@@ -18,6 +18,7 @@ export function createAuth(db: D1Database, secret: string, baseURL: string) {
       enabled: true,
       disableSignUp: true,
       minPasswordLength: 12,
+      maxPasswordLength: 128,
     },
     advanced: {
       cookiePrefix: "alphaping",
