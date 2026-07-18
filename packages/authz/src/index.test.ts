@@ -36,6 +36,51 @@ describe("resource authorization", () => {
     ).toBe(false);
   });
 
+  it("does not let manage bypass a view deny", () => {
+    expect(
+      canAccessResource(
+        "member",
+        [
+          ...grants,
+          {
+            resourceType: "machine",
+            resourceId: "machine-1",
+            capability: "view",
+            effect: "deny",
+          },
+        ],
+        "machine",
+        "machine-1",
+        "manage",
+      ),
+    ).toBe(false);
+  });
+
+  it("keeps view access when only manage is denied", () => {
+    expect(
+      canAccessResource(
+        "member",
+        [
+          {
+            resourceType: "machine",
+            resourceId: "machine-1",
+            capability: "view",
+            effect: "allow",
+          },
+          {
+            resourceType: "machine",
+            resourceId: "machine-1",
+            capability: "manage",
+            effect: "deny",
+          },
+        ],
+        "machine",
+        "machine-1",
+        "view",
+      ),
+    ).toBe(true);
+  });
+
   it("lets administrators access the workspace", () => {
     expect(canAccessResource("admin", [], "service", "service-1", "manage")).toBe(true);
   });
@@ -57,6 +102,26 @@ describe("resource authorization", () => {
         "machine-1",
         "container-1",
         "view",
+      ),
+    ).toBe(false);
+  });
+
+  it("does not let inherited machine management bypass a container view deny", () => {
+    expect(
+      canAccessContainer(
+        "member",
+        [
+          ...grants,
+          {
+            resourceType: "container",
+            resourceId: "container-1",
+            capability: "view",
+            effect: "deny",
+          },
+        ],
+        "machine-1",
+        "container-1",
+        "manage",
       ),
     ).toBe(false);
   });

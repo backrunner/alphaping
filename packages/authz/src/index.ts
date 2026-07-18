@@ -10,6 +10,13 @@ export interface ResourceGrant {
   effect: GrantEffect;
 }
 
+function deniesCapability(grant: ResourceGrant, capability: Capability): boolean {
+  return (
+    grant.effect === "deny" &&
+    (grant.capability === capability || (capability === "manage" && grant.capability === "view"))
+  );
+}
+
 export function canAccessResource(
   role: WorkspaceRole,
   grants: readonly ResourceGrant[],
@@ -21,11 +28,7 @@ export function canAccessResource(
   const relevant = grants.filter(
     (grant) => grant.resourceType === resourceType && grant.resourceId === resourceId,
   );
-  if (
-    relevant.some((grant) => grant.effect === "deny" && grant.capability === capability) ||
-    (capability === "view" &&
-      relevant.some((grant) => grant.effect === "deny" && grant.capability === "view"))
-  ) {
+  if (relevant.some((grant) => deniesCapability(grant, capability))) {
     return false;
   }
   return relevant.some(
@@ -46,11 +49,7 @@ export function canAccessContainer(
   const containerGrants = grants.filter(
     (grant) => grant.resourceType === "container" && grant.resourceId === containerId,
   );
-  const denied = containerGrants.some(
-    (grant) =>
-      grant.effect === "deny" &&
-      (grant.capability === capability || (capability === "view" && grant.capability === "view")),
-  );
+  const denied = containerGrants.some((grant) => deniesCapability(grant, capability));
   if (denied) return false;
   const allowed = containerGrants.some(
     (grant) =>
