@@ -195,6 +195,7 @@ export const machines = sqliteTable(
     updatedAt: integer("updated_at").notNull(),
     deletedAt: integer("deleted_at"),
     purgeStartedAt: integer("purge_started_at"),
+    purgeAgentCursor: text("purge_agent_cursor").notNull().default(""),
   },
   (table) => [uniqueIndex("machines_telemetry_pk_uq").on(table.telemetryPk)],
 );
@@ -221,7 +222,10 @@ export const agents = sqliteTable(
     revokedAt: integer("revoked_at"),
     authCooldownUntil: integer("auth_cooldown_until").notNull().default(0),
   },
-  (table) => [index("agents_workspace_idx").on(table.workspaceId, table.status)],
+  (table) => [
+    index("agents_workspace_idx").on(table.workspaceId, table.status),
+    index("agents_machine_history_idx").on(table.machineId, table.id),
+  ],
 );
 
 export const agentCommands = sqliteTable(
@@ -317,7 +321,7 @@ export const checkConfigs = sqliteTable(
   },
   (table) => [
     uniqueIndex("check_configs_telemetry_pk_uq").on(table.telemetryPk),
-    index("check_configs_service_idx").on(table.workspaceId, table.serviceId),
+    index("check_configs_service_idx").on(table.workspaceId, table.serviceId, table.telemetryPk),
   ],
 );
 
@@ -336,6 +340,7 @@ export const services = sqliteTable(
     updatedAt: integer("updated_at").notNull(),
     deletedAt: integer("deleted_at"),
     purgeStartedAt: integer("purge_started_at"),
+    purgeCheckCursor: integer("purge_check_cursor").notNull().default(0),
   },
   (table) => [
     uniqueIndex("services_telemetry_pk_uq").on(table.telemetryPk),

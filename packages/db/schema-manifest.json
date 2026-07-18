@@ -66,6 +66,10 @@
         {
           "file": "0016_soft_delete_finalization.sql",
           "sha256": "2f2d22812359e8eb022861e30a3c2fbbe31803bf39702e0ebc1f34f8e9f24474"
+        },
+        {
+          "file": "0017_soft_delete_related_cursors.sql",
+          "sha256": "10ef2549c4c0c4c0778c5e07f61951cac5ad2732e025a620dd3a2035f34b65d7"
         }
       ],
       "objects": [
@@ -119,6 +123,12 @@
         },
         {
           "type": "index",
+          "name": "agents_machine_history_idx",
+          "table": "agents",
+          "sql": "CREATE INDEX agents_machine_history_idx ON agents (machine_id, id)"
+        },
+        {
+          "type": "index",
           "name": "agents_one_active_machine_uq",
           "table": "agents",
           "sql": "CREATE UNIQUE INDEX agents_one_active_machine_uq\n  ON agents (machine_id)\n  WHERE status = 'active'"
@@ -145,7 +155,7 @@
           "type": "index",
           "name": "check_configs_service_idx",
           "table": "check_configs",
-          "sql": "CREATE INDEX check_configs_service_idx ON check_configs (workspace_id, service_id)"
+          "sql": "CREATE INDEX check_configs_service_idx\n  ON check_configs (workspace_id, service_id, telemetry_pk)"
         },
         {
           "type": "index",
@@ -349,7 +359,7 @@
           "type": "table",
           "name": "machines",
           "table": "machines",
-          "sql": "CREATE TABLE machines (\n  id TEXT PRIMARY KEY NOT NULL,\n  telemetry_pk INTEGER NOT NULL UNIQUE,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  name TEXT NOT NULL,\n  description TEXT NOT NULL DEFAULT '',\n  expected_host TEXT,\n  labels_json TEXT NOT NULL DEFAULT '{}',\n  sampling_interval_seconds INTEGER NOT NULL DEFAULT 10\n    CHECK (sampling_interval_seconds BETWEEN 5 AND 300),\n  report_interval_seconds INTEGER NOT NULL DEFAULT 60\n    CHECK (report_interval_seconds BETWEEN 60 AND 900),\n  offline_after_seconds INTEGER NOT NULL DEFAULT 150\n    CHECK (offline_after_seconds BETWEEN 60 AND 86400),\n  container_monitoring_enabled INTEGER NOT NULL DEFAULT 0 CHECK (container_monitoring_enabled IN (0, 1)),\n  maintenance_until INTEGER,\n  desired_config_revision INTEGER NOT NULL DEFAULT 1,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  deleted_at INTEGER\n, container_catalog_digest BLOB, purge_started_at INTEGER) STRICT"
+          "sql": "CREATE TABLE machines (\n  id TEXT PRIMARY KEY NOT NULL,\n  telemetry_pk INTEGER NOT NULL UNIQUE,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  name TEXT NOT NULL,\n  description TEXT NOT NULL DEFAULT '',\n  expected_host TEXT,\n  labels_json TEXT NOT NULL DEFAULT '{}',\n  sampling_interval_seconds INTEGER NOT NULL DEFAULT 10\n    CHECK (sampling_interval_seconds BETWEEN 5 AND 300),\n  report_interval_seconds INTEGER NOT NULL DEFAULT 60\n    CHECK (report_interval_seconds BETWEEN 60 AND 900),\n  offline_after_seconds INTEGER NOT NULL DEFAULT 150\n    CHECK (offline_after_seconds BETWEEN 60 AND 86400),\n  container_monitoring_enabled INTEGER NOT NULL DEFAULT 0 CHECK (container_monitoring_enabled IN (0, 1)),\n  maintenance_until INTEGER,\n  desired_config_revision INTEGER NOT NULL DEFAULT 1,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  deleted_at INTEGER\n, container_catalog_digest BLOB, purge_started_at INTEGER, purge_agent_cursor TEXT NOT NULL DEFAULT '') STRICT"
         },
         {
           "type": "table",
@@ -379,7 +389,7 @@
           "type": "table",
           "name": "services",
           "table": "services",
-          "sql": "CREATE TABLE services (\n  id TEXT PRIMARY KEY NOT NULL,\n  telemetry_pk INTEGER NOT NULL UNIQUE,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  name TEXT NOT NULL,\n  description TEXT NOT NULL DEFAULT '',\n  status_rule_json TEXT NOT NULL DEFAULT '{}',\n  maintenance_until INTEGER,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  deleted_at INTEGER\n, slug TEXT, purge_started_at INTEGER) STRICT"
+          "sql": "CREATE TABLE services (\n  id TEXT PRIMARY KEY NOT NULL,\n  telemetry_pk INTEGER NOT NULL UNIQUE,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  name TEXT NOT NULL,\n  description TEXT NOT NULL DEFAULT '',\n  status_rule_json TEXT NOT NULL DEFAULT '{}',\n  maintenance_until INTEGER,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  deleted_at INTEGER\n, slug TEXT, purge_started_at INTEGER, purge_check_cursor INTEGER NOT NULL DEFAULT 0\n  CHECK (purge_check_cursor >= 0)) STRICT"
         },
         {
           "type": "table",
@@ -521,6 +531,12 @@
         },
         {
           "type": "index",
+          "name": "agents_machine_history_idx",
+          "table": "agents",
+          "sql": "CREATE INDEX agents_machine_history_idx ON agents (machine_id, id)"
+        },
+        {
+          "type": "index",
           "name": "agents_one_active_machine_uq",
           "table": "agents",
           "sql": "CREATE UNIQUE INDEX agents_one_active_machine_uq\n  ON agents (machine_id)\n  WHERE status = 'active'"
@@ -547,7 +563,7 @@
           "type": "index",
           "name": "check_configs_service_idx",
           "table": "check_configs",
-          "sql": "CREATE INDEX check_configs_service_idx ON check_configs (workspace_id, service_id)"
+          "sql": "CREATE INDEX check_configs_service_idx\n  ON check_configs (workspace_id, service_id, telemetry_pk)"
         },
         {
           "type": "index",
@@ -805,7 +821,7 @@
           "type": "table",
           "name": "machines",
           "table": "machines",
-          "sql": "CREATE TABLE machines (\n  id TEXT PRIMARY KEY NOT NULL,\n  telemetry_pk INTEGER NOT NULL UNIQUE,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  name TEXT NOT NULL,\n  description TEXT NOT NULL DEFAULT '',\n  expected_host TEXT,\n  labels_json TEXT NOT NULL DEFAULT '{}',\n  sampling_interval_seconds INTEGER NOT NULL DEFAULT 10\n    CHECK (sampling_interval_seconds BETWEEN 5 AND 300),\n  report_interval_seconds INTEGER NOT NULL DEFAULT 60\n    CHECK (report_interval_seconds BETWEEN 60 AND 900),\n  offline_after_seconds INTEGER NOT NULL DEFAULT 150\n    CHECK (offline_after_seconds BETWEEN 60 AND 86400),\n  container_monitoring_enabled INTEGER NOT NULL DEFAULT 0 CHECK (container_monitoring_enabled IN (0, 1)),\n  maintenance_until INTEGER,\n  desired_config_revision INTEGER NOT NULL DEFAULT 1,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  deleted_at INTEGER\n, container_catalog_digest BLOB, purge_started_at INTEGER) STRICT"
+          "sql": "CREATE TABLE machines (\n  id TEXT PRIMARY KEY NOT NULL,\n  telemetry_pk INTEGER NOT NULL UNIQUE,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  name TEXT NOT NULL,\n  description TEXT NOT NULL DEFAULT '',\n  expected_host TEXT,\n  labels_json TEXT NOT NULL DEFAULT '{}',\n  sampling_interval_seconds INTEGER NOT NULL DEFAULT 10\n    CHECK (sampling_interval_seconds BETWEEN 5 AND 300),\n  report_interval_seconds INTEGER NOT NULL DEFAULT 60\n    CHECK (report_interval_seconds BETWEEN 60 AND 900),\n  offline_after_seconds INTEGER NOT NULL DEFAULT 150\n    CHECK (offline_after_seconds BETWEEN 60 AND 86400),\n  container_monitoring_enabled INTEGER NOT NULL DEFAULT 0 CHECK (container_monitoring_enabled IN (0, 1)),\n  maintenance_until INTEGER,\n  desired_config_revision INTEGER NOT NULL DEFAULT 1,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  deleted_at INTEGER\n, container_catalog_digest BLOB, purge_started_at INTEGER, purge_agent_cursor TEXT NOT NULL DEFAULT '') STRICT"
         },
         {
           "type": "table",
@@ -853,7 +869,7 @@
           "type": "table",
           "name": "services",
           "table": "services",
-          "sql": "CREATE TABLE services (\n  id TEXT PRIMARY KEY NOT NULL,\n  telemetry_pk INTEGER NOT NULL UNIQUE,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  name TEXT NOT NULL,\n  description TEXT NOT NULL DEFAULT '',\n  status_rule_json TEXT NOT NULL DEFAULT '{}',\n  maintenance_until INTEGER,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  deleted_at INTEGER\n, slug TEXT, purge_started_at INTEGER) STRICT"
+          "sql": "CREATE TABLE services (\n  id TEXT PRIMARY KEY NOT NULL,\n  telemetry_pk INTEGER NOT NULL UNIQUE,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  name TEXT NOT NULL,\n  description TEXT NOT NULL DEFAULT '',\n  status_rule_json TEXT NOT NULL DEFAULT '{}',\n  maintenance_until INTEGER,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  deleted_at INTEGER\n, slug TEXT, purge_started_at INTEGER, purge_check_cursor INTEGER NOT NULL DEFAULT 0\n  CHECK (purge_check_cursor >= 0)) STRICT"
         },
         {
           "type": "table",

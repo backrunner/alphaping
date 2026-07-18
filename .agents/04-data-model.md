@@ -116,6 +116,7 @@ Better Auth 核心表由其 schema 生成并纳入统一 migration：
 - `desired_config_revision`
 - `created_at`, `updated_at`, `deleted_at`
 - `purge_started_at`，跨 D1 物理清理开始前的恢复 fencing claim
+- `purge_agent_cursor`，Retention 已确认清理完 replay state 的最后一个历史 Agent ID
 
 索引：`workspace_id,deleted_at`。不要给每次报告都会变化的字段建立多余索引。
 
@@ -281,6 +282,7 @@ V1 默认不生成每容器长保留 rollup。七天内原始容器数据由 mac
 - `maintenance_until`
 - `created_at`, `updated_at`, `deleted_at`
 - `purge_started_at`，跨 D1 物理清理开始前的恢复 fencing claim
+- `purge_check_cursor`，Retention 已确认清理完 telemetry 的最后一个 check integer PK
 
 ### `service_checks`
 

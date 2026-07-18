@@ -55,17 +55,24 @@ beforeEach(async () => {
   await env.CONTROL_DB.batch([
     ...controlTables.map((table) => env.CONTROL_DB.prepare(`DROP TABLE IF EXISTS ${table}`)),
     env.CONTROL_DB.prepare(
-      "CREATE TABLE machines (id TEXT PRIMARY KEY, telemetry_pk INTEGER, workspace_id TEXT, deleted_at INTEGER, purge_started_at INTEGER)",
+      `CREATE TABLE machines (
+        id TEXT PRIMARY KEY, telemetry_pk INTEGER, workspace_id TEXT, deleted_at INTEGER,
+        purge_started_at INTEGER, purge_agent_cursor TEXT NOT NULL DEFAULT ''
+      )`,
     ),
     env.CONTROL_DB.prepare(
-      "CREATE TABLE services (id TEXT PRIMARY KEY, telemetry_pk INTEGER, workspace_id TEXT, deleted_at INTEGER, purge_started_at INTEGER)",
+      `CREATE TABLE services (
+        id TEXT PRIMARY KEY, telemetry_pk INTEGER, workspace_id TEXT, deleted_at INTEGER,
+        purge_started_at INTEGER, purge_check_cursor INTEGER NOT NULL DEFAULT 0
+      )`,
     ),
     env.CONTROL_DB.prepare(
       "CREATE TABLE agents (id TEXT PRIMARY KEY, machine_id TEXT, created_at INTEGER)",
     ),
     env.CONTROL_DB.prepare(
       `CREATE TABLE check_configs (
-        telemetry_pk INTEGER, service_id TEXT, secret_refs_json TEXT,
+        id TEXT PRIMARY KEY, telemetry_pk INTEGER, workspace_id TEXT,
+        service_id TEXT REFERENCES services(id) ON DELETE CASCADE, secret_refs_json TEXT,
         enabled INTEGER, executor_agent_id TEXT
       )`,
     ),
@@ -158,21 +165,30 @@ async function count(db: D1Database, table: string): Promise<number> {
   return row?.count ?? 0;
 }
 
+async function runInBatches(
+  db: D1Database,
+  statements: readonly D1PreparedStatement[],
+): Promise<void> {
+  for (let offset = 0; offset < statements.length; offset += 50) {
+    await db.batch(statements.slice(offset, offset + 50));
+  }
+}
+
 describe("soft-delete finalization", () => {
   it("purges machine, service, replay, secret, and authorization rows", async () => {
     const deletedAt = now - 8 * DAY_MS;
     await env.CONTROL_DB.batch([
       env.CONTROL_DB.prepare(
-        "INSERT INTO machines VALUES ('machine-1', 1, 'workspace-1', ?, NULL)",
+        "INSERT INTO machines VALUES ('machine-1', 1, 'workspace-1', ?, NULL, '')",
       ).bind(deletedAt),
       env.CONTROL_DB.prepare("INSERT INTO agents VALUES ('agent-1', 'machine-1', 1)"),
       env.CONTROL_DB.prepare(
-        "INSERT INTO services VALUES ('service-1', 2, 'workspace-1', ?, NULL)",
+        "INSERT INTO services VALUES ('service-1', 2, 'workspace-1', ?, NULL, 0)",
       ).bind(deletedAt),
       env.CONTROL_DB.prepare(
         `INSERT INTO check_configs VALUES (
-          3, 'service-1', '{"headers":{"authorization":"secret-1"},"body":null,"tcpPayload":null}',
-          1, NULL
+          'check-1', 3, 'workspace-1', 'service-1',
+          '{"headers":{"authorization":"secret-1"},"body":null,"tcpPayload":null}', 1, NULL
         )`,
       ),
       env.CONTROL_DB.prepare("INSERT INTO check_secrets VALUES ('secret-1', 'workspace-1')"),
@@ -199,6 +215,7 @@ describe("soft-delete finalization", () => {
     await expect(finalizeSoftDeletedResources(env, policy, now)).resolves.toBeGreaterThan(0);
     await expect(count(env.CONTROL_DB, "machines")).resolves.toBe(0);
     await expect(count(env.CONTROL_DB, "services")).resolves.toBe(0);
+    await expect(count(env.CONTROL_DB, "check_configs")).resolves.toBe(0);
     await expect(count(env.CONTROL_DB, "check_secrets")).resolves.toBe(0);
     await expect(count(env.CONTROL_DB, "resource_grants")).resolves.toBe(0);
     await expect(count(env.CONTROL_DB, "resource_public_policies")).resolves.toBe(0);
@@ -211,7 +228,7 @@ describe("soft-delete finalization", () => {
   it("keeps the control row until every bounded telemetry batch is gone", async () => {
     const deletedAt = now - 8 * DAY_MS;
     await env.CONTROL_DB.prepare(
-      "INSERT INTO machines VALUES ('machine-1', 1, 'workspace-1', ?, NULL)",
+      "INSERT INTO machines VALUES ('machine-1', 1, 'workspace-1', ?, NULL, '')",
     )
       .bind(deletedAt)
       .run();
@@ -259,7 +276,7 @@ describe("soft-delete finalization", () => {
     await env.CONTROL_DB.batch([
       env.CONTROL_DB.prepare("INSERT INTO workspaces VALUES ('workspace-1', NULL, NULL)"),
       env.CONTROL_DB.prepare(
-        "INSERT INTO machines VALUES ('machine-1', 1, 'workspace-1', NULL, NULL)",
+        "INSERT INTO machines VALUES ('machine-1', 1, 'workspace-1', NULL, NULL, '')",
       ),
     ]);
     await env.TELEMETRY_DB.prepare("INSERT INTO telemetry_blocks_5m VALUES (1, 1, 1)").run();
@@ -267,5 +284,95 @@ describe("soft-delete finalization", () => {
     await expect(finalizeSoftDeletedResources(env, stalePolicy, now)).resolves.toBe(0);
     await expect(count(env.CONTROL_DB, "machines")).resolves.toBe(1);
     await expect(count(env.TELEMETRY_DB, "telemetry_blocks_5m")).resolves.toBe(1);
+  });
+
+  it("resumes machine replay cleanup across more than one related-resource page", async () => {
+    const deletedAt = now - 8 * DAY_MS;
+    await env.CONTROL_DB.prepare(
+      "INSERT INTO machines VALUES ('machine-1', 1, 'workspace-1', ?, NULL, '')",
+    )
+      .bind(deletedAt)
+      .run();
+    const agentIds = Array.from(
+      { length: 51 },
+      (_, index) => `agent-${index.toString().padStart(3, "0")}`,
+    );
+    await runInBatches(
+      env.CONTROL_DB,
+      agentIds.map((agentId, index) =>
+        env.CONTROL_DB.prepare("INSERT INTO agents VALUES (?, 'machine-1', ?)").bind(
+          agentId,
+          index,
+        ),
+      ),
+    );
+    await runInBatches(
+      env.TELEMETRY_DB,
+      agentIds.map((agentId) =>
+        env.TELEMETRY_DB.prepare("INSERT INTO agent_replay_state VALUES (?, 1)").bind(agentId),
+      ),
+    );
+
+    await finalizeSoftDeletedResources(env, policy, now);
+    await expect(count(env.CONTROL_DB, "machines")).resolves.toBe(1);
+    await expect(count(env.TELEMETRY_DB, "agent_replay_state")).resolves.toBe(1);
+    await expect(
+      env.CONTROL_DB.prepare(
+        "SELECT purge_agent_cursor FROM machines WHERE id = 'machine-1'",
+      ).first<{ purge_agent_cursor: string }>(),
+    ).resolves.toEqual({ purge_agent_cursor: "agent-049" });
+
+    await finalizeSoftDeletedResources(env, policy, now);
+    await expect(count(env.CONTROL_DB, "machines")).resolves.toBe(0);
+    await expect(count(env.TELEMETRY_DB, "agent_replay_state")).resolves.toBe(0);
+  });
+
+  it("resumes check cleanup across pages without leaving telemetry or secrets", async () => {
+    const deletedAt = now - 8 * DAY_MS;
+    await env.CONTROL_DB.prepare(
+      "INSERT INTO services VALUES ('service-1', 2, 'workspace-1', ?, NULL, 0)",
+    )
+      .bind(deletedAt)
+      .run();
+    const checks = Array.from({ length: 51 }, (_, index) => ({
+      id: `check-${index.toString().padStart(3, "0")}`,
+      pk: index + 1,
+      secretId: `secret-${index.toString().padStart(3, "0")}`,
+    }));
+    await runInBatches(
+      env.CONTROL_DB,
+      checks.flatMap((check) => [
+        env.CONTROL_DB.prepare(
+          `INSERT INTO check_configs VALUES (?, ?, 'workspace-1', 'service-1', ?, 1, NULL)`,
+        ).bind(check.id, check.pk, JSON.stringify({ body: check.secretId })),
+        env.CONTROL_DB.prepare("INSERT INTO check_secrets VALUES (?, 'workspace-1')").bind(
+          check.secretId,
+        ),
+      ]),
+    );
+    await runInBatches(
+      env.TELEMETRY_DB,
+      checks.map((check) =>
+        env.TELEMETRY_DB.prepare("INSERT INTO check_result_blocks_5m VALUES (?, 1, 1)").bind(
+          check.pk,
+        ),
+      ),
+    );
+
+    await finalizeSoftDeletedResources(env, policy, now);
+    await expect(count(env.CONTROL_DB, "services")).resolves.toBe(1);
+    await expect(count(env.CONTROL_DB, "check_secrets")).resolves.toBe(1);
+    await expect(count(env.TELEMETRY_DB, "check_result_blocks_5m")).resolves.toBe(1);
+    await expect(
+      env.CONTROL_DB.prepare(
+        "SELECT purge_check_cursor FROM services WHERE id = 'service-1'",
+      ).first<{ purge_check_cursor: number }>(),
+    ).resolves.toEqual({ purge_check_cursor: 50 });
+
+    await finalizeSoftDeletedResources(env, policy, now);
+    await expect(count(env.CONTROL_DB, "services")).resolves.toBe(0);
+    await expect(count(env.CONTROL_DB, "check_configs")).resolves.toBe(0);
+    await expect(count(env.CONTROL_DB, "check_secrets")).resolves.toBe(0);
+    await expect(count(env.TELEMETRY_DB, "check_result_blocks_5m")).resolves.toBe(0);
   });
 });

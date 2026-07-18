@@ -8,7 +8,8 @@ import {
 const DAY_MS = 86_400_000;
 const RESOURCE_BATCH = 10;
 const CONTROL_ONLY_BATCH = 50;
-const MAX_RELATED_RESOURCES = 500;
+const RELATED_RESOURCE_BATCH = 50;
+const SECRET_BATCH = 40;
 const ROW_BATCH = 200;
 
 export interface SoftDeletePolicy {
@@ -23,6 +24,10 @@ interface ResourceRow {
   id: string;
   telemetry_pk: number;
   deleted_at: number | null;
+}
+
+interface RelatedResourceRow<T extends number | string> extends ResourceRow {
+  related_cursor: T;
 }
 
 interface PurgeClaimRow {
@@ -109,18 +114,77 @@ async function claimResourceFinalization(
 async function deletedResources(
   db: D1Database,
   table: "machines" | "services",
+  cursorColumn: "purge_agent_cursor" | "purge_check_cursor",
   policy: SoftDeletePolicy,
   cutoff: number,
-): Promise<readonly ResourceRow[]> {
+): Promise<readonly RelatedResourceRow<number | string>[]> {
   const rows = await db
     .prepare(
-      `SELECT id, telemetry_pk, deleted_at FROM ${table}
+      `SELECT id, telemetry_pk, deleted_at, ${cursorColumn} AS related_cursor FROM ${table}
        WHERE workspace_id = ? AND COALESCE(deleted_at, ?) <= ?
        ORDER BY telemetry_pk LIMIT ?`,
     )
     .bind(policy.workspace_id, ...effectiveDeletionBindings(policy, cutoff), RESOURCE_BATCH)
-    .all<ResourceRow>();
+    .all<RelatedResourceRow<number | string>>();
   return rows.results;
+}
+
+async function advanceRelatedCursor(
+  db: D1Database,
+  table: "machines" | "services",
+  cursorColumn: "purge_agent_cursor" | "purge_check_cursor",
+  policy: SoftDeletePolicy,
+  resourceId: string,
+  previousCursor: number | string,
+  nextCursor: number | string,
+): Promise<void> {
+  const result = await db
+    .prepare(
+      `UPDATE ${table} SET ${cursorColumn} = ?
+       WHERE id = ? AND workspace_id = ? AND purge_started_at IS NOT NULL
+         AND ${cursorColumn} = ?`,
+    )
+    .bind(nextCursor, resourceId, policy.workspace_id, previousCursor)
+    .run();
+  if ((result.meta.changes ?? 0) !== 1) throw new Error("soft_delete_related_cursor_conflict");
+}
+
+async function loadAgentPage(
+  db: D1Database,
+  machineId: string,
+  cursor: string,
+): Promise<{ rows: readonly AgentRow[]; hasMore: boolean }> {
+  const page = await db
+    .prepare(
+      `SELECT id FROM agents WHERE machine_id = ? AND id > ?
+       ORDER BY id LIMIT ?`,
+    )
+    .bind(machineId, cursor, RELATED_RESOURCE_BATCH + 1)
+    .all<AgentRow>();
+  return {
+    rows: page.results.slice(0, RELATED_RESOURCE_BATCH),
+    hasMore: page.results.length > RELATED_RESOURCE_BATCH,
+  };
+}
+
+async function loadCheckPage(
+  db: D1Database,
+  policy: SoftDeletePolicy,
+  serviceId: string,
+  cursor: number,
+): Promise<{ rows: readonly CheckRow[]; hasMore: boolean }> {
+  const page = await db
+    .prepare(
+      `SELECT telemetry_pk, secret_refs_json FROM check_configs
+       WHERE workspace_id = ? AND service_id = ? AND telemetry_pk > ?
+       ORDER BY telemetry_pk LIMIT ?`,
+    )
+    .bind(policy.workspace_id, serviceId, cursor, RELATED_RESOURCE_BATCH + 1)
+    .all<CheckRow>();
+  return {
+    rows: page.results.slice(0, RELATED_RESOURCE_BATCH),
+    hasMore: page.results.length > RELATED_RESOURCE_BATCH,
+  };
 }
 
 function statementChanges(results: readonly D1Result[]): number {
@@ -185,29 +249,43 @@ async function finalizeMachines(
   now: number,
 ): Promise<number> {
   let deleted = 0;
-  for (const machine of await deletedResources(env.CONTROL_DB, "machines", policy, cutoff)) {
+  for (const machine of await deletedResources(
+    env.CONTROL_DB,
+    "machines",
+    "purge_agent_cursor",
+    policy,
+    cutoff,
+  )) {
     if (
       !(await claimResourceFinalization(env.CONTROL_DB, "machines", policy, machine, cutoff, now))
     ) {
       continue;
     }
-    const agents = await env.CONTROL_DB.prepare(
-      "SELECT id FROM agents WHERE machine_id = ? ORDER BY created_at LIMIT ?",
-    )
-      .bind(machine.id, MAX_RELATED_RESOURCES + 1)
-      .all<AgentRow>();
-    if (agents.results.length > MAX_RELATED_RESOURCES) {
-      throw new Error("soft_delete_agent_limit_exceeded");
-    }
+    const cursor = String(machine.related_cursor);
+    const agents = await loadAgentPage(env.CONTROL_DB, machine.id, cursor);
     const purge = await purgeMachineTelemetry(
       env.TELEMETRY_DB,
       machine.telemetry_pk,
-      agents.results.map((agent) => agent.id),
+      agents.rows.map((agent) => agent.id),
       ROW_BATCH,
     );
     deleted += purge.deleted;
-    if (purge.complete)
-      deleted += await finalizeMachineControl(env.CONTROL_DB, policy, machine, cutoff);
+    if (!purge.complete) continue;
+    if (agents.hasMore) {
+      const nextCursor = agents.rows.at(-1)?.id;
+      if (!nextCursor) throw new Error("soft_delete_agent_page_empty");
+      await advanceRelatedCursor(
+        env.CONTROL_DB,
+        "machines",
+        "purge_agent_cursor",
+        policy,
+        machine.id,
+        cursor,
+        nextCursor,
+      );
+      continue;
+    }
+    deleted += await finalizeMachineControl(env.CONTROL_DB, policy, machine, cutoff);
   }
   return deleted;
 }
@@ -238,8 +316,8 @@ function collectSecretIds(rows: readonly CheckRow[]): readonly string[] {
 
 async function deleteSecrets(db: D1Database, workspaceId: string, ids: readonly string[]) {
   let deleted = 0;
-  for (let offset = 0; offset < ids.length; offset += CONTROL_ONLY_BATCH) {
-    const batch = ids.slice(offset, offset + CONTROL_ONLY_BATCH);
+  for (let offset = 0; offset < ids.length; offset += SECRET_BATCH) {
+    const batch = ids.slice(offset, offset + SECRET_BATCH);
     const result = await db
       .prepare(
         `DELETE FROM check_secrets
@@ -256,10 +334,8 @@ async function finalizeServiceControl(
   db: D1Database,
   policy: SoftDeletePolicy,
   service: ResourceRow,
-  checks: readonly CheckRow[],
   cutoff: number,
 ): Promise<number> {
-  let deleted = await deleteSecrets(db, policy.workspace_id, collectSecretIds(checks));
   const results = await db.batch([
     db
       .prepare(
@@ -286,8 +362,7 @@ async function finalizeServiceControl(
       )
       .bind(service.id, policy.workspace_id, policy.workspace_deleted_at, cutoff),
   ]);
-  deleted += statementChanges(results);
-  return deleted;
+  return statementChanges(results);
 }
 
 async function finalizeServices(
@@ -297,37 +372,48 @@ async function finalizeServices(
   now: number,
 ): Promise<number> {
   let deleted = 0;
-  for (const service of await deletedResources(env.CONTROL_DB, "services", policy, cutoff)) {
+  for (const service of await deletedResources(
+    env.CONTROL_DB,
+    "services",
+    "purge_check_cursor",
+    policy,
+    cutoff,
+  )) {
     if (
       !(await claimResourceFinalization(env.CONTROL_DB, "services", policy, service, cutoff, now))
     ) {
       continue;
     }
-    const checks = await env.CONTROL_DB.prepare(
-      `SELECT telemetry_pk, secret_refs_json FROM check_configs
-       WHERE service_id = ? ORDER BY telemetry_pk LIMIT ?`,
-    )
-      .bind(service.id, MAX_RELATED_RESOURCES + 1)
-      .all<CheckRow>();
-    if (checks.results.length > MAX_RELATED_RESOURCES) {
-      throw new Error("soft_delete_check_limit_exceeded");
-    }
+    const cursor = Number(service.related_cursor);
+    const checks = await loadCheckPage(env.CONTROL_DB, policy, service.id, cursor);
     const purge = await purgeServiceTelemetry(
       env.TELEMETRY_DB,
       service.telemetry_pk,
-      checks.results.map((check) => check.telemetry_pk),
+      checks.rows.map((check) => check.telemetry_pk),
       ROW_BATCH,
     );
     deleted += purge.deleted;
-    if (purge.complete) {
-      deleted += await finalizeServiceControl(
+    if (!purge.complete) continue;
+    deleted += await deleteSecrets(
+      env.CONTROL_DB,
+      policy.workspace_id,
+      collectSecretIds(checks.rows),
+    );
+    if (checks.hasMore) {
+      const nextCursor = checks.rows.at(-1)?.telemetry_pk;
+      if (nextCursor === undefined) throw new Error("soft_delete_check_page_empty");
+      await advanceRelatedCursor(
         env.CONTROL_DB,
+        "services",
+        "purge_check_cursor",
         policy,
-        service,
-        checks.results,
-        cutoff,
+        service.id,
+        cursor,
+        nextCursor,
       );
+      continue;
     }
+    deleted += await finalizeServiceControl(env.CONTROL_DB, policy, service, cutoff);
   }
   return deleted;
 }
