@@ -6,6 +6,8 @@ import {
   type WorkspaceRole,
 } from "@alphaping/authz";
 
+import { queryInBatches } from "./d1-query-batches.js";
+
 interface WorkspaceRow {
   id: string;
   name: string;
@@ -145,26 +147,11 @@ export interface DashboardSnapshot {
 
 export class DashboardNotFoundError extends Error {}
 
-const D1_IN_BATCH_SIZE = 90;
 const DASHBOARD_MACHINE_PREVIEW = 12;
 const DASHBOARD_SERVICE_PREVIEW = 10;
 
 function placeholders(length: number): string {
   return Array.from({ length }, () => "?").join(", ");
-}
-
-async function queryInBatches<Row>(
-  database: D1Database,
-  values: readonly number[] | readonly string[],
-  prepare: (batch: readonly (number | string)[]) => D1PreparedStatement,
-): Promise<Row[]> {
-  if (values.length === 0) return [];
-  const statements = [];
-  for (let offset = 0; offset < values.length; offset += D1_IN_BATCH_SIZE) {
-    statements.push(prepare(values.slice(offset, offset + D1_IN_BATCH_SIZE)));
-  }
-  const results = await database.batch<Row>(statements);
-  return results.flatMap((result) => result.results);
 }
 
 function parseLabels(value: string): Readonly<Record<string, string>> {

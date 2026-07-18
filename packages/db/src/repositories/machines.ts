@@ -6,6 +6,7 @@ import {
   type WorkspaceRole,
 } from "@alphaping/authz";
 
+import { queryInBatches } from "./d1-query-batches.js";
 import type { DashboardMachine } from "./dashboard.js";
 import type {
   MachineCollection,
@@ -109,8 +110,6 @@ interface WorkspaceAccess {
 
 export class MachineNotFoundError extends Error {}
 
-const D1_IN_BATCH_SIZE = 90;
-
 async function loadWorkspaceAccess(
   db: D1Database,
   workspaceSlug: string,
@@ -195,24 +194,17 @@ async function loadLatestRows(
   telemetryDb: D1Database,
   machinePks: readonly number[],
 ): Promise<readonly MachineLatestRow[]> {
-  if (machinePks.length === 0) return [];
-  const statements = [];
-  for (let offset = 0; offset < machinePks.length; offset += D1_IN_BATCH_SIZE) {
-    const batch = machinePks.slice(offset, offset + D1_IN_BATCH_SIZE);
-    statements.push(
-      telemetryDb
-        .prepare(
-          `SELECT machine_pk, observed_at, received_at, state, cpu_permille,
+  return queryInBatches<MachineLatestRow, number>(telemetryDb, machinePks, (batch) =>
+    telemetryDb
+      .prepare(
+        `SELECT machine_pk, observed_at, received_at, state, cpu_permille,
                 memory_used_bytes, memory_total_bytes, storage_used_bytes, storage_total_bytes,
                 network_rx_bps, network_tx_bps, network_rx_total, network_tx_total,
                 load_1m_milli, uptime_seconds
          FROM machine_latest WHERE machine_pk IN (${placeholders(batch.length)})`,
-        )
-        .bind(...batch),
-    );
-  }
-  const results = await telemetryDb.batch<MachineLatestRow>(statements);
-  return results.flatMap((result) => result.results);
+      )
+      .bind(...batch),
+  );
 }
 
 async function loadLatestDetailRow(

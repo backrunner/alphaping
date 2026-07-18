@@ -1,5 +1,6 @@
 import { canAccessResource } from "@alphaping/authz";
 
+import { queryInBatches } from "./d1-query-batches.js";
 import type {
   CheckLatestRow,
   CheckRow,
@@ -310,36 +311,37 @@ async function loadTelemetry(
   if (servicePks.length === 0) return { services: [], checks: [], buckets: [] };
   const since = now - 24 * 60 * 60_000;
   const [services, checks, buckets] = await Promise.all([
-    db
-      .prepare(
-        `SELECT service_pk, state, status_since, reason_code, last_transition_at
-       FROM service_latest WHERE workspace_pk = ? AND service_pk IN (${placeholders(servicePks.length)})`,
-      )
-      .bind(workspacePk, ...servicePks)
-      .all<ServiceLatestRow>(),
-    checkPks.length === 0
-      ? Promise.resolve({ results: [] as CheckLatestRow[] })
-      : db
-          .prepare(
-            `SELECT check_pk, observed_at, state, latency_ms, failure_code, failure_summary,
+    queryInBatches<ServiceLatestRow, number>(db, servicePks, (batch) =>
+      db
+        .prepare(
+          `SELECT service_pk, state, status_since, reason_code, last_transition_at
+       FROM service_latest WHERE workspace_pk = ? AND service_pk IN (${placeholders(batch.length)})`,
+        )
+        .bind(workspacePk, ...batch),
+    ),
+    queryInBatches<CheckLatestRow, number>(db, checkPks, (batch) =>
+      db
+        .prepare(
+          `SELECT check_pk, observed_at, state, latency_ms, failure_code, failure_summary,
                   consecutive_failures, consecutive_successes, critical
-           FROM check_latest WHERE workspace_pk = ? AND check_pk IN (${placeholders(checkPks.length)})`,
-          )
-          .bind(workspacePk, ...checkPks)
-          .all<CheckLatestRow>(),
-    db
-      .prepare(
-        `SELECT resource_pk, bucket_start, state, availability_permille,
+           FROM check_latest WHERE workspace_pk = ? AND check_pk IN (${placeholders(batch.length)})`,
+        )
+        .bind(workspacePk, ...batch),
+    ),
+    queryInBatches<StatusBucketRow, number>(db, servicePks, (batch) =>
+      db
+        .prepare(
+          `SELECT resource_pk, bucket_start, state, availability_permille,
               latency_avg_ms, latency_max_ms, summary_code
        FROM status_buckets
        WHERE workspace_pk = ? AND resource_type = 2 AND bucket_seconds = 300
-         AND resource_pk IN (${placeholders(servicePks.length)}) AND bucket_start >= ?
+         AND resource_pk IN (${placeholders(batch.length)}) AND bucket_start >= ?
        ORDER BY bucket_start`,
-      )
-      .bind(workspacePk, ...servicePks, since)
-      .all<StatusBucketRow>(),
+        )
+        .bind(workspacePk, ...batch, since),
+    ),
   ]);
-  return { services: services.results, checks: checks.results, buckets: buckets.results };
+  return { services, checks, buckets };
 }
 
 function summarizeService(

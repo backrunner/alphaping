@@ -2,10 +2,13 @@ import { performance } from "node:perf_hooks";
 
 const MACHINE_TARGET = 500;
 const MACHINE_PREVIEW_TARGET = 12;
+const SERVICE_TARGET = 200;
 const MEASURED_REQUESTS = 20;
 const SSR_P95_LIMIT_MS = 500;
 const SSR_HTML_LIMIT_BYTES = 250_000;
 const TELEMETRY_PK_BASE = 1_000_000;
+const SERVICE_TELEMETRY_PK_BASE = 2_000_000;
+const CHECK_TELEMETRY_PK_BASE = 3_000_000;
 
 function onlyRow(rows, label) {
   if (rows.length !== 1) throw new Error(`${label} returned ${rows.length} rows, expected one`);
@@ -51,6 +54,22 @@ async function fetchMachineCollection(baseUrl, adminCookie) {
   }
   if (response.headers.get("cache-control") !== "private, no-store") {
     throw new Error("500-machine collection was not marked private");
+  }
+  return html;
+}
+
+async function fetchServiceCollection(baseUrl, adminCookie) {
+  const response = await fetch(`${baseUrl}/operations/services`, {
+    headers: { cookie: adminCookie },
+  });
+  const html = await response.text();
+  if (response.status !== 200) {
+    throw new Error(
+      `200-service collection returned ${response.status}, expected 200; body starts with ${JSON.stringify(html.slice(0, 500))}`,
+    );
+  }
+  if (response.headers.get("cache-control") !== "private, no-store") {
+    throw new Error("200-service collection was not marked private");
   }
   return html;
 }
@@ -125,6 +144,68 @@ export async function runWebPerformanceE2e({
     );
   }
 
+  const existingServices = onlyRow(
+    queryControlDb(
+      `SELECT COUNT(*) AS count FROM services
+       WHERE workspace_id = ${sqlString(workspace.id)} AND deleted_at IS NULL`,
+    ),
+    "performance service count",
+  ).count;
+  const servicesToAdd = SERVICE_TARGET - existingServices;
+  if (!Number.isInteger(servicesToAdd) || servicesToAdd < 0) {
+    throw new Error(`performance fixture already contains ${existingServices} services`);
+  }
+  if (servicesToAdd > 0) {
+    queryControlDb(
+      `WITH RECURSIVE sequence(value) AS (
+         VALUES (1)
+         UNION ALL SELECT value + 1 FROM sequence WHERE value < ${servicesToAdd}
+       )
+       INSERT INTO services
+         (id, telemetry_pk, workspace_id, name, description, created_at, updated_at)
+       SELECT printf('performance-service-%03d', value), ${SERVICE_TELEMETRY_PK_BASE} + value,
+              ${sqlString(workspace.id)}, printf('Performance service %03d', value),
+              '200-service collection fixture', ${now}, ${now}
+       FROM sequence`,
+    );
+    queryControlDb(
+      `INSERT INTO check_configs
+         (id, telemetry_pk, workspace_id, service_id, name, kind, executor_kind,
+          enabled, interval_seconds, phase_seconds, timeout_ms, request_json,
+          created_at, updated_at)
+       SELECT replace(id, 'service', 'check'),
+              ${CHECK_TELEMETRY_PK_BASE} + (telemetry_pk - ${SERVICE_TELEMETRY_PK_BASE}),
+              workspace_id, id, 'Availability', 'http', 'cloudflare', 1, 300, 0, 5000,
+              '{"url":"https://example.com/health","method":"GET","expectedStatus":[200],"assertions":[]}',
+              ${now}, ${now}
+       FROM services WHERE id LIKE 'performance-service-%'`,
+    );
+    queryTelemetryDb(
+      `WITH RECURSIVE sequence(value) AS (
+         VALUES (1)
+         UNION ALL SELECT value + 1 FROM sequence WHERE value < ${servicesToAdd}
+       )
+       INSERT INTO service_latest
+         (service_pk, workspace_pk, state, status_since, reason_code,
+          last_transition_at, updated_at)
+       SELECT ${SERVICE_TELEMETRY_PK_BASE} + value, ${workspace.telemetry_pk}, 'healthy',
+              ${now}, 'checks_healthy', ${now}, ${now}
+       FROM sequence`,
+    );
+    queryTelemetryDb(
+      `WITH RECURSIVE sequence(value) AS (
+         VALUES (1)
+         UNION ALL SELECT value + 1 FROM sequence WHERE value < ${servicesToAdd}
+       )
+       INSERT INTO check_latest
+         (check_pk, workspace_pk, observed_at, state, latency_ms, result_id,
+          service_pk, critical, config_revision)
+       SELECT ${CHECK_TELEMETRY_PK_BASE} + value, ${workspace.telemetry_pk}, ${now},
+              'healthy', 25, zeroblob(16), ${SERVICE_TELEMETRY_PK_BASE} + value, 1, 1
+       FROM sequence`,
+    );
+  }
+
   const machineRows = queryControlDb(
     `SELECT name FROM machines
      WHERE workspace_id = ${sqlString(workspace.id)} AND deleted_at IS NULL
@@ -143,12 +224,30 @@ export async function runWebPerformanceE2e({
     throw new Error(`performance fixture contains ${latestCount} latest rows, expected 500`);
   }
 
+  const serviceRows = queryControlDb(
+    `SELECT name FROM services
+     WHERE workspace_id = ${sqlString(workspace.id)} AND deleted_at IS NULL
+     ORDER BY name`,
+  );
+  if (serviceRows.length !== SERVICE_TARGET) {
+    throw new Error(
+      `performance fixture contains ${serviceRows.length} services, expected ${SERVICE_TARGET}`,
+    );
+  }
+
   const machineCollection = await fetchMachineCollection(baseUrl, adminCookie);
   if (
     !machineCollection.includes(machineRows[0].name) ||
     !machineCollection.includes(machineRows.at(-1).name)
   ) {
     throw new Error("500-machine collection did not render the complete bounded resource set");
+  }
+  const serviceCollection = await fetchServiceCollection(baseUrl, adminCookie);
+  if (
+    !serviceCollection.includes(serviceRows[0].name) ||
+    !serviceCollection.includes(serviceRows.at(-1).name)
+  ) {
+    throw new Error("200-service collection did not render the complete bounded resource set");
   }
 
   await fetchDashboard(baseUrl, adminCookie);
