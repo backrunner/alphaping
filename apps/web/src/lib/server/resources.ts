@@ -537,38 +537,23 @@ function resourceTable(type: ManagedResourceType): "machines" | "services" {
   return type === "machine" ? "machines" : "services";
 }
 
-async function assignedAgentMachineIds(
+function advanceServiceAgentConfigurationsStatement(
   db: D1Database,
   workspaceId: string,
   serviceId: string,
-): Promise<readonly string[]> {
-  const rows = await db
-    .prepare(
-      `SELECT DISTINCT a.machine_id FROM check_configs c
-       JOIN agents a ON a.id = c.executor_agent_id AND a.status = 'active'
-       JOIN machines m ON m.id = a.machine_id AND m.deleted_at IS NULL
-       WHERE c.workspace_id = ? AND c.service_id = ? AND c.executor_kind = 'agent'
-         AND c.enabled = 1`,
-    )
-    .bind(workspaceId, serviceId)
-    .all<{ machine_id: string }>();
-  return rows.results.map((row) => row.machine_id);
-}
-
-function advanceAgentConfigurationStatements(
-  db: D1Database,
-  workspaceId: string,
-  machineIds: readonly string[],
   now: number,
-): readonly D1PreparedStatement[] {
-  return machineIds.map((machineId) =>
-    db
-      .prepare(
-        `UPDATE machines SET desired_config_revision = desired_config_revision + 1, updated_at = ?
-         WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL`,
-      )
-      .bind(now, machineId, workspaceId),
-  );
+): D1PreparedStatement {
+  return db
+    .prepare(
+      `UPDATE machines SET desired_config_revision = desired_config_revision + 1, updated_at = ?
+       WHERE workspace_id = ? AND deleted_at IS NULL AND id IN (
+         SELECT a.machine_id FROM check_configs c
+         JOIN agents a ON a.id = c.executor_agent_id AND a.status = 'active'
+         WHERE c.workspace_id = ? AND c.service_id = ? AND c.executor_kind = 'agent'
+           AND c.enabled = 1
+       )`,
+    )
+    .bind(now, workspaceId, workspaceId, serviceId);
 }
 
 export async function softDeleteResource(
@@ -590,8 +575,6 @@ export async function softDeleteResource(
     .first<{ id: string; name: string; deleted_at: number | null }>();
   if (!resource || resource.deleted_at !== null) throw error(404, "Resource not found");
   const now = Date.now();
-  const agentMachineIds =
-    type === "service" ? await assignedAgentMachineIds(db, access.workspaceId, resourceId) : [];
   const audit = await prepareAuditStatement(db, {
     workspaceId: access.workspaceId,
     actorUserId: userId,
@@ -608,7 +591,9 @@ export async function softDeleteResource(
         `UPDATE ${table} SET deleted_at = ?, updated_at = ? WHERE id = ? AND workspace_id = ?`,
       )
       .bind(now, now, resourceId, access.workspaceId),
-    ...advanceAgentConfigurationStatements(db, access.workspaceId, agentMachineIds, now),
+    ...(type === "service"
+      ? [advanceServiceAgentConfigurationsStatement(db, access.workspaceId, resourceId, now)]
+      : []),
     audit,
   ]);
 }
@@ -678,15 +663,15 @@ export async function restoreResource(
     after: { name: resource.name, deletedAt: null },
     now,
   });
-  const agentMachineIds =
-    type === "service" ? await assignedAgentMachineIds(db, access.workspaceId, resourceId) : [];
   await db.batch([
     db
       .prepare(
         `UPDATE ${table} SET deleted_at = NULL, updated_at = ? WHERE id = ? AND workspace_id = ?`,
       )
       .bind(now, resourceId, access.workspaceId),
-    ...advanceAgentConfigurationStatements(db, access.workspaceId, agentMachineIds, now),
+    ...(type === "service"
+      ? [advanceServiceAgentConfigurationsStatement(db, access.workspaceId, resourceId, now)]
+      : []),
     audit,
   ]);
 }

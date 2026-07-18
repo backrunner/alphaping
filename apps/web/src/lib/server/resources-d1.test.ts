@@ -7,7 +7,7 @@ vi.mock("./monitoring-access.js", () => ({
   requireResourceCapability: vi.fn(),
 }));
 
-import { updateMachineConfiguration } from "./resources.js";
+import { softDeleteResource, updateMachineConfiguration } from "./resources.js";
 
 const configuration = {
   name: "edge-01",
@@ -49,6 +49,32 @@ beforeEach(async () => {
         desired_config_revision INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
         deleted_at INTEGER
+      )`,
+    ),
+    database.prepare(
+      `CREATE TABLE services (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        updated_at INTEGER NOT NULL,
+        deleted_at INTEGER
+      )`,
+    ),
+    database.prepare(
+      `CREATE TABLE agents (
+        id TEXT PRIMARY KEY,
+        machine_id TEXT NOT NULL,
+        status TEXT NOT NULL
+      )`,
+    ),
+    database.prepare(
+      `CREATE TABLE check_configs (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        service_id TEXT NOT NULL,
+        executor_kind TEXT NOT NULL,
+        executor_agent_id TEXT,
+        enabled INTEGER NOT NULL
       )`,
     ),
     database.prepare(
@@ -157,5 +183,44 @@ describe("machine configuration revision", () => {
     await expect(
       database.prepare("SELECT COUNT(*) AS count FROM audit_logs").first<{ count: number }>(),
     ).resolves.toEqual({ count: 1 });
+  });
+});
+
+describe("service deletion assignment revision", () => {
+  it("includes Agent assignments created immediately before the delete batch", async () => {
+    await database.batch([
+      database.prepare("INSERT INTO services VALUES ('service-1', 'workspace-1', 'API', 1, NULL)"),
+      database.prepare("INSERT INTO agents VALUES ('agent-1', 'machine-1', 'active')"),
+    ]);
+    let insertedAssignment = false;
+    const synchronized = new Proxy(database, {
+      get(target, property) {
+        if (property !== "batch") {
+          const value = Reflect.get(target, property);
+          return typeof value === "function" ? value.bind(target) : value;
+        }
+        return async <T>(statements: D1PreparedStatement[]) => {
+          if (!insertedAssignment) {
+            insertedAssignment = true;
+            await target
+              .prepare(
+                `INSERT INTO check_configs VALUES
+                  ('check-1', 'workspace-1', 'service-1', 'agent', 'agent-1', 1)`,
+              )
+              .run();
+          }
+          return target.batch<T>(statements);
+        };
+      },
+    });
+
+    await expect(
+      softDeleteResource(synchronized, "operations", "user-1", "service", "service-1"),
+    ).resolves.toBeUndefined();
+    await expect(
+      database
+        .prepare("SELECT desired_config_revision AS revision FROM machines WHERE id = 'machine-1'")
+        .first<{ revision: number }>(),
+    ).resolves.toEqual({ revision: 2 });
   });
 });
