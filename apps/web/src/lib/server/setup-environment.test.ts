@@ -67,4 +67,17 @@ describe("setup environment", () => {
       "data-secrets",
     ]);
   });
+
+  it("requires endpoint values to be pure secure origins", () => {
+    const report = evaluateSetupEnvironment({
+      ...readySnapshot,
+      ingestOrigin: "https://operator:secret@ingest.example.test/v1/report",
+      liveOrigin: "wss://live.example.test/socket?tenant=operations",
+    });
+
+    expect(report.ready).toBe(false);
+    expect(report.checks.filter((check) => !check.ready).map((check) => check.id)).toEqual([
+      "worker-runtime",
+    ]);
+  });
 });

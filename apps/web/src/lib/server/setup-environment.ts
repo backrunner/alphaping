@@ -67,8 +67,18 @@ function configuredHexSecret(value: string): boolean {
 }
 
 function validOrigin(value: string, protocol: "https:" | "wss:"): boolean {
+  if (value.length === 0 || value.length > 256) return false;
   try {
-    return new URL(value).protocol === protocol;
+    const parsed = new URL(value);
+    return (
+      parsed.protocol === protocol &&
+      parsed.username === "" &&
+      parsed.password === "" &&
+      parsed.pathname === "/" &&
+      parsed.search === "" &&
+      parsed.hash === "" &&
+      parsed.host.length > 0
+    );
   } catch {
     return false;
   }
