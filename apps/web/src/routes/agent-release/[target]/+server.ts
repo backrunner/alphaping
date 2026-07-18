@@ -24,10 +24,9 @@ export const GET: RequestHandler = ({ params, platform }) => {
   let manifest: Record<string, ReleaseTarget>;
   try {
     if (platform.env.AGENT_RELEASE_MANIFEST_JSON.length > 16 * 1024) throw new Error();
-    manifest = JSON.parse(platform.env.AGENT_RELEASE_MANIFEST_JSON) as Record<
-      string,
-      ReleaseTarget
-    >;
+    const parsed = JSON.parse(platform.env.AGENT_RELEASE_MANIFEST_JSON) as unknown;
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error();
+    manifest = parsed as Record<string, ReleaseTarget>;
   } catch {
     throw error(503, "Agent release manifest is unavailable");
   }
