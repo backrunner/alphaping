@@ -13,7 +13,7 @@
 | 5 | 通过 | Web E2E 通过真实 server action 创建带 secret header 和 response-header assertion 的 Cloudflare HTTP check、同一服务的第二个 TCP check，以及两个 Agent TCP/ICMP check；验证检查策略编辑、0-3 次 retry、关键/非关键聚合、executor Agent、secret wrapping、assignment revision，且 Agent-backed 服务删除/恢复会推进 machine desired revision。编译器拒绝 Cloudflare ICMP，并限制周期、timeout、header/body/payload/assertion 大小。 |
 | 6 | 通过 | 公共状态页查询层执行时间有效性与 public projection；Web E2E 验证 capsule 页面、incident 创建与追加更新、有效公告展示、过期公告即时隐藏、30 秒 public cache，并扫描页面不含 host、secret header value 和过期公告。 |
 | 7 | 通过 | `@alphaping/authz` 与服务端 loader/action 共用授权。Web E2E 验证 admin、未授权 member、machine view、service manage、显式 deny 和 guest；直接访问页面/API 返回非枚举 404，公共资源仍需独立 allow policy。 |
-| 8 | 通过 | Ingest E2E 使用 Agent 生产 `EnrollmentProof`、protobuf、HKDF directional keys 和 AES-256-GCM envelope；验证 ciphertext 不含业务 marker，D1 commit 后才返回加密 ACK，并拒绝过期/撤销/复用 token、transport replay、tampered ciphertext 和 revoked key。生产 Agent `pq_client()` 仍只允许 TLS 1.3 `X25519MLKEM768`。 |
+| 8 | 通过 | Ingest E2E 使用 Agent 生产 `EnrollmentProof`、protobuf、HKDF directional keys 和 AES-256-GCM envelope；验证 ciphertext 不含业务 marker，D1 commit 后才返回加密 ACK，并拒绝过期/撤销/复用 token、transport replay、tampered ciphertext 和 revoked key。30 天到期路径会在旧 s2c AEAD ACK 中稳定返回下一 epoch，D1 只保存 MWK 包裹后的 key；Agent 验证 epoch/material/validity 后原子保存并切换 uploader，新 epoch 首次成功 report 后旧 epoch 才收敛到 24 小时 overlap。生产 Agent `pq_client()` 仍只允许 TLS 1.3 `X25519MLKEM768`。 |
 | 9 | 通过 | Retention Worker 按 workspace lease 和 resource/time cursor 分批清理 raw block、5m/1h rollup、status bucket、event、audit、announcement、command 和 soft delete。`artifact-retention.test.ts` 使用真实 Miniflare R2 验证只扫描 `exports/v1/`/`backups/v1/`、显式 expiry、500-object 有界游标、lease、无元数据保留和幂等重跑。D1 migration/schema/dry-run 已验证。 |
 | 10 | 通过 | updater 集成测试通过本地 HTTP 服务完成 threshold-signed targets、signed snapshot/timestamp、metadata hash/expiry/version、平台选择和 artifact length/SHA-256 全链；安装测试验证 pre/post health check、原子替换与失败回滚。release script tests 验证六平台 artifact、SBOM、双签 metadata 和损坏拒绝。Web + Ingest E2E 验证管理员强制检查命令、加密下发和结果持久化。 |
 
@@ -23,6 +23,7 @@
 - Agent 默认 10 秒采样、60 秒 durable report；一个 5 分钟 D1 block 使用 5 个固定 minute slots，每个 slot 保留 6 个 sample。
 - 10 秒实时层只在 viewer 存在时使用 Hibernation WebSocket，不写 D1/DO storage；断开回退 D1 latest。
 - Agent SQLite WAL delivery 无限重试；equal-jitter 从 1 秒开始，绝对上限 300 秒，只有认证 ACK 才删除 delivery。
+- Agent key rotation 复用 `agent_keys`，每个 Agent 每 30 天至多新增一行，并在新 epoch 激活时对旧行执行一次有条件 update；不增加稳态遥测 rows written 或 Worker request。
 - R2 只存主动导出/备份。每小时 retention 对两个固定 prefix 各做一次 bounded list，即 1,440 Class A/月；DeleteObject 免费，正常落在 R2 included usage。
 - `pnpm cost:check` 的当前模型：30+30 为 12.432m budgeted D1 writes、1.634 GB、1.643m Worker requests、0 USD overage；100+100 为 41.412m、4.280 GB、4.969m requests、0 USD overage。两档都显式包含每月 9,360 D1 retention cursor writes 和 1,440 R2 Class A list，预计仍只有 Workers Paid 的 5 USD/月。
 

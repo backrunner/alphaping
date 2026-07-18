@@ -18,6 +18,7 @@ use crate::{
     commands::{CommandExecution, command_result, execute_update_command},
     config::AgentConfig,
     containers::ContainerMonitor,
+    key_rotation::rotated_agent_config,
     live::LiveHandle,
     probes::{ProbeMonitor, validate_config},
     sampler::Sampler,
@@ -47,7 +48,7 @@ pub async fn run(
     let mut container_monitor = config
         .container_monitoring_enabled
         .then(ContainerMonitor::start);
-    let uploader = Uploader::new(
+    let mut uploader = Uploader::new(
         config.endpoint.clone(),
         config.agent_id.as_bytes().to_vec(),
         config.key_epoch,
@@ -113,7 +114,7 @@ pub async fn run(
             _ = upload_tick.tick() => {
                 let schedule_changed = upload_due_report(
                     &mut spool,
-                    &uploader,
+                    &mut uploader,
                     &mut RuntimeControl {
                         probe_monitor: &probe_monitor,
                         live: &live,
@@ -195,7 +196,7 @@ pub async fn run(
 
 async fn upload_due_report(
     spool: &mut Spool,
-    uploader: &Uploader,
+    uploader: &mut Uploader,
     control: &mut RuntimeControl<'_>,
     now_ms: i64,
 ) -> Result<bool> {
@@ -207,6 +208,7 @@ async fn upload_due_report(
         Ok(acknowledgement) => {
             match apply_ack(
                 spool,
+                uploader,
                 control,
                 &delivery.report_id,
                 &acknowledgement,
@@ -240,6 +242,7 @@ async fn upload_due_report(
 
 fn apply_ack(
     spool: &mut Spool,
+    uploader: &mut Uploader,
     control: &mut RuntimeControl<'_>,
     report_id: &[u8],
     acknowledgement: &alphaping_protocol::v1::DurableAck,
@@ -277,6 +280,21 @@ fn apply_ack(
         }
         spool.apply_probe_config(next, now_ms)?;
         *control.config = updated;
+    }
+    if let Some(proposal) = acknowledgement.key_rotation.as_ref() {
+        let updated = rotated_agent_config(control.config, proposal, now_ms)?;
+        updated.save(control.config_path)?;
+        let replacement = Uploader::new(
+            updated.endpoint.clone(),
+            updated.agent_id.as_bytes().to_vec(),
+            updated.key_epoch,
+            updated.data_key()?,
+            updated.nonce_prefix()?,
+        )?;
+        let key_epoch = updated.key_epoch;
+        *control.config = updated;
+        *uploader = replacement;
+        info!(key_epoch, "Agent data key rotated");
     }
     spool.accept_commands(&acknowledgement.commands, now_ms)?;
     if let Some(credential) = acknowledgement.live_session.clone()

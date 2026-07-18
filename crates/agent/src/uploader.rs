@@ -259,6 +259,7 @@ mod tests {
             config: None,
             commands: Vec::new(),
             live_session: None,
+            key_rotation: None,
         };
         let response_header = EnvelopeHeader {
             protocol_version: PROTOCOL_VERSION,

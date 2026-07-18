@@ -7,6 +7,7 @@ use std::{
 
 use alphaping_agent::{
     enrollment::{build_enrollment_proof, validate_enrollment_response},
+    key_rotation::validate_key_rotation,
     uploader::EnvelopeCodec,
 };
 use alphaping_protocol::{
@@ -28,6 +29,13 @@ struct StoredSession {
     nonce_prefix_hex: String,
     report_id_hex: String,
     compressed_payload_hex: String,
+}
+
+#[derive(Deserialize, Serialize)]
+struct StoredRotation {
+    key_epoch: u32,
+    root_key_hex: String,
+    nonce_prefix_hex: String,
 }
 
 fn invalid_data(message: &str) -> io::Error {
@@ -304,6 +312,108 @@ async fn verify_config_delivery(
     Ok(())
 }
 
+async fn verify_rotation_proposal(
+    client: &Client,
+    origin: &str,
+    state_path: &str,
+    rotation_path: &str,
+) -> Result<(), Box<dyn Error>> {
+    let session: StoredSession = serde_json::from_slice(&fs::read(state_path)?)?;
+    let root_key: [u8; 32] = hex::decode(&session.root_key_hex)?
+        .try_into()
+        .map_err(|_| invalid_data("stored E2E root key length changed"))?;
+    let nonce_prefix: [u8; 4] = hex::decode(&session.nonce_prefix_hex)?
+        .try_into()
+        .map_err(|_| invalid_data("stored E2E nonce prefix length changed"))?;
+    let report_id = hex::decode(&session.report_id_hex)?;
+    let compressed_payload = hex::decode(&session.compressed_payload_hex)?;
+    let codec = EnvelopeCodec::new(
+        session.agent_id.into_bytes(),
+        session.key_epoch,
+        root_key,
+        nonce_prefix,
+    )?;
+    let endpoint = format!("{origin}/v1/reports");
+    let mut proposals = Vec::with_capacity(2);
+    for sequence in [8, 9] {
+        let envelope = codec.encode_report(sequence, now_ms()?, &report_id, &compressed_payload)?;
+        let response = post_protobuf(client, &endpoint, envelope).await?;
+        if response.status() != StatusCode::OK {
+            return Err(invalid_data("rotation proposal report was rejected").into());
+        }
+        let acknowledgement = codec.decode_ack(&response.bytes().await?, sequence, &report_id)?;
+        if AckStatus::try_from(acknowledgement.status)? != AckStatus::Duplicate {
+            return Err(invalid_data("rotation proposal retry was not a duplicate ACK").into());
+        }
+        proposals.push(
+            acknowledgement
+                .key_rotation
+                .ok_or_else(|| invalid_data("rotation proposal was omitted from encrypted ACK"))?,
+        );
+    }
+    if proposals[0] != proposals[1] {
+        return Err(invalid_data("rotation proposal changed across retries").into());
+    }
+    let validated = validate_key_rotation(&proposals[0], session.key_epoch, now_ms()?)?;
+    fs::write(
+        rotation_path,
+        serde_json::to_vec(&StoredRotation {
+            key_epoch: validated.key_epoch,
+            root_key_hex: hex::encode(validated.data_key),
+            nonce_prefix_hex: hex::encode(validated.nonce_prefix),
+        })?,
+    )?;
+    println!("Ingest returned a stable authenticated key rotation proposal");
+    Ok(())
+}
+
+async fn verify_rotation_activation(
+    client: &Client,
+    origin: &str,
+    state_path: &str,
+    rotation_path: &str,
+) -> Result<(), Box<dyn Error>> {
+    let session: StoredSession = serde_json::from_slice(&fs::read(state_path)?)?;
+    let rotation: StoredRotation = serde_json::from_slice(&fs::read(rotation_path)?)?;
+    let root_key: [u8; 32] = hex::decode(&rotation.root_key_hex)?
+        .try_into()
+        .map_err(|_| invalid_data("rotated E2E root key length changed"))?;
+    let nonce_prefix: [u8; 4] = hex::decode(&rotation.nonce_prefix_hex)?
+        .try_into()
+        .map_err(|_| invalid_data("rotated E2E nonce prefix length changed"))?;
+    let codec = EnvelopeCodec::new(
+        session.agent_id.into_bytes(),
+        rotation.key_epoch,
+        root_key,
+        nonce_prefix,
+    )?;
+    let mut report: MachineReport =
+        decompress_message(&hex::decode(&session.compressed_payload_hex)?)?;
+    report.report_id = vec![0x9e; 16];
+    report.nominal_minute_ms -= 180_000;
+    for sample in &mut report.samples {
+        sample.observed_at_ms -= 180_000;
+    }
+    if let Some(inventory) = &mut report.container_inventory {
+        inventory.observed_at_ms -= 180_000;
+    }
+    let payload = compress_message(&report)?;
+    let endpoint = format!("{origin}/v1/reports");
+    let envelope = codec.encode_report(10, now_ms()?, &report.report_id, &payload)?;
+    let response = post_protobuf(client, &endpoint, envelope).await?;
+    if response.status() != StatusCode::OK {
+        return Err(invalid_data("rotated key report was rejected").into());
+    }
+    let acknowledgement = codec.decode_ack(&response.bytes().await?, 10, &report.report_id)?;
+    if AckStatus::try_from(acknowledgement.status)? != AckStatus::Committed
+        || acknowledgement.key_rotation.is_some()
+    {
+        return Err(invalid_data("rotated key report did not activate the new epoch").into());
+    }
+    println!("Ingest accepted the rotated key epoch and committed its report");
+    Ok(())
+}
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn Error>> {
     let mut arguments = env::args().skip(1);
@@ -340,6 +450,25 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .into());
         }
         return verify_config_delivery(&client, &origin, &state_path).await;
+    }
+    if mode == "verify-rotation-proposal" || mode == "verify-rotation-activation" {
+        let state_path = arguments
+            .next()
+            .ok_or_else(|| invalid_data("missing E2E session path"))?;
+        let rotation_path = arguments
+            .next()
+            .ok_or_else(|| invalid_data("missing E2E rotation path"))?;
+        if arguments.next().is_some() || !origin.starts_with("http://127.0.0.1:") {
+            return Err(invalid_data(
+                "usage: ingest_e2e_client verify-rotation-proposal|verify-rotation-activation LOCAL_ORIGIN SESSION_PATH ROTATION_PATH",
+            )
+            .into());
+        }
+        return if mode == "verify-rotation-proposal" {
+            verify_rotation_proposal(&client, &origin, &state_path, &rotation_path).await
+        } else {
+            verify_rotation_activation(&client, &origin, &state_path, &rotation_path).await
+        };
     }
     if mode == "verify-revoked" || mode == "verify-workspace-deleted" {
         let state_path = arguments

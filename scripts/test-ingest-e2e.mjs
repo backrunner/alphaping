@@ -268,6 +268,35 @@ try {
   await waitForServer(origin, processOutput);
 
   const sessionPath = join(temporary, "agent-session.json");
+  const rotationPath = join(temporary, "agent-rotation.json");
+  const query = (binding, sql) => {
+    const result = run(
+      pnpm,
+      [
+        "exec",
+        "wrangler",
+        "d1",
+        "execute",
+        binding,
+        "--local",
+        "--config",
+        config,
+        "--persist-to",
+        persistTo,
+        "--command",
+        sql,
+        "--json",
+      ],
+      `${binding} verification query`,
+      { quiet: true },
+    );
+    const payload = jsonPayload(result.stdout);
+    const execution = Array.isArray(payload) ? payload[0] : payload;
+    if (!execution?.success || !Array.isArray(execution.results)) {
+      throw new Error(`${binding} verification query did not return rows`);
+    }
+    return execution.results;
+  };
   try {
     run(
       process.execPath,
@@ -373,6 +402,98 @@ try {
     ],
     "Agent command protocol client",
   );
+  const rotationProposedAt = Date.now();
+  run(
+    pnpm,
+    [
+      "exec",
+      "wrangler",
+      "d1",
+      "execute",
+      "CONTROL_DB",
+      "--local",
+      "--config",
+      config,
+      "--persist-to",
+      persistTo,
+      "--command",
+      `UPDATE agent_keys SET valid_from = ${rotationProposedAt - 30 * 24 * 60 * 60_000}
+       WHERE key_epoch = 1`,
+    ],
+    "Agent key rotation age seed",
+    { quiet: true },
+  );
+  run(
+    process.execPath,
+    [
+      resolve(root, "scripts/run-cargo.mjs"),
+      "run",
+      "--quiet",
+      "-p",
+      "alphaping-ingest",
+      "--example",
+      "ingest_e2e_client",
+      "--",
+      "verify-rotation-proposal",
+      origin,
+      sessionPath,
+      rotationPath,
+    ],
+    "Agent key rotation proposal client",
+  );
+  const [proposedKeys] = query(
+    "CONTROL_DB",
+    `SELECT COUNT(*) AS key_count,
+      MAX(CASE WHEN key_epoch = 1 THEN valid_until END) AS old_valid_until,
+      MAX(CASE WHEN key_epoch = 2 THEN valid_from END) AS new_valid_from,
+      MAX(CASE WHEN key_epoch = 2 THEN valid_until END) AS new_valid_until,
+      MAX(CASE WHEN key_epoch = 2 THEN LENGTH(wrapped_data_key) END) AS wrapped_key_bytes,
+      MAX(CASE WHEN key_epoch = 2 THEN LENGTH(nonce_prefix) END) AS nonce_prefix_bytes
+     FROM agent_keys`,
+  );
+  if (
+    proposedKeys?.key_count !== 2 ||
+    proposedKeys.old_valid_until <= rotationProposedAt + 30 * 24 * 60 * 60_000 ||
+    proposedKeys.new_valid_from < rotationProposedAt ||
+    proposedKeys.new_valid_until - proposedKeys.new_valid_from !== 90 * 24 * 60 * 60_000 ||
+    proposedKeys.wrapped_key_bytes !== 60 ||
+    proposedKeys.nonce_prefix_bytes !== 4
+  ) {
+    throw new Error("key rotation proposal was not stable, wrapped, or overlap-safe");
+  }
+  const rotationActivatedAt = Date.now();
+  run(
+    process.execPath,
+    [
+      resolve(root, "scripts/run-cargo.mjs"),
+      "run",
+      "--quiet",
+      "-p",
+      "alphaping-ingest",
+      "--example",
+      "ingest_e2e_client",
+      "--",
+      "verify-rotation-activation",
+      origin,
+      sessionPath,
+      rotationPath,
+    ],
+    "Agent key rotation activation client",
+  );
+  const [activatedKeys] = query(
+    "CONTROL_DB",
+    `SELECT
+      MAX(CASE WHEN key_epoch = 1 THEN valid_until END) AS old_valid_until,
+      MAX(CASE WHEN key_epoch = 2 THEN revoked_at END) AS new_revoked_at
+     FROM agent_keys`,
+  );
+  if (
+    activatedKeys?.old_valid_until < rotationActivatedAt + 23 * 60 * 60_000 ||
+    activatedKeys.old_valid_until > rotationActivatedAt + 24 * 60 * 60_000 + 60_000 ||
+    activatedKeys.new_revoked_at !== null
+  ) {
+    throw new Error("new key activation did not apply the 24-hour old-epoch overlap");
+  }
   run(
     pnpm,
     [
@@ -465,34 +586,6 @@ try {
     "Revoked Agent protocol client",
   );
 
-  const query = (binding, sql) => {
-    const result = run(
-      pnpm,
-      [
-        "exec",
-        "wrangler",
-        "d1",
-        "execute",
-        binding,
-        "--local",
-        "--config",
-        config,
-        "--persist-to",
-        persistTo,
-        "--command",
-        sql,
-        "--json",
-      ],
-      `${binding} verification query`,
-      { quiet: true },
-    );
-    const payload = jsonPayload(result.stdout);
-    const execution = Array.isArray(payload) ? payload[0] : payload;
-    if (!execution?.success || !Array.isArray(execution.results)) {
-      throw new Error(`${binding} verification query did not return rows`);
-    }
-    return execution.results;
-  };
   const [agent] = query(
     "CONTROL_DB",
     `SELECT a.status, a.agent_version, a.hostname, a.os_name, a.last_seen_at,
@@ -543,7 +636,8 @@ try {
       (SELECT state FROM machine_latest WHERE machine_pk = 1) AS machine_state,
       (SELECT container_inventory_json FROM machine_latest WHERE machine_pk = 1)
         AS container_inventory_json,
-      (SELECT highest_sequence FROM agent_replay_state LIMIT 1) AS highest_sequence,
+      (SELECT MAX(highest_sequence) FROM agent_replay_state) AS highest_sequence,
+      (SELECT COUNT(*) FROM agent_replay_state) AS replay_epochs,
       (SELECT COUNT(*) FROM state_events WHERE previous_state = 'offline'
         AND current_state = 'healthy' AND reason_code = 'agent_report_received') AS recovery_events,
       (SELECT COUNT(*) FROM state_events WHERE previous_state = 'healthy'
@@ -552,12 +646,13 @@ try {
   const containerInventory = JSON.parse(telemetry?.container_inventory_json ?? "null");
   if (
     ![1, 2, 3].includes(telemetry?.block_count) ||
-    telemetry.populated_slots !== 4 ||
+    telemetry.populated_slots !== 5 ||
     telemetry.cpu_permille !== 980 ||
     telemetry.load_1m_milli !== 1250 ||
     telemetry.uptime_seconds !== 86405 ||
     telemetry.machine_state !== "down" ||
-    telemetry.highest_sequence !== 7 ||
+    telemetry.highest_sequence !== 10 ||
+    telemetry.replay_epochs !== 2 ||
     telemetry.recovery_events !== 1 ||
     telemetry.threshold_events !== 1 ||
     containerInventory?.runtimes?.map((runtime) => runtime.kind).join(",") !==

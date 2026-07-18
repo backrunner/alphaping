@@ -311,6 +311,14 @@ enum AckStatus {
   ACK_STATUS_DUPLICATE = 2;
 }
 
+message KeyRotationProposal {
+  uint32 key_epoch = 1;
+  bytes data_key = 2;
+  bytes nonce_prefix = 3;
+  int64 valid_from_ms = 4;
+  int64 valid_until_ms = 5;
+}
+
 message DurableAck {
   bytes report_id = 1;
   AckStatus status = 2;
@@ -319,6 +327,7 @@ message DurableAck {
   AgentConfigSnapshot config = 5;
   repeated AgentCommand commands = 6;
   LiveSessionCredential live_session = 7;
+  KeyRotationProposal key_rotation = 8;
 }
 
 message LiveSessionCredential {

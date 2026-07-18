@@ -3,7 +3,7 @@ use alphaping_protocol::{
     MAX_ENVELOPE_BYTES, PROTOCOL_VERSION, decode_message, decompress_message, encode_message,
     v1::{
         AckStatus, AgentCommand, AgentConfigSnapshot, DurableAck, EncryptedEnvelope,
-        EnrollmentRequest, EnrollmentResponse, EnvelopeHeader, MachineReport,
+        EnrollmentRequest, EnrollmentResponse, EnvelopeHeader, KeyRotationProposal, MachineReport,
     },
 };
 use prost::Message;
@@ -24,6 +24,9 @@ use crate::{
 };
 
 const MAX_CLOCK_SKEW_MS: i64 = 5 * 60_000;
+const KEY_ROTATION_INTERVAL_MS: i64 = 30 * 24 * 60 * 60_000;
+const KEY_VALIDITY_MS: i64 = 90 * 24 * 60 * 60_000;
+const KEY_OVERLAP_MS: i64 = 24 * 60 * 60_000;
 
 #[derive(Debug, Deserialize)]
 struct AgentKeyRow {
@@ -39,6 +42,14 @@ struct AgentKeyRow {
     valid_from: f64,
     valid_until: f64,
     container_catalog_digest: Option<Vec<u8>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RotationKeyRow {
+    wrapped_data_key: Vec<u8>,
+    nonce_prefix: Vec<u8>,
+    valid_from: f64,
+    valid_until: f64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -323,6 +334,121 @@ fn enrollment_token_pepper(env: &Env) -> Result<[u8; 32], IngestError> {
         .map_err(|_| IngestError::Unauthorized)
 }
 
+async fn load_rotation_key(
+    db: &D1Database,
+    agent_id: &str,
+    key_epoch: u32,
+) -> Result<Option<RotationKeyRow>, IngestError> {
+    Ok(db
+        .prepare(
+            "SELECT wrapped_data_key, nonce_prefix, valid_from, valid_until
+             FROM agent_keys
+             WHERE agent_id = ? AND key_epoch = ? AND revoked_at IS NULL",
+        )
+        .bind(&[text(agent_id), unsigned(u64::from(key_epoch))])?
+        .first::<RotationKeyRow>(None)
+        .await?)
+}
+
+async fn key_rotation_proposal(
+    db: &D1Database,
+    agent_id: &str,
+    current_epoch: u32,
+    current_valid_from: i64,
+    now: i64,
+    wrapping_key: &[u8; 32],
+) -> Result<Option<KeyRotationProposal>, IngestError> {
+    if now.saturating_sub(current_valid_from) < KEY_ROTATION_INTERVAL_MS {
+        return Ok(None);
+    }
+    let next_epoch = current_epoch
+        .checked_add(1)
+        .ok_or(IngestError::Unauthorized)?;
+    let row = match load_rotation_key(db, agent_id, next_epoch).await? {
+        Some(row) => row,
+        None => {
+            let data_key = random_bytes::<32>()?;
+            let nonce_prefix = random_bytes::<4>()?;
+            let wrapping_nonce = random_bytes::<12>()?;
+            let wrapped = wrap_key(
+                wrapping_key,
+                wrapping_nonce,
+                &data_key,
+                &wrapping_aad(agent_id, next_epoch),
+            )
+            .map_err(|_| IngestError::Unauthorized)?;
+            let mut wrapped_data_key = Vec::with_capacity(12 + wrapped.len());
+            wrapped_data_key.extend_from_slice(&wrapping_nonce);
+            wrapped_data_key.extend_from_slice(&wrapped);
+            db.prepare(
+                "INSERT INTO agent_keys
+                  (agent_id, key_epoch, wrapped_data_key, wrapping_key_id, nonce_prefix,
+                   valid_from, valid_until)
+                 VALUES (?, ?, ?, 'primary', ?, ?, ?)
+                 ON CONFLICT(agent_id, key_epoch) DO NOTHING",
+            )
+            .bind(&[
+                text(agent_id),
+                unsigned(u64::from(next_epoch)),
+                blob(&wrapped_data_key),
+                blob(&nonce_prefix),
+                number(now),
+                number(now.saturating_add(KEY_VALIDITY_MS)),
+            ])?
+            .run()
+            .await?;
+            load_rotation_key(db, agent_id, next_epoch)
+                .await?
+                .ok_or(IngestError::Unauthorized)?
+        }
+    };
+    if row.wrapped_data_key.len() < 13 || row.nonce_prefix.len() != 4 {
+        return Err(IngestError::Unauthorized);
+    }
+    let wrapping_nonce = row.wrapped_data_key[..12]
+        .try_into()
+        .map_err(|_| IngestError::Unauthorized)?;
+    let data_key = unwrap_key(
+        wrapping_key,
+        wrapping_nonce,
+        &row.wrapped_data_key[12..],
+        &wrapping_aad(agent_id, next_epoch),
+    )
+    .map_err(|_| IngestError::Unauthorized)?;
+    Ok(Some(KeyRotationProposal {
+        key_epoch: next_epoch,
+        data_key: data_key.to_vec(),
+        nonce_prefix: row.nonce_prefix,
+        valid_from_ms: row.valid_from as i64,
+        valid_until_ms: row.valid_until as i64,
+    }))
+}
+
+async fn limit_previous_key_overlap(
+    db: &D1Database,
+    agent_id: &str,
+    current_epoch: u32,
+    now: i64,
+) -> Result<(), IngestError> {
+    let Some(previous_epoch) = current_epoch.checked_sub(1).filter(|epoch| *epoch > 0) else {
+        return Ok(());
+    };
+    let overlap_until = now.saturating_add(KEY_OVERLAP_MS);
+    db.prepare(
+        "UPDATE agent_keys SET valid_until = ?
+         WHERE agent_id = ? AND key_epoch = ? AND revoked_at IS NULL AND valid_until > ?",
+    )
+    .bind(&[
+        number(overlap_until),
+        text(agent_id),
+        unsigned(u64::from(previous_epoch)),
+        number(overlap_until),
+    ])?
+    .run()
+    .await?;
+    Ok(())
+}
+
 async fn handle_enrollment(mut request: Request, env: Env) -> Result<Response, IngestError> {
     if request.method() != Method::Post {
         return Err(IngestError::BadRequest);
@@ -383,7 +509,7 @@ async fn handle_enrollment(mut request: Request, env: Env) -> Result<Response, I
     let mut wrapped_data_key = Vec::with_capacity(12 + wrapped.len());
     wrapped_data_key.extend_from_slice(&wrapping_nonce);
     wrapped_data_key.extend_from_slice(&wrapped);
-    let valid_until = now.saturating_add(90 * 86_400_000);
+    let valid_until = now.saturating_add(KEY_VALIDITY_MS);
     let results = control_db
         .batch(vec![
             control_db
@@ -918,6 +1044,7 @@ async fn durable_ack(
     config: Option<AgentConfigSnapshot>,
     commands: Vec<AgentCommand>,
     live_session: Option<alphaping_protocol::v1::LiveSessionCredential>,
+    wrapping_key: &[u8; 32],
 ) -> Result<Response, IngestError> {
     let now = now_ms();
     let latest_sample = report.samples.last().ok_or(IngestError::BadRequest)?;
@@ -967,6 +1094,7 @@ async fn durable_ack(
         statements.extend(closed_rollups(telemetry_db, report).await?);
     }
     telemetry_db.batch(statements).await?;
+    limit_previous_key_overlap(control_db, agent_id, header.key_epoch, now).await?;
     if report.applied_config_revision > agent_key.applied_config_revision as u64 {
         control_db
             .prepare(
@@ -1000,6 +1128,15 @@ async fn durable_ack(
             .run()
             .await?;
     }
+    let key_rotation = key_rotation_proposal(
+        control_db,
+        agent_id,
+        header.key_epoch,
+        agent_key.valid_from as i64,
+        now,
+        wrapping_key,
+    )
+    .await?;
     let acknowledgement = DurableAck {
         report_id: report.report_id.clone(),
         status: if duplicate {
@@ -1012,6 +1149,7 @@ async fn durable_ack(
         config,
         commands,
         live_session,
+        key_rotation,
     };
     let response_header = EnvelopeHeader {
         protocol_version: PROTOCOL_VERSION,
@@ -1171,6 +1309,7 @@ async fn handle_report(mut request: Request, env: Env) -> Result<Response, Inges
         config,
         commands,
         live_session,
+        &wrapping_key,
     )
     .await
 }
