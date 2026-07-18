@@ -63,14 +63,6 @@ export async function initializeInstallation(
     .first<{ installed: number }>();
   if (existing) throw error(409, "AlphaPing is already initialized");
 
-  const workspaceSequence = await db
-    .prepare(
-      `UPDATE telemetry_resource_sequences SET value = value + 1
-       WHERE kind = 'workspace' RETURNING value`,
-    )
-    .first<{ value: number }>();
-  if (!workspaceSequence) throw error(500, "Workspace sequence is unavailable");
-
   const now = Date.now();
   const userId = crypto.randomUUID();
   const workspaceId = crypto.randomUUID();
@@ -79,6 +71,10 @@ export async function initializeInstallation(
   const passwordHash = await hashPassword(input.password);
   try {
     await db.batch([
+      db.prepare(
+        `UPDATE telemetry_resource_sequences SET value = 1
+         WHERE kind = 'workspace' AND value = 0`,
+      ),
       db
         .prepare(
           `INSERT INTO user (id, name, email, email_verified, created_at, updated_at)
@@ -101,7 +97,7 @@ export async function initializeInstallation(
         )
         .bind(
           workspaceId,
-          workspaceSequence.value,
+          1,
           input.workspaceSlug,
           input.workspaceName,
           dashboardId,
