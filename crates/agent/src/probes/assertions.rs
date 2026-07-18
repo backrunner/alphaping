@@ -118,10 +118,53 @@ fn value_type(value: &Value) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
     use alphaping_protocol::v1::ProbeAssertion;
     use reqwest::header::{HeaderMap, HeaderValue};
 
-    use super::evaluate;
+    use super::{AssertionFailure, evaluate};
+
+    struct FuzzStream(u64);
+
+    impl FuzzStream {
+        fn new(seed: u64) -> Self {
+            Self(seed)
+        }
+
+        fn next(&mut self) -> u64 {
+            let mut value = self.0;
+            value ^= value >> 12;
+            value ^= value << 25;
+            value ^= value >> 27;
+            self.0 = value;
+            value.wrapping_mul(0x2545_f491_4f6c_dd1d)
+        }
+
+        fn bounded(&mut self, upper_exclusive: usize) -> usize {
+            usize::try_from(self.next() % upper_exclusive as u64).expect("bounded fuzz value")
+        }
+
+        fn ascii(&mut self, maximum_length: usize) -> String {
+            let length = self.bounded(maximum_length + 1);
+            (0..length)
+                .map(|_| char::from(32 + self.bounded(95) as u8))
+                .collect()
+        }
+
+        fn bytes(&mut self, maximum_length: usize) -> Vec<u8> {
+            let length = self.bounded(maximum_length + 1);
+            (0..length).map(|_| self.next() as u8).collect()
+        }
+    }
+
+    fn outcome(
+        result: Result<Option<AssertionFailure>, ()>,
+    ) -> Result<Option<(i32, String, String)>, ()> {
+        result.map(|failure| {
+            failure.map(|failure| (failure.state as i32, failure.code, failure.summary))
+        })
+    }
 
     #[test]
     fn evaluates_header_and_jsonpath_assertions() {
@@ -148,5 +191,69 @@ mod tests {
                 .expect("valid assertions")
                 .is_none()
         );
+    }
+
+    #[test]
+    fn bounded_adversarial_assertions_never_panic_and_are_deterministic() {
+        const SOURCES: [&str; 4] = ["header", "body", "jsonpath", "unsupported"];
+        const OPERATORS: [&str; 8] = [
+            "exists",
+            "equals",
+            "contains",
+            "matches",
+            "type",
+            "greater_than",
+            "less_than",
+            "unsupported",
+        ];
+        const SEVERITIES: [&str; 3] = ["degraded", "down", "unsupported"];
+
+        let mut headers = HeaderMap::new();
+        headers.insert("x-ready", HeaderValue::from_static("yes"));
+        let mut fuzz = FuzzStream::new(0x0934_e7b1_5a82_dc6f);
+
+        for case in 0..1_024_usize {
+            let source = SOURCES[fuzz.bounded(SOURCES.len())].to_owned();
+            let operator = OPERATORS[fuzz.bounded(OPERATORS.len())].to_owned();
+            let selector = match source.as_str() {
+                "header" if case.is_multiple_of(2) => "x-ready".to_owned(),
+                "jsonpath" if case.is_multiple_of(2) => format!("$.{}", fuzz.ascii(510)),
+                _ => fuzz.ascii(512),
+            };
+            let expected_json = match case % 5 {
+                0 => serde_json::to_vec(&fuzz.ascii(256)).expect("JSON string"),
+                1 => serde_json::to_vec(&(fuzz.next() as i64)).expect("JSON number"),
+                2 => b"true".to_vec(),
+                3 => b"null".to_vec(),
+                _ => fuzz.bytes(2_048),
+            };
+            let severity = SEVERITIES[fuzz.bounded(SEVERITIES.len())].to_owned();
+            let body = match case % 3 {
+                0 => serde_json::to_vec(&serde_json::json!({
+                    "value": fuzz.next() as i64,
+                    "text": fuzz.ascii(128),
+                }))
+                .expect("JSON body"),
+                1 => serde_json::to_vec(&fuzz.ascii(4_096)).expect("JSON string body"),
+                _ => fuzz.bytes(4_096),
+            };
+            let assertion = ProbeAssertion {
+                source,
+                operator,
+                selector,
+                expected_json,
+                severity,
+            };
+
+            let result = catch_unwind(AssertUnwindSafe(|| {
+                let first = outcome(evaluate(std::slice::from_ref(&assertion), &headers, &body));
+                let second = outcome(evaluate(&[assertion], &headers, &body));
+                assert_eq!(first, second, "non-deterministic assertion case {case}");
+            }));
+            assert!(
+                result.is_ok(),
+                "assertion evaluator panicked for case {case}"
+            );
+        }
     }
 }
