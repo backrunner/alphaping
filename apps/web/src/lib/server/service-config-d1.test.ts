@@ -1,14 +1,13 @@
 import { Miniflare } from "miniflare";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("./monitoring-access.js", () => ({
-  loadMonitoringAccess: vi.fn(async () => ({
-    workspaceId: "workspace-1",
-    defaultDashboardId: "dashboard-1",
-  })),
-  requireAdmin: vi.fn(),
-  requireResourceCapability: vi.fn(),
-}));
+vi.mock("./monitoring-access.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./monitoring-access.js")>();
+  return {
+    ...actual,
+    loadMonitoringAccess: vi.fn(),
+  };
+});
 
 vi.mock("./service-config-compiler.js", () => ({
   compileServiceConfig: vi.fn(async () => ({
@@ -20,11 +19,15 @@ vi.mock("./service-config-compiler.js", () => ({
 }));
 
 import {
+  addServiceCheck,
   createServiceMonitor,
   deleteServiceCheck,
+  listServiceCheckAgents,
+  replaceServiceCheckConfiguration,
   setServicePublicAccess,
   updateServiceCheckPolicy,
 } from "./service-config.js";
+import { loadMonitoringAccess } from "./monitoring-access.js";
 
 const input = {
   name: "Public API",
@@ -65,6 +68,14 @@ let database: D1Database;
 let telemetryDatabase: D1Database;
 
 beforeEach(async () => {
+  vi.mocked(loadMonitoringAccess).mockResolvedValue({
+    workspaceId: "workspace-1",
+    workspacePk: 1,
+    defaultDashboardId: "dashboard-1",
+    defaultSamplingIntervalSeconds: 60,
+    role: "admin",
+    grants: [],
+  });
   miniflare = new Miniflare({
     compatibilityDate: "2026-07-17",
     d1Databases: { CONTROL_DB: "control-test", TELEMETRY_DB: "telemetry-test" },
@@ -84,6 +95,7 @@ beforeEach(async () => {
       `CREATE TABLE machines (
         id TEXT PRIMARY KEY,
         workspace_id TEXT NOT NULL,
+        name TEXT NOT NULL,
         desired_config_revision INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
         deleted_at INTEGER
@@ -199,7 +211,9 @@ beforeEach(async () => {
     database.prepare(
       "INSERT INTO telemetry_resource_sequences VALUES ('service', 0), ('check', 0)",
     ),
-    database.prepare("INSERT INTO machines VALUES ('machine-1', 'workspace-1', 1, 1, NULL)"),
+    database.prepare(
+      "INSERT INTO machines VALUES ('machine-1', 'workspace-1', 'Edge node', 1, 1, NULL)",
+    ),
     database.prepare("INSERT INTO agents VALUES ('agent-1', 'machine-1', 'workspace-1', 'active')"),
   ]);
   await telemetryDatabase.batch([
@@ -262,6 +276,41 @@ async function seedServiceChecks(): Promise<void> {
          0, 1, 60, 2, 5000, 0, 1, '{}', '{}', 2, 2, 512, 0, 1, 1)`,
     ),
   ]);
+}
+
+function setMemberAccess(machineCapability: "view" | "manage"): void {
+  vi.mocked(loadMonitoringAccess).mockResolvedValue({
+    workspaceId: "workspace-1",
+    workspacePk: 1,
+    defaultDashboardId: "dashboard-1",
+    defaultSamplingIntervalSeconds: 60,
+    role: "member",
+    grants: [
+      {
+        resourceType: "service",
+        resourceId: "service-1",
+        capability: "manage",
+        effect: "allow",
+      },
+      {
+        resourceType: "machine",
+        resourceId: "machine-1",
+        capability: machineCapability,
+        effect: "allow",
+      },
+    ],
+  });
+}
+
+async function assignCheckToAgent(checkId: string, enabled = true): Promise<void> {
+  await database
+    .prepare(
+      `UPDATE check_configs SET name = 'Agent check', executor_kind = 'agent',
+         executor_agent_id = 'agent-1', assignment_revision = 1, enabled = ?
+       WHERE id = ?`,
+    )
+    .bind(enabled ? 1 : 0, checkId)
+    .run();
 }
 
 function synchronizeCheckCounts(db: D1Database, expectedReads: number): D1Database {
@@ -389,6 +438,177 @@ async function concurrentAgentServiceCreates(): Promise<
     }),
   ]);
 }
+
+describe("Agent executor authorization", () => {
+  it("lists only Agents whose machines the member can manage", async () => {
+    await seedServiceChecks();
+    setMemberAccess("view");
+
+    await expect(
+      listServiceCheckAgents(database, "operations", "user-1", "service-1"),
+    ).resolves.toEqual([]);
+
+    setMemberAccess("manage");
+    await expect(
+      listServiceCheckAgents(database, "operations", "user-1", "service-1"),
+    ).resolves.toEqual([{ id: "agent-1", name: "Edge node" }]);
+  });
+
+  it("requires machine manage permission before adding an Agent check", async () => {
+    await seedServiceChecks();
+    setMemberAccess("view");
+
+    await expect(
+      addServiceCheck(database, "operations", "user-1", "unused", "service-1", {
+        ...input,
+        checkName: "Private endpoint",
+      }),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      first<{ count: number }>("SELECT COUNT(*) AS count FROM check_configs"),
+    ).resolves.toEqual({ count: 2 });
+    await expect(
+      first<{ revision: number }>(
+        "SELECT desired_config_revision AS revision FROM machines WHERE id = 'machine-1'",
+      ),
+    ).resolves.toEqual({ revision: 1 });
+
+    setMemberAccess("manage");
+    await expect(
+      addServiceCheck(database, "operations", "user-1", "unused", "service-1", {
+        ...input,
+        checkName: "Private endpoint",
+      }),
+    ).resolves.toMatchObject({ checkId: expect.any(String) });
+    await expect(
+      first<{ revision: number }>(
+        "SELECT desired_config_revision AS revision FROM machines WHERE id = 'machine-1'",
+      ),
+    ).resolves.toEqual({ revision: 2 });
+  });
+
+  it("requires machine manage permission before replacing an Agent target", async () => {
+    await seedServiceChecks();
+    await assignCheckToAgent("check-a");
+    setMemberAccess("view");
+
+    await expect(
+      replaceServiceCheckConfiguration(
+        database,
+        "operations",
+        "user-1",
+        "unused",
+        "service-1",
+        "check-a",
+        { ...input, checkName: "Agent check", replaceSecrets: false },
+      ),
+    ).rejects.toMatchObject({ status: 404 });
+    await expect(
+      first<{ revision: number }>(
+        "SELECT desired_config_revision AS revision FROM machines WHERE id = 'machine-1'",
+      ),
+    ).resolves.toEqual({ revision: 1 });
+  });
+
+  it("requires machine manage permission for enabled policy changes but permits disabling", async () => {
+    await seedServiceChecks();
+    await assignCheckToAgent("check-a");
+    setMemberAccess("view");
+    const policy = {
+      enabled: true,
+      intervalSeconds: 30,
+      timeoutMs: 5_000,
+      retryCount: 0,
+      failureConfirmations: 2,
+      recoveryConfirmations: 2,
+      critical: true,
+    };
+
+    await expect(
+      updateServiceCheckPolicy(
+        database,
+        telemetryDatabase,
+        "operations",
+        "user-1",
+        "service-1",
+        "check-a",
+        policy,
+      ),
+    ).rejects.toMatchObject({ status: 404 });
+
+    await expect(
+      updateServiceCheckPolicy(
+        database,
+        telemetryDatabase,
+        "operations",
+        "user-1",
+        "service-1",
+        "check-a",
+        { ...policy, enabled: false },
+      ),
+    ).resolves.toBeUndefined();
+    await expect(
+      first<{ enabled: number }>("SELECT enabled FROM check_configs WHERE id = 'check-a'"),
+    ).resolves.toEqual({ enabled: 0 });
+  });
+
+  it("rejects an inactive Agent for execution while preserving revocation paths", async () => {
+    await seedServiceChecks();
+    await assignCheckToAgent("check-a");
+    await database.prepare("UPDATE agents SET status = 'revoked' WHERE id = 'agent-1'").run();
+    setMemberAccess("manage");
+    const policy = {
+      enabled: true,
+      intervalSeconds: 60,
+      timeoutMs: 5_000,
+      retryCount: 0,
+      failureConfirmations: 2,
+      recoveryConfirmations: 2,
+      critical: true,
+    };
+
+    await expect(
+      updateServiceCheckPolicy(
+        database,
+        telemetryDatabase,
+        "operations",
+        "user-1",
+        "service-1",
+        "check-a",
+        policy,
+      ),
+    ).rejects.toMatchObject({ status: 409 });
+
+    await expect(
+      updateServiceCheckPolicy(
+        database,
+        telemetryDatabase,
+        "operations",
+        "user-1",
+        "service-1",
+        "check-a",
+        { ...policy, enabled: false },
+      ),
+    ).resolves.toBeUndefined();
+    await expect(
+      first<{ enabled: number }>("SELECT enabled FROM check_configs WHERE id = 'check-a'"),
+    ).resolves.toEqual({ enabled: 0 });
+
+    await expect(
+      deleteServiceCheck(
+        database,
+        telemetryDatabase,
+        "operations",
+        "user-1",
+        "service-1",
+        "check-a",
+      ),
+    ).resolves.toBeUndefined();
+    await expect(
+      first<{ count: number }>("SELECT COUNT(*) AS count FROM check_configs WHERE id = 'check-a'"),
+    ).resolves.toEqual({ count: 0 });
+  });
+});
 
 describe("Agent check configuration revision", () => {
   it("commits the machine and assigned check revision together", async () => {

@@ -412,7 +412,7 @@ export async function listServiceCheckAgents(
     .all<{ id: string; machine_id: string; name: string }>();
   return agents.results
     .filter((agent) =>
-      canAccessResource(access.role, access.grants, "machine", agent.machine_id, "view"),
+      canAccessResource(access.role, access.grants, "machine", agent.machine_id, "manage"),
     )
     .map((agent) => ({ id: agent.id, name: agent.name }));
 }
@@ -454,7 +454,8 @@ export async function addServiceCheck(
       : null;
   if (
     input.executorKind === "agent" &&
-    (!agent || !canAccessResource(access.role, access.grants, "machine", agent.machine_id, "view"))
+    (!agent ||
+      !canAccessResource(access.role, access.grants, "machine", agent.machine_id, "manage"))
   ) {
     throw error(400, "A valid Agent executor is required");
   }
@@ -690,6 +691,9 @@ export async function replaceServiceCheckConfiguration(
     .bind(checkId, serviceId, access.workspaceId)
     .first<CheckConfigurationEditRow>();
   if (!row) throw error(404, "Check not found");
+  if (row.executor_kind === "agent" && row.machine_id) {
+    requireResourceCapability(access, "machine", row.machine_id, "manage");
+  }
   const checkName = input.checkName.trim();
   if (checkName.length < 2 || checkName.length > 80) throw error(400, "Check name is invalid");
   if (
@@ -995,12 +999,18 @@ export async function updateServiceCheckPolicy(
        FROM check_configs c
        JOIN services s ON s.id = c.service_id AND s.deleted_at IS NULL
        JOIN workspaces w ON w.id = c.workspace_id AND w.deleted_at IS NULL
-       LEFT JOIN agents a ON a.id = c.executor_agent_id
+       LEFT JOIN agents a ON a.id = c.executor_agent_id AND a.status = 'active'
        WHERE c.id = ? AND c.service_id = ? AND c.workspace_id = ?`,
     )
     .bind(checkId, serviceId, access.workspaceId)
     .first<CheckPolicyRow>();
   if (!row) throw error(404, "Check not found");
+  if (row.executor_kind === "agent" && input.enabled) {
+    if (!row.executor_agent_id || !row.machine_id) {
+      throw error(409, "The Agent executor is unavailable");
+    }
+    requireResourceCapability(access, "machine", row.machine_id, "manage");
+  }
   const minimumInterval = row.executor_kind === "cloudflare" ? 60 : 5;
   boundedPolicyInteger(input.intervalSeconds, minimumInterval, 86_400, "Check interval");
   boundedPolicyInteger(input.timeoutMs, 100, 30_000, "Timeout");
@@ -1019,9 +1029,6 @@ export async function updateServiceCheckPolicy(
       throw error(409, "A service must keep at least one enabled check");
     }
   }
-  if (row.executor_kind === "agent" && input.enabled && !row.executor_agent_id) {
-    throw error(409, "The Agent executor is unavailable");
-  }
   const capacity: AgentCapacityInput | null =
     row.executor_kind === "agent"
       ? {
@@ -1034,9 +1041,6 @@ export async function updateServiceCheckPolicy(
   if (capacity) await assertAgentCapacity(controlDb, capacity);
   const now = Date.now();
   const agentMachineId = row.executor_kind === "agent" ? row.machine_id : null;
-  if (row.executor_kind === "agent" && !agentMachineId) {
-    throw error(409, "The Agent executor is unavailable");
-  }
   const before = {
     enabled: row.enabled === 1,
     intervalSeconds: row.interval_seconds,
@@ -1172,7 +1176,7 @@ export async function deleteServiceCheck(
          FROM check_configs c
          JOIN services s ON s.id = c.service_id AND s.deleted_at IS NULL
          JOIN workspaces w ON w.id = c.workspace_id AND w.deleted_at IS NULL
-         LEFT JOIN agents a ON a.id = c.executor_agent_id
+         LEFT JOIN agents a ON a.id = c.executor_agent_id AND a.status = 'active'
          WHERE c.id = ? AND c.service_id = ? AND c.workspace_id = ?`,
       )
       .bind(checkId, serviceId, access.workspaceId)
@@ -1189,9 +1193,6 @@ export async function deleteServiceCheck(
   if (!count || count.count <= 1) throw error(409, "A service must keep at least one check");
   const now = Date.now();
   const agentMachineId = row.executor_kind === "agent" ? row.machine_id : null;
-  if (row.executor_kind === "agent" && !agentMachineId) {
-    throw error(409, "The Agent executor is unavailable");
-  }
   const secretIds = referencedSecretIds(row.secret_refs_json);
   const mutationIndex = agentMachineId ? 1 : 0;
   const audit = await prepareAuditStatement(controlDb, {
