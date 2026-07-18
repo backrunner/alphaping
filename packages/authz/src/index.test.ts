@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { canAccessContainer, canAccessResource, type ResourceGrant } from "./index.js";
+import {
+  canAccessContainer,
+  canAccessIncident,
+  canAccessResource,
+  type ResourceGrant,
+} from "./index.js";
 
 describe("resource authorization", () => {
   const grants: readonly ResourceGrant[] = [
@@ -124,5 +129,22 @@ describe("resource authorization", () => {
         "manage",
       ),
     ).toBe(false);
+  });
+
+  it("does not let inherited service access bypass an incident deny", () => {
+    const incidentDeny: ResourceGrant = {
+      resourceType: "incident",
+      resourceId: "incident-1",
+      capability: "view",
+      effect: "deny",
+    };
+
+    expect(canAccessIncident("member", [incidentDeny], "incident-1", "view", true)).toBe(false);
+    expect(canAccessIncident("member", [incidentDeny], "incident-1", "manage", true)).toBe(false);
+  });
+
+  it("uses service inheritance when the incident has no conflicting deny", () => {
+    expect(canAccessIncident("member", [], "incident-1", "view", true)).toBe(true);
+    expect(canAccessIncident("member", [], "incident-1", "manage", false)).toBe(false);
   });
 });

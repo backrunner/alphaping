@@ -1,4 +1,5 @@
 import {
+  canAccessIncident,
   canAccessResource,
   type ResourceGrant,
   type ResourceType,
@@ -295,14 +296,17 @@ export async function loadDashboardSnapshot(
         )
         .bind(...batch),
   );
-  const activeIncidentCount = activeIncidents.filter(
-    (incident) =>
-      workspace.role === "admin" ||
-      canAccessResource(workspace.role, grants, "incident", incident.id, "view") ||
+  const activeIncidentCount = activeIncidents.filter((incident) =>
+    canAccessIncident(
+      workspace.role,
+      grants,
+      incident.id,
+      "view",
       activeIncidentResources.some(
         (resource) =>
           resource.incident_id === incident.id && allowedServiceIds.has(resource.resource_id),
       ),
+    ),
   ).length;
   const checks = (
     await controlDb

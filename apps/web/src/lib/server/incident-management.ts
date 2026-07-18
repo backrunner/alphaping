@@ -1,4 +1,4 @@
-import { canAccessResource } from "@alphaping/authz";
+import { canAccessIncident, canAccessResource } from "@alphaping/authz";
 import { error } from "@sveltejs/kit";
 
 import { loadMonitoringAccess, requireAdmin } from "./monitoring-access.js";
@@ -132,12 +132,16 @@ export async function appendIncidentUpdate(
     )
     .bind(incidentId)
     .all<IncidentResourceRow>();
-  const canManageIncident =
-    canAccessResource(access.role, access.grants, "incident", incidentId, "manage") ||
-    (resources.results.length > 0 &&
+  const canManageIncident = canAccessIncident(
+    access.role,
+    access.grants,
+    incidentId,
+    "manage",
+    resources.results.length > 0 &&
       resources.results.every((resource) =>
         canAccessResource(access.role, access.grants, "service", resource.resource_id, "manage"),
-      ));
+      ),
+  );
   if (!canManageIncident) throw error(404, "Incident not found");
   if (!(["investigating", "identified", "monitoring", "resolved"] as const).includes(input.state)) {
     throw error(400, "Incident state is invalid");

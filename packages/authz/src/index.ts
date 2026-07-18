@@ -38,6 +38,24 @@ export function canAccessResource(
   );
 }
 
+export function canAccessIncident(
+  role: WorkspaceRole,
+  grants: readonly ResourceGrant[],
+  incidentId: string,
+  capability: Capability,
+  inheritedFromServices: boolean,
+): boolean {
+  if (role === "admin") return true;
+  const incidentGrants = grants.filter(
+    (grant) => grant.resourceType === "incident" && grant.resourceId === incidentId,
+  );
+  if (incidentGrants.some((grant) => deniesCapability(grant, capability))) return false;
+  return (
+    canAccessResource(role, incidentGrants, "incident", incidentId, capability) ||
+    inheritedFromServices
+  );
+}
+
 export function canAccessContainer(
   role: WorkspaceRole,
   grants: readonly ResourceGrant[],

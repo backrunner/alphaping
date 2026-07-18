@@ -1,4 +1,5 @@
 import {
+  canAccessIncident,
   canAccessResource,
   type ResourceGrant,
   type ResourceType,
@@ -174,23 +175,27 @@ export async function loadIncidentCenter(
     const incidentResources = resources.results.filter(
       (resource) => resource.incident_id === incident.id,
     );
-    const hasIncidentGrant = canAccessResource(
-      workspace.role,
-      grants,
-      "incident",
-      incident.id,
-      "view",
-    );
     const visibleResources = incidentResources.filter((resource) =>
       serviceNameById.has(resource.resource_id),
     );
-    if (workspace.role !== "admin" && !hasIncidentGrant && visibleResources.length === 0) return [];
-    const canManage =
-      canAccessResource(workspace.role, grants, "incident", incident.id, "manage") ||
-      (incidentResources.length > 0 &&
+    const canViewIncident = canAccessIncident(
+      workspace.role,
+      grants,
+      incident.id,
+      "view",
+      visibleResources.length > 0,
+    );
+    if (!canViewIncident) return [];
+    const canManage = canAccessIncident(
+      workspace.role,
+      grants,
+      incident.id,
+      "manage",
+      incidentResources.length > 0 &&
         incidentResources.every((resource) =>
           canAccessResource(workspace.role, grants, "service", resource.resource_id, "manage"),
-        ));
+        ),
+    );
     return [
       {
         id: incident.id,
