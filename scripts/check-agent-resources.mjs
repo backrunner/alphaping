@@ -72,8 +72,18 @@ if (process.platform === "darwin" && process.getuid?.() === 0) {
 if (!skipBuild) {
   run(
     "node",
-    ["scripts/run-cargo.mjs", "build", "-p", "alphaping-agent", "--release"],
-    "release Agent build",
+    [
+      "scripts/run-cargo.mjs",
+      "build",
+      "-p",
+      "alphaping-agent",
+      "--release",
+      "--bin",
+      "alphaping-agent",
+      "--example",
+      "resource_spool_fixture",
+    ],
+    "release Agent and spool fixture build",
   );
 }
 
@@ -81,6 +91,7 @@ const temporary = mkdtempSync(join(tmpdir(), "alphaping-agent-resources-"));
 const configPath = join(temporary, "agent.toml");
 const spoolPath = join(temporary, "spool.db");
 const binary = join(root, "target", "release", "alphaping-agent");
+const spoolFixture = join(root, "target", "release", "examples", "resource_spool_fixture");
 writeFileSync(
   configPath,
   `endpoint = "https://127.0.0.1:1/v1/reports"
@@ -103,6 +114,7 @@ update_channel = "stable"
   { mode: 0o600 },
 );
 chmodSync(configPath, 0o600);
+run(spoolFixture, [spoolPath], "Agent spool fixture");
 
 let child = null;
 let output = "";
