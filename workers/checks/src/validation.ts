@@ -152,6 +152,9 @@ export function parseHttpRequest(json: string): HttpCheckRequest {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new Error("invalid_protocol");
   }
+  if (url.username !== "" || url.password !== "") {
+    throw new Error("url_credentials_unsupported");
+  }
   assertPublicHostname(url.hostname);
 
   const method = data.method ?? "GET";

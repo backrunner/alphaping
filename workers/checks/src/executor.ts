@@ -51,6 +51,13 @@ function redirectHeaders(
   return headers;
 }
 
+function assertPublicUrl(url: URL): void {
+  if (url.username !== "" || url.password !== "") {
+    throw new Error("url_credentials_unsupported");
+  }
+  assertPublicHostname(url.hostname);
+}
+
 async function readBoundedText(response: Response, maximumBytes: number): Promise<string> {
   if (response.body === null) return "";
   const reader = response.body.getReader();
@@ -83,7 +90,7 @@ export async function executeHttp(
 
   try {
     for (let redirect = 0; redirect <= config.maxRedirects; redirect += 1) {
-      assertPublicHostname(target.hostname);
+      assertPublicUrl(target);
       const response = await fetch(target, {
         method: config.method,
         headers,
@@ -98,7 +105,7 @@ export async function executeHttp(
           return outcome("down", null, "redirect_limit");
         }
         const nextTarget = new URL(location, target);
-        assertPublicHostname(nextTarget.hostname);
+        assertPublicUrl(nextTarget);
         headers = redirectHeaders(headers, target, nextTarget, config.sensitiveHeaders);
         target = nextTarget;
         continue;

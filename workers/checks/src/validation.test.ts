@@ -46,6 +46,14 @@ describe("central check validation", () => {
     );
   });
 
+  it("rejects URL credentials", () => {
+    expect(() =>
+      parseHttpRequest(
+        JSON.stringify({ url: "https://operator:private@status.example.com/health" }),
+      ),
+    ).toThrow("url_credentials_unsupported");
+  });
+
   it("parses bounded HTTP assertion settings", () => {
     const config = parseHttpRequest(
       JSON.stringify({

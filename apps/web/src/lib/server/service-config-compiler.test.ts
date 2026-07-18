@@ -109,6 +109,16 @@ describe("service configuration compiler", () => {
     ).rejects.toMatchObject({ status: 400 });
   });
 
+  it("rejects URL credentials instead of persisting them outside secret storage", async () => {
+    await expect(
+      compileServiceConfig(
+        serviceInput({ url: "https://operator:private@example.com/health" }),
+        WORKSPACE_ID,
+        WRAPPING_KEY,
+      ),
+    ).rejects.toMatchObject({ status: 400 });
+  });
+
   it("validates direct POST enums and payload byte limits", async () => {
     await expect(
       compileServiceConfig(

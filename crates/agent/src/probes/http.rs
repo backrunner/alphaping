@@ -77,7 +77,13 @@ pub async fn execute(request: &HttpProbeRequest, timeout: Duration) -> ProbeOutc
                 return ProbeOutcome::failed("redirect_limit");
             }
             let next = match target.join(location) {
-                Ok(next) if next.scheme() == "http" || next.scheme() == "https" => next,
+                Ok(next)
+                    if (next.scheme() == "http" || next.scheme() == "https")
+                        && next.username().is_empty()
+                        && next.password().is_none() =>
+                {
+                    next
+                }
                 _ => return ProbeOutcome::failed("redirect_target"),
             };
             if target.origin() != next.origin() {

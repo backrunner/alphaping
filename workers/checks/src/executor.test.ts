@@ -103,6 +103,23 @@ describe("HTTP check execution", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("rejects redirects containing URL credentials before another fetch", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(null, {
+        status: 302,
+        headers: { location: "https://operator:private@redirect.example.net/health" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const config = parseHttpRequest(JSON.stringify({ url: "https://api.example.com/health" }));
+
+    await expect(executeHttp(config, 1_000)).resolves.toMatchObject({
+      state: "down",
+      failureCode: "network",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("classifies timeout and oversized response failures", async () => {
     vi.stubGlobal(
       "fetch",

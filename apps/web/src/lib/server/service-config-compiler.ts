@@ -253,6 +253,9 @@ function compileRequest(
     if (url.protocol !== "http:" && url.protocol !== "https:") {
       throw error(400, "HTTP checks require an HTTP or HTTPS URL");
     }
+    if (url.username !== "" || url.password !== "") {
+      throw error(400, "Service URLs cannot contain credentials");
+    }
     if (!["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"].includes(input.method)) {
       throw error(400, "HTTP method is invalid");
     }

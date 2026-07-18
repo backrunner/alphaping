@@ -117,6 +117,7 @@ pub fn validate_config(config: &AgentConfigSnapshot) -> Result<()> {
         match &task.request {
             Some(probe_task::Request::Http(request))
                 if request.url.len() <= 2_048
+                    && parse_url(&request.url).is_ok()
                     && request.headers.len() <= 32
                     && request.assertions.len() <= 20
                     && request.body.len() <= 16_384
@@ -267,7 +268,10 @@ fn require_nonempty(value: &str, label: &str) -> Result<()> {
 
 fn parse_url(value: &str) -> Result<reqwest::Url> {
     let url = reqwest::Url::parse(value).context("invalid probe URL")?;
-    if url.scheme() != "http" && url.scheme() != "https" {
+    if (url.scheme() != "http" && url.scheme() != "https")
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
         bail!("unsupported probe URL");
     }
     Ok(url)
@@ -277,7 +281,13 @@ fn parse_url(value: &str) -> Result<reqwest::Url> {
 mod tests {
     use alphaping_protocol::{encode_message, v1::AgentConfigSnapshot};
 
-    use super::validate_config;
+    use super::{parse_url, validate_config};
+
+    #[test]
+    fn probe_urls_reject_embedded_credentials() {
+        assert!(parse_url("https://operator:private@example.com/health").is_err());
+        assert!(parse_url("https://example.com/health").is_ok());
+    }
 
     #[test]
     fn configuration_digest_covers_the_full_snapshot() {
