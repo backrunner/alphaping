@@ -27,9 +27,6 @@ interface AgentRow {
   probe_count: number;
   config_bytes: number;
 }
-interface RevisionRow {
-  revision: number;
-}
 
 interface ManagedServiceRow {
   id: string;
@@ -108,6 +105,20 @@ function configurationBytes(compiled: CompiledServiceConfig, preservedSecretByte
   );
 }
 
+function advanceAgentConfigurationStatement(
+  db: D1Database,
+  workspaceId: string,
+  machineId: string,
+  now: number,
+): D1PreparedStatement {
+  return db
+    .prepare(
+      `UPDATE machines SET desired_config_revision = desired_config_revision + 1, updated_at = ?
+       WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL`,
+    )
+    .bind(now, machineId, workspaceId);
+}
+
 function boundedPolicyInteger(
   value: number,
   minimum: number,
@@ -163,21 +174,10 @@ export async function createServiceMonitor(
   const serviceId = crypto.randomUUID();
   const checkId = crypto.randomUUID();
   const now = Date.now();
-  const assignmentRevision = agent
-    ? await db
-        .prepare(
-          `UPDATE machines
-           SET desired_config_revision = desired_config_revision + 1, updated_at = ?
-           WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL
-           RETURNING desired_config_revision AS revision`,
-        )
-        .bind(now, agent.machine_id, access.workspaceId)
-        .first<RevisionRow>()
-    : { revision: 0 };
-  if (!assignmentRevision) {
-    throw error(409, "The Agent machine configuration could not be advanced");
-  }
   const statements: D1PreparedStatement[] = [
+    ...(agent
+      ? [advanceAgentConfigurationStatement(db, access.workspaceId, agent.machine_id, now)]
+      : []),
     db
       .prepare(
         `INSERT INTO services
@@ -207,7 +207,12 @@ export async function createServiceMonitor(
          retry_count, critical, request_json, secret_refs_json,
          failure_confirmations, recovery_confirmations,
          config_bytes, last_claimed_slot, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?,
+         CASE WHEN ? IS NULL THEN 0 ELSE (
+           SELECT desired_config_revision FROM machines
+           WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL
+         ) END,
+         1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
       )
       .bind(
         checkId,
@@ -218,7 +223,9 @@ export async function createServiceMonitor(
         input.kind,
         input.executorKind,
         input.executorKind === "agent" ? input.executorAgentId : null,
-        assignmentRevision.revision,
+        agent?.machine_id ?? null,
+        agent?.machine_id ?? null,
+        access.workspaceId,
         input.intervalSeconds,
         checkPk % input.intervalSeconds,
         input.timeoutMs,
@@ -386,21 +393,10 @@ export async function addServiceCheck(
   const checkPk = await nextSequence(db, "check");
   const checkId = crypto.randomUUID();
   const now = Date.now();
-  const assignmentRevision = agent
-    ? await db
-        .prepare(
-          `UPDATE machines
-           SET desired_config_revision = desired_config_revision + 1, updated_at = ?
-           WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL
-           RETURNING desired_config_revision AS revision`,
-        )
-        .bind(now, agent.machine_id, access.workspaceId)
-        .first<RevisionRow>()
-    : { revision: 0 };
-  if (!assignmentRevision) {
-    throw error(409, "The Agent machine configuration could not be advanced");
-  }
   const statements: D1PreparedStatement[] = [
+    ...(agent
+      ? [advanceAgentConfigurationStatement(db, access.workspaceId, agent.machine_id, now)]
+      : []),
     db
       .prepare(
         `INSERT INTO check_configs
@@ -409,7 +405,12 @@ export async function addServiceCheck(
            timeout_ms, retry_count, critical, request_json, secret_refs_json,
            failure_confirmations, recovery_confirmations, config_bytes, last_claimed_slot,
            created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?,
+           CASE WHEN ? IS NULL THEN 0 ELSE (
+             SELECT desired_config_revision FROM machines
+             WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL
+           ) END,
+           1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
       )
       .bind(
         checkId,
@@ -420,7 +421,9 @@ export async function addServiceCheck(
         input.kind,
         input.executorKind,
         input.executorKind === "agent" ? input.executorAgentId : null,
-        assignmentRevision.revision,
+        agent?.machine_id ?? null,
+        agent?.machine_id ?? null,
+        access.workspaceId,
         input.intervalSeconds,
         checkPk % input.intervalSeconds,
         input.timeoutMs,
@@ -673,25 +676,21 @@ export async function replaceServiceCheckConfiguration(
     }
   }
   const now = Date.now();
-  let assignmentRevision = row.assignment_revision;
-  if (row.executor_kind === "agent") {
-    if (!row.machine_id) throw error(409, "The Agent executor is unavailable");
-    const revision = await controlDb
-      .prepare(
-        `UPDATE machines SET desired_config_revision = desired_config_revision + 1, updated_at = ?
-         WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL
-         RETURNING desired_config_revision AS revision`,
-      )
-      .bind(now, row.machine_id, access.workspaceId)
-      .first<RevisionRow>();
-    if (!revision) throw error(409, "The Agent machine configuration could not be advanced");
-    assignmentRevision = revision.revision;
+  const agentMachineId = row.executor_kind === "agent" ? row.machine_id : null;
+  if (row.executor_kind === "agent" && !agentMachineId) {
+    throw error(409, "The Agent executor is unavailable");
   }
   const statements: D1PreparedStatement[] = [
+    ...(agentMachineId
+      ? [advanceAgentConfigurationStatement(controlDb, access.workspaceId, agentMachineId, now)]
+      : []),
     controlDb
       .prepare(
         `UPDATE check_configs SET name = ?, request_json = ?, secret_refs_json = ?,
-           config_bytes = ?, assignment_revision = ?, updated_at = ?
+           config_bytes = ?, assignment_revision = CASE WHEN ? IS NULL THEN assignment_revision ELSE (
+             SELECT desired_config_revision FROM machines
+             WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL
+           ) END, updated_at = ?
          WHERE id = ? AND service_id = ? AND workspace_id = ?`,
       )
       .bind(
@@ -699,7 +698,9 @@ export async function replaceServiceCheckConfiguration(
         JSON.stringify(finalCompiled.request),
         JSON.stringify(finalCompiled.secretRefs),
         configBytes,
-        assignmentRevision,
+        agentMachineId,
+        agentMachineId,
+        access.workspaceId,
         now,
         checkId,
         serviceId,
@@ -761,14 +762,12 @@ export async function replaceServiceCheckConfiguration(
         checkName: row.name,
         request: row.request_json,
         secretCount: oldSecretIds.length,
-        assignmentRevision: row.assignment_revision,
       },
       after: {
         checkId,
         checkName,
         request: JSON.stringify(finalCompiled.request),
         secretCount: referencedSecretIds(JSON.stringify(finalCompiled.secretRefs)).length,
-        assignmentRevision,
       },
       now,
     }),
@@ -918,19 +917,9 @@ export async function updateServiceCheckPolicy(
     }
   }
   const now = Date.now();
-  let assignmentRevision = row.assignment_revision;
-  if (row.executor_kind === "agent") {
-    if (!row.machine_id) throw error(409, "The Agent executor is unavailable");
-    const revision = await controlDb
-      .prepare(
-        `UPDATE machines SET desired_config_revision = desired_config_revision + 1, updated_at = ?
-         WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL
-         RETURNING desired_config_revision AS revision`,
-      )
-      .bind(now, row.machine_id, access.workspaceId)
-      .first<RevisionRow>();
-    if (!revision) throw error(409, "The Agent machine configuration could not be advanced");
-    assignmentRevision = revision.revision;
+  const agentMachineId = row.executor_kind === "agent" ? row.machine_id : null;
+  if (row.executor_kind === "agent" && !agentMachineId) {
+    throw error(409, "The Agent executor is unavailable");
   }
   const before = {
     enabled: row.enabled === 1,
@@ -940,15 +929,21 @@ export async function updateServiceCheckPolicy(
     failureConfirmations: row.failure_confirmations,
     recoveryConfirmations: row.recovery_confirmations,
     critical: row.critical === 1,
-    assignmentRevision: row.assignment_revision,
   };
-  const after = { ...input, assignmentRevision };
+  const after = input;
   await controlDb.batch([
+    ...(agentMachineId
+      ? [advanceAgentConfigurationStatement(controlDb, access.workspaceId, agentMachineId, now)]
+      : []),
     controlDb
       .prepare(
         `UPDATE check_configs SET enabled = ?, interval_seconds = ?, phase_seconds = ?,
            timeout_ms = ?, retry_count = ?, failure_confirmations = ?,
-           recovery_confirmations = ?, critical = ?, assignment_revision = ?, updated_at = ?
+           recovery_confirmations = ?, critical = ?,
+           assignment_revision = CASE WHEN ? IS NULL THEN assignment_revision ELSE (
+             SELECT desired_config_revision FROM machines
+             WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL
+           ) END, updated_at = ?
          WHERE id = ? AND service_id = ? AND workspace_id = ?`,
       )
       .bind(
@@ -960,7 +955,9 @@ export async function updateServiceCheckPolicy(
         input.failureConfirmations,
         input.recoveryConfirmations,
         input.critical ? 1 : 0,
-        assignmentRevision,
+        agentMachineId,
+        agentMachineId,
+        access.workspaceId,
         now,
         checkId,
         serviceId,
@@ -1036,20 +1033,15 @@ export async function deleteServiceCheck(
   if (!row) throw error(404, "Check not found");
   if (!count || count.count <= 1) throw error(409, "A service must keep at least one check");
   const now = Date.now();
-  if (row.executor_kind === "agent") {
-    if (!row.machine_id) throw error(409, "The Agent executor is unavailable");
-    const revision = await controlDb
-      .prepare(
-        `UPDATE machines SET desired_config_revision = desired_config_revision + 1, updated_at = ?
-         WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL
-         RETURNING desired_config_revision AS revision`,
-      )
-      .bind(now, row.machine_id, access.workspaceId)
-      .first<RevisionRow>();
-    if (!revision) throw error(409, "The Agent machine configuration could not be advanced");
+  const agentMachineId = row.executor_kind === "agent" ? row.machine_id : null;
+  if (row.executor_kind === "agent" && !agentMachineId) {
+    throw error(409, "The Agent executor is unavailable");
   }
   const secretIds = referencedSecretIds(row.secret_refs_json);
   const statements: D1PreparedStatement[] = [
+    ...(agentMachineId
+      ? [advanceAgentConfigurationStatement(controlDb, access.workspaceId, agentMachineId, now)]
+      : []),
     controlDb
       .prepare(`DELETE FROM check_configs WHERE id = ? AND service_id = ? AND workspace_id = ?`)
       .bind(checkId, serviceId, access.workspaceId),
