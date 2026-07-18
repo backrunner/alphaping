@@ -128,6 +128,33 @@ try {
         main: resolve(root, "workers/ingest/build/worker/shim.mjs"),
         compatibility_date: "2026-07-17",
         vars: { LIVE_ORIGIN: "wss://live.example.test" },
+        ratelimits: [
+          {
+            name: "ENROLLMENT_RATE_LIMITER",
+            namespace_id: "19001",
+            simple: { limit: 1_000, period: 60 },
+          },
+          {
+            name: "REPORT_EDGE_RATE_LIMITER",
+            namespace_id: "19002",
+            simple: { limit: 10_000, period: 60 },
+          },
+          {
+            name: "REPORT_AGENT_RATE_LIMITER",
+            namespace_id: "19003",
+            simple: { limit: 10_000, period: 60 },
+          },
+          {
+            name: "REPORT_WORKSPACE_RATE_LIMITER",
+            namespace_id: "19004",
+            simple: { limit: 10_000, period: 60 },
+          },
+          {
+            name: "AEAD_FAILURE_RATE_LIMITER",
+            namespace_id: "19005",
+            simple: { limit: 1_000, period: 60 },
+          },
+        ],
         d1_databases: [
           {
             binding: "CONTROL_DB",
@@ -266,6 +293,38 @@ try {
     processOutput.exited = true;
   });
   await waitForServer(origin, processOutput);
+
+  for (const route of ["/v1/enroll", "/v1/reports"]) {
+    const response = await fetch(`${origin}${route}`, {
+      method: "POST",
+      headers: { "content-type": "application/octet-stream" },
+      body: new Uint8Array(),
+    });
+    if (response.status !== 415) {
+      throw new Error(`${route} accepted an unsupported media type with ${response.status}`);
+    }
+  }
+  for (const [route, maximum] of [
+    ["/v1/enroll", 16_384],
+    ["/v1/reports", 64 * 1_024],
+  ]) {
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new Uint8Array(maximum));
+        controller.enqueue(new Uint8Array(1));
+        controller.close();
+      },
+    });
+    const response = await fetch(`${origin}${route}`, {
+      method: "POST",
+      headers: { "content-type": "application/x-protobuf" },
+      body,
+      duplex: "half",
+    });
+    if (response.status !== 400) {
+      throw new Error(`${route} accepted an oversized chunked body with ${response.status}`);
+    }
+  }
 
   const sessionPath = join(temporary, "agent-session.json");
   const rotationPath = join(temporary, "agent-rotation.json");
@@ -651,7 +710,7 @@ try {
     telemetry.load_1m_milli !== 1250 ||
     telemetry.uptime_seconds !== 86405 ||
     telemetry.machine_state !== "down" ||
-    telemetry.highest_sequence !== 10 ||
+    telemetry.highest_sequence !== 100 ||
     telemetry.replay_epochs !== 2 ||
     telemetry.recovery_events !== 1 ||
     telemetry.threshold_events !== 1 ||

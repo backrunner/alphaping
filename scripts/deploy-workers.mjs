@@ -54,9 +54,13 @@ function parseArguments(argv) {
 
 function validateProductionConfig(worker, configPath) {
   const config = readFileSync(configPath, "utf8");
+  const placeholderRateLimitNamespace = ["1001", "1002", "1003", "1004", "1005"].some((namespace) =>
+    config.includes(`namespace_id = "${namespace}"`),
+  );
   if (
     config.includes("-template") ||
     config.includes("00000000-0000-0000-0000-000000000000") ||
+    placeholderRateLimitNamespace ||
     !config.includes(`name = "alphaping-${worker.name}-production"`)
   ) {
     throw new Error(

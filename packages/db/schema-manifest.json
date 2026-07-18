@@ -54,6 +54,10 @@
         {
           "file": "0013_workspace_defaults.sql",
           "sha256": "42e9a7548a47b55695cca9208388f3bf11607c4d86e6068b54197b3065200345"
+        },
+        {
+          "file": "0014_agent_auth_cooldown.sql",
+          "sha256": "8e15ea0241b49175dd55446a10263758fa062ed9fb32bba7f00134f35b29ab5f"
         }
       ],
       "objects": [
@@ -253,7 +257,7 @@
           "type": "table",
           "name": "agents",
           "table": "agents",
-          "sql": "CREATE TABLE agents (\n  id TEXT PRIMARY KEY NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  machine_id TEXT NOT NULL REFERENCES machines (id) ON DELETE CASCADE,\n  identity_public_key BLOB NOT NULL,\n  platform TEXT NOT NULL,\n  arch TEXT NOT NULL,\n  agent_version TEXT NOT NULL,\n  protocol_version INTEGER NOT NULL,\n  status TEXT NOT NULL CHECK (status IN ('active', 'revoked')),\n  applied_config_revision INTEGER NOT NULL DEFAULT 0,\n  created_at INTEGER NOT NULL,\n  last_seen_at INTEGER,\n  revoked_at INTEGER\n, hostname TEXT NOT NULL DEFAULT '', os_name TEXT NOT NULL DEFAULT '', os_version TEXT NOT NULL DEFAULT '', kernel_version TEXT NOT NULL DEFAULT '') STRICT"
+          "sql": "CREATE TABLE agents (\n  id TEXT PRIMARY KEY NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  machine_id TEXT NOT NULL REFERENCES machines (id) ON DELETE CASCADE,\n  identity_public_key BLOB NOT NULL,\n  platform TEXT NOT NULL,\n  arch TEXT NOT NULL,\n  agent_version TEXT NOT NULL,\n  protocol_version INTEGER NOT NULL,\n  status TEXT NOT NULL CHECK (status IN ('active', 'revoked')),\n  applied_config_revision INTEGER NOT NULL DEFAULT 0,\n  created_at INTEGER NOT NULL,\n  last_seen_at INTEGER,\n  revoked_at INTEGER\n, hostname TEXT NOT NULL DEFAULT '', os_name TEXT NOT NULL DEFAULT '', os_version TEXT NOT NULL DEFAULT '', kernel_version TEXT NOT NULL DEFAULT '', auth_cooldown_until INTEGER NOT NULL DEFAULT 0) STRICT"
         },
         {
           "type": "table",
@@ -442,6 +446,10 @@
         {
           "file": "0007_machine_diagnostics.sql",
           "sha256": "8102be29b4376a15ad34f1eb2dba2caa9b70c7b6e43ba621505792b998e6d7d5"
+        },
+        {
+          "file": "0008_replay_window.sql",
+          "sha256": "e4b85b6968a8a237ff4c36493e843eb562692d0d9f3f91a59bc91539eafadf17"
         }
       ],
       "objects": [
@@ -641,13 +649,13 @@
           "type": "table",
           "name": "agent_replay_state",
           "table": "agent_replay_state",
-          "sql": "CREATE TABLE agent_replay_state (\n  agent_id TEXT NOT NULL,\n  key_epoch INTEGER NOT NULL,\n  highest_sequence INTEGER NOT NULL,\n  window_bitmap BLOB NOT NULL,\n  updated_at INTEGER NOT NULL,\n  PRIMARY KEY (agent_id, key_epoch)\n) WITHOUT ROWID, STRICT"
+          "sql": "CREATE TABLE agent_replay_state (\n  agent_id TEXT NOT NULL,\n  key_epoch INTEGER NOT NULL,\n  highest_sequence INTEGER NOT NULL,\n  window_bitmap BLOB NOT NULL,\n  updated_at INTEGER NOT NULL, window_bits INTEGER NOT NULL DEFAULT 9223372036854775807,\n  PRIMARY KEY (agent_id, key_epoch)\n) WITHOUT ROWID, STRICT"
         },
         {
           "type": "table",
           "name": "agents",
           "table": "agents",
-          "sql": "CREATE TABLE agents (\n  id TEXT PRIMARY KEY NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  machine_id TEXT NOT NULL REFERENCES machines (id) ON DELETE CASCADE,\n  identity_public_key BLOB NOT NULL,\n  platform TEXT NOT NULL,\n  arch TEXT NOT NULL,\n  agent_version TEXT NOT NULL,\n  protocol_version INTEGER NOT NULL,\n  status TEXT NOT NULL CHECK (status IN ('active', 'revoked')),\n  applied_config_revision INTEGER NOT NULL DEFAULT 0,\n  created_at INTEGER NOT NULL,\n  last_seen_at INTEGER,\n  revoked_at INTEGER\n, hostname TEXT NOT NULL DEFAULT '', os_name TEXT NOT NULL DEFAULT '', os_version TEXT NOT NULL DEFAULT '', kernel_version TEXT NOT NULL DEFAULT '') STRICT"
+          "sql": "CREATE TABLE agents (\n  id TEXT PRIMARY KEY NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  machine_id TEXT NOT NULL REFERENCES machines (id) ON DELETE CASCADE,\n  identity_public_key BLOB NOT NULL,\n  platform TEXT NOT NULL,\n  arch TEXT NOT NULL,\n  agent_version TEXT NOT NULL,\n  protocol_version INTEGER NOT NULL,\n  status TEXT NOT NULL CHECK (status IN ('active', 'revoked')),\n  applied_config_revision INTEGER NOT NULL DEFAULT 0,\n  created_at INTEGER NOT NULL,\n  last_seen_at INTEGER,\n  revoked_at INTEGER\n, hostname TEXT NOT NULL DEFAULT '', os_name TEXT NOT NULL DEFAULT '', os_version TEXT NOT NULL DEFAULT '', kernel_version TEXT NOT NULL DEFAULT '', auth_cooldown_until INTEGER NOT NULL DEFAULT 0) STRICT"
         },
         {
           "type": "table",

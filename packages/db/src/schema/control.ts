@@ -209,6 +209,7 @@ export const agents = sqliteTable(
     createdAt: integer("created_at").notNull(),
     lastSeenAt: integer("last_seen_at"),
     revokedAt: integer("revoked_at"),
+    authCooldownUntil: integer("auth_cooldown_until").notNull().default(0),
   },
   (table) => [index("agents_workspace_idx").on(table.workspaceId, table.status)],
 );

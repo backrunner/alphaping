@@ -16,6 +16,7 @@ alphaping-protocol = { path = "../../crates/protocol" }
 base64.workspace = true
 blake3.workspace = true
 ed25519-dalek.workspace = true
+futures-util.workspace = true
 hmac.workspace = true
 hex.workspace = true
 prost.workspace = true

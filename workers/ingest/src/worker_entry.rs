@@ -6,6 +6,7 @@ use alphaping_protocol::{
         EnrollmentRequest, EnrollmentResponse, EnvelopeHeader, KeyRotationProposal, MachineReport,
     },
 };
+use futures_util::StreamExt;
 use prost::Message;
 use serde::Deserialize;
 use worker::{
@@ -18,7 +19,7 @@ use crate::{
     agent_commands::{load_commands, persist_command_results},
     agent_config::build_config_snapshot,
     check_results::{ProbePersistenceError, persist_probe_results},
-    enrollment_token_digest, is_protobuf_content_type,
+    client_ip_rate_key, enrollment_token_digest, is_protobuf_content_type,
     live_session::issue_live_session,
     machine_health_state, validate_enrollment_request, validate_report,
 };
@@ -41,6 +42,7 @@ struct AgentKeyRow {
     nonce_prefix: Vec<u8>,
     valid_from: f64,
     valid_until: f64,
+    auth_cooldown_until: f64,
     container_catalog_digest: Option<Vec<u8>>,
 }
 
@@ -50,11 +52,6 @@ struct RotationKeyRow {
     nonce_prefix: Vec<u8>,
     valid_from: f64,
     valid_until: f64,
-}
-
-#[derive(Debug, Deserialize)]
-struct ReplayRow {
-    highest_sequence: f64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -102,6 +99,7 @@ struct EnrollmentTokenRow {
 enum IngestError {
     BadRequest,
     UnsupportedMediaType,
+    RateLimited,
     Unauthorized,
     Conflict,
     Internal(worker::Error),
@@ -141,6 +139,47 @@ fn blob(value: &[u8]) -> JsValue {
 
 fn optional_text(value: Option<&str>) -> JsValue {
     value.map_or(JsValue::NULL, JsValue::from_str)
+}
+
+async fn enforce_rate_limit(env: &Env, binding: &str, key: String) -> Result<(), IngestError> {
+    if !env.rate_limiter(binding)?.limit(key).await?.success {
+        return Err(IngestError::RateLimited);
+    }
+    Ok(())
+}
+
+fn request_ip_rate_key(request: &Request) -> Result<String, IngestError> {
+    let value = request.headers().get("cf-connecting-ip")?;
+    Ok(client_ip_rate_key(value.as_deref()))
+}
+
+async fn read_bounded_body(
+    request: &mut Request,
+    maximum_bytes: usize,
+) -> Result<Vec<u8>, IngestError> {
+    let content_length = request
+        .headers()
+        .get("content-length")?
+        .map(|value| value.parse::<usize>().map_err(|_| IngestError::BadRequest))
+        .transpose()?;
+    if content_length.is_some_and(|length| length > maximum_bytes) {
+        return Err(IngestError::BadRequest);
+    }
+    let stream = request.stream()?;
+    futures_util::pin_mut!(stream);
+    let mut body = Vec::with_capacity(content_length.unwrap_or(0).min(maximum_bytes));
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk?;
+        if body
+            .len()
+            .checked_add(chunk.len())
+            .is_none_or(|length| length > maximum_bytes)
+        {
+            return Err(IngestError::BadRequest);
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
 }
 
 fn container_inventory_json(
@@ -457,23 +496,30 @@ async fn handle_enrollment(mut request: Request, env: Env) -> Result<Response, I
     if !is_protobuf_content_type(request.headers().get("content-type")?.as_deref()) {
         return Err(IngestError::UnsupportedMediaType);
     }
-    if request
-        .headers()
-        .get("content-length")?
-        .and_then(|value| value.parse::<usize>().ok())
-        .is_some_and(|length| length > 16_384)
-    {
-        return Err(IngestError::BadRequest);
-    }
-    let body = request.bytes().await?;
-    if body.len() > 16_384 {
-        return Err(IngestError::BadRequest);
-    }
+    enforce_rate_limit(
+        &env,
+        "ENROLLMENT_RATE_LIMITER",
+        request_ip_rate_key(&request)?,
+    )
+    .await?;
+    let body = read_bounded_body(&mut request, 16_384).await?;
     let enrollment: EnrollmentRequest =
         decode_message(&body).map_err(|_| IngestError::BadRequest)?;
     validate_enrollment_request(&enrollment).map_err(|_| IngestError::Unauthorized)?;
     let digest = enrollment_token_digest(&enrollment_token_pepper(&env)?, &enrollment.token)
         .map_err(|_| IngestError::Unauthorized)?;
+    enforce_rate_limit(
+        &env,
+        "ENROLLMENT_RATE_LIMITER",
+        format!("machine:{}", enrollment.machine_claim_id),
+    )
+    .await?;
+    enforce_rate_limit(
+        &env,
+        "ENROLLMENT_RATE_LIMITER",
+        format!("token:{}", hex::encode(digest)),
+    )
+    .await?;
     let now = now_ms();
     let control_db = env.d1("CONTROL_DB")?;
     let token = control_db
@@ -611,7 +657,8 @@ async fn load_agent_key(
                 a.applied_config_revision, m.desired_config_revision,
                 m.maintenance_until,
                 k.wrapped_data_key, k.nonce_prefix,
-                k.valid_from, k.valid_until, m.container_catalog_digest
+                k.valid_from, k.valid_until, a.auth_cooldown_until,
+                m.container_catalog_digest
          FROM agents a
          JOIN machines m ON m.id = a.machine_id
          JOIN workspaces w ON w.id = a.workspace_id
@@ -624,6 +671,36 @@ async fn load_agent_key(
     .first::<AgentKeyRow>(None)
     .await?
     .ok_or(IngestError::Unauthorized)
+}
+
+async fn record_aead_failure(
+    env: &Env,
+    control_db: &D1Database,
+    agent_id: &str,
+    now: i64,
+) -> Result<(), IngestError> {
+    let outcome = env
+        .rate_limiter("AEAD_FAILURE_RATE_LIMITER")?
+        .limit(format!("agent:{agent_id}"))
+        .await?;
+    if outcome.success {
+        return Ok(());
+    }
+    let cooldown_until = now.saturating_add(60_000);
+    control_db
+        .prepare(
+            "UPDATE agents SET auth_cooldown_until = MAX(auth_cooldown_until, ?)
+             WHERE id = ? AND status = 'active' AND revoked_at IS NULL",
+        )
+        .bind(&[number(cooldown_until), text(agent_id)])?
+        .run()
+        .await?;
+    let agent_hash = blake3::hash(agent_id.as_bytes());
+    worker::console_warn!(
+        "{{\"event\":\"agent_aead_cooldown\",\"agent_hash\":\"{}\",\"cooldown_ms\":60000}}",
+        hex::encode(&agent_hash.as_bytes()[..8])
+    );
+    Ok(())
 }
 
 async fn sync_container_catalog(
@@ -688,20 +765,56 @@ async fn sync_container_catalog(
     Ok(())
 }
 
-async fn check_replay(
+async fn claim_replay(
     db: &D1Database,
     agent_id: &str,
     key_epoch: u32,
     sequence: u64,
+    now: i64,
 ) -> Result<(), IngestError> {
-    let replay = db
+    let result = db
         .prepare(
-            "SELECT highest_sequence FROM agent_replay_state WHERE agent_id = ? AND key_epoch = ?",
+            "INSERT INTO agent_replay_state
+             (agent_id, key_epoch, highest_sequence, window_bitmap, updated_at, window_bits)
+             VALUES (?, ?, ?, X'01', ?, 1)
+             ON CONFLICT(agent_id, key_epoch) DO UPDATE SET
+               window_bits = CASE
+                 WHEN excluded.highest_sequence > agent_replay_state.highest_sequence THEN
+                   CASE
+                     WHEN excluded.highest_sequence - agent_replay_state.highest_sequence >= 63
+                       THEN 1
+                     ELSE ((agent_replay_state.window_bits <<
+                       (excluded.highest_sequence - agent_replay_state.highest_sequence)) | 1)
+                       & 9223372036854775807
+                   END
+                 ELSE agent_replay_state.window_bits | (1 <<
+                   (agent_replay_state.highest_sequence - excluded.highest_sequence))
+               END,
+               highest_sequence = MAX(
+                 agent_replay_state.highest_sequence, excluded.highest_sequence
+               ),
+               updated_at = excluded.updated_at
+             WHERE excluded.highest_sequence > agent_replay_state.highest_sequence
+                OR (
+                  excluded.highest_sequence < agent_replay_state.highest_sequence
+                  AND agent_replay_state.highest_sequence - excluded.highest_sequence <= 62
+                  AND (agent_replay_state.window_bits & (1 <<
+                    (agent_replay_state.highest_sequence - excluded.highest_sequence))) = 0
+                )",
         )
-        .bind(&[text(agent_id), unsigned(u64::from(key_epoch))])?
-        .first::<ReplayRow>(None)
+        .bind(&[
+            text(agent_id),
+            unsigned(u64::from(key_epoch)),
+            unsigned(sequence),
+            number(now),
+        ])?
+        .run()
         .await?;
-    if replay.is_some_and(|row| sequence <= row.highest_sequence as u64) {
+    if result
+        .meta()?
+        .and_then(|meta| meta.changes)
+        .is_none_or(|changes| changes != 1)
+    {
         return Err(IngestError::Unauthorized);
     }
     Ok(())
@@ -737,38 +850,11 @@ async fn classify_slot(
     }
 }
 
-fn replay_statement(
-    db: &D1Database,
-    agent_id: &str,
-    key_epoch: u32,
-    sequence: u64,
-    now: i64,
-) -> Result<worker::D1PreparedStatement, IngestError> {
-    Ok(db
-        .prepare(
-            "INSERT INTO agent_replay_state
-             (agent_id, key_epoch, highest_sequence, window_bitmap, updated_at)
-             VALUES (?, ?, ?, X'01', ?)
-             ON CONFLICT(agent_id, key_epoch) DO UPDATE SET
-               highest_sequence = excluded.highest_sequence,
-               window_bitmap = X'01',
-               updated_at = excluded.updated_at
-             WHERE excluded.highest_sequence > agent_replay_state.highest_sequence",
-        )
-        .bind(&[
-            text(agent_id),
-            unsigned(u64::from(key_epoch)),
-            unsigned(sequence),
-            number(now),
-        ])?)
-}
-
 fn block_statement(
     db: &D1Database,
     report: &MachineReport,
     payload_hash: &[u8],
     compressed_payload: &[u8],
-    payload_hash: &[u8],
 ) -> Result<worker::D1PreparedStatement, IngestError> {
     let slot = report_slot(report.nominal_minute_ms);
     let report_column = format!("report_{slot}");
@@ -1045,6 +1131,7 @@ async fn durable_ack(
     keys: &DirectionalKeys,
     nonce_prefix: [u8; 4],
     compressed_payload: &[u8],
+    payload_hash: &[u8],
     duplicate: bool,
     config: Option<AgentConfigSnapshot>,
     commands: Vec<AgentCommand>,
@@ -1067,13 +1154,7 @@ async fn durable_ack(
     } else {
         None
     };
-    let mut statements = vec![replay_statement(
-        telemetry_db,
-        agent_id,
-        header.key_epoch,
-        header.sequence,
-        now,
-    )?];
+    let mut statements = Vec::new();
     if !duplicate {
         statements.push(block_statement(
             telemetry_db,
@@ -1097,7 +1178,9 @@ async fn durable_ack(
         )?);
         statements.extend(closed_rollups(telemetry_db, report).await?);
     }
-    telemetry_db.batch(statements).await?;
+    if !statements.is_empty() {
+        telemetry_db.batch(statements).await?;
+    }
     limit_previous_key_overlap(control_db, agent_id, header.key_epoch, now).await?;
     if report.applied_config_revision > agent_key.applied_config_revision as u64 {
         control_db
@@ -1191,18 +1274,13 @@ async fn handle_report(mut request: Request, env: Env) -> Result<Response, Inges
     if !is_protobuf_content_type(request.headers().get("content-type")?.as_deref()) {
         return Err(IngestError::UnsupportedMediaType);
     }
-    if request
-        .headers()
-        .get("content-length")?
-        .and_then(|value| value.parse::<usize>().ok())
-        .is_some_and(|length| length > MAX_ENVELOPE_BYTES)
-    {
-        return Err(IngestError::BadRequest);
-    }
-    let body = request.bytes().await?;
-    if body.len() > MAX_ENVELOPE_BYTES {
-        return Err(IngestError::BadRequest);
-    }
+    enforce_rate_limit(
+        &env,
+        "REPORT_EDGE_RATE_LIMITER",
+        request_ip_rate_key(&request)?,
+    )
+    .await?;
+    let body = read_bounded_body(&mut request, MAX_ENVELOPE_BYTES).await?;
     let envelope: EncryptedEnvelope = decode_message(&body).map_err(|_| IngestError::BadRequest)?;
     let header = envelope.header.ok_or(IngestError::BadRequest)?;
     if header.protocol_version != PROTOCOL_VERSION
@@ -1213,14 +1291,28 @@ async fn handle_report(mut request: Request, env: Env) -> Result<Response, Inges
         return Err(IngestError::Unauthorized);
     }
     let agent_id = std::str::from_utf8(&header.agent_id).map_err(|_| IngestError::Unauthorized)?;
+    enforce_rate_limit(
+        &env,
+        "REPORT_AGENT_RATE_LIMITER",
+        format!("agent:{agent_id}"),
+    )
+    .await?;
     let control_db = env.d1("CONTROL_DB")?;
     let telemetry_db = env.d1("TELEMETRY_DB")?;
     let agent_key = load_agent_key(&control_db, agent_id, header.key_epoch).await?;
     let now = now_ms();
+    enforce_rate_limit(
+        &env,
+        "REPORT_WORKSPACE_RATE_LIMITER",
+        format!("workspace:{}", agent_key.workspace_id),
+    )
+    .await?;
     if now < agent_key.valid_from as i64 || now > agent_key.valid_until as i64 {
         return Err(IngestError::Unauthorized);
     }
-    check_replay(&telemetry_db, agent_id, header.key_epoch, header.sequence).await?;
+    if now < agent_key.auth_cooldown_until as i64 {
+        return Err(IngestError::Unauthorized);
+    }
     if agent_key.wrapped_data_key.len() < 13 || agent_key.nonce_prefix.len() != 4 {
         return Err(IngestError::Unauthorized);
     }
@@ -1243,14 +1335,19 @@ async fn handle_report(mut request: Request, env: Env) -> Result<Response, Inges
     let keys = DirectionalKeys::derive(&root_key, &header.agent_id, header.key_epoch)
         .map_err(|_| IngestError::Unauthorized)?;
     let aad = encode_message(&header);
-    let compressed_payload = open(
+    let compressed_payload = match open(
         &keys.client_to_server,
         nonce_prefix,
         header.sequence,
         &aad,
         &envelope.ciphertext,
-    )
-    .map_err(|_| IngestError::Unauthorized)?;
+    ) {
+        Ok(payload) => payload,
+        Err(_) => {
+            record_aead_failure(&env, &control_db, agent_id, now).await?;
+            return Err(IngestError::Unauthorized);
+        }
+    };
     let report: MachineReport =
         decompress_message(&compressed_payload).map_err(|_| IngestError::BadRequest)?;
     validate_report(
@@ -1267,6 +1364,14 @@ async fn handle_report(mut request: Request, env: Env) -> Result<Response, Inges
     {
         return Err(IngestError::BadRequest);
     }
+    claim_replay(
+        &telemetry_db,
+        agent_id,
+        header.key_epoch,
+        header.sequence,
+        now,
+    )
+    .await?;
     if let Some(inventory) = &report.container_inventory {
         sync_container_catalog(&control_db, &agent_key, inventory, now).await?;
     }
@@ -1327,6 +1432,11 @@ fn error_response(error: IngestError) -> WorkerResult<Response> {
     match error {
         IngestError::BadRequest => Response::error("Bad request", 400),
         IngestError::UnsupportedMediaType => Response::error("Unsupported media type", 415),
+        IngestError::RateLimited => {
+            let mut response = Response::error("Too many requests", 429)?;
+            response.headers_mut().set("retry-after", "60")?;
+            Ok(response)
+        }
         IngestError::Unauthorized => Response::error("Not found", 404),
         IngestError::Conflict => Response::error("Conflict", 409),
         IngestError::Internal(error) => Err(error),

@@ -29,6 +29,19 @@ pub fn is_protobuf_content_type(value: Option<&str>) -> bool {
     value.is_some_and(|value| value.eq_ignore_ascii_case("application/x-protobuf"))
 }
 
+pub fn client_ip_rate_key(value: Option<&str>) -> String {
+    let value = value
+        .filter(|value| {
+            !value.is_empty()
+                && value.len() <= 64
+                && value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_hexdigit() || matches!(byte, b'.' | b':'))
+        })
+        .unwrap_or("unknown");
+    format!("ip:{value}")
+}
+
 fn bounded_system_text(value: &str, maximum: usize) -> bool {
     value.len() <= maximum && value.chars().all(|character| !character.is_control())
 }
@@ -349,9 +362,9 @@ mod tests {
     use ed25519_dalek::{Signer, SigningKey};
 
     use super::{
-        EnrollmentValidationError, MachineHealthState, ValidationError, enrollment_token_digest,
-        is_protobuf_content_type, machine_health_state, validate_enrollment_request,
-        validate_report,
+        EnrollmentValidationError, MachineHealthState, ValidationError, client_ip_rate_key,
+        enrollment_token_digest, is_protobuf_content_type, machine_health_state,
+        validate_enrollment_request, validate_report,
     };
 
     #[test]
@@ -363,6 +376,15 @@ mod tests {
         assert!(!is_protobuf_content_type(Some(
             "application/x-protobuf; charset=utf-8"
         )));
+    }
+
+    #[test]
+    fn client_ip_rate_keys_are_bounded_and_canonical() {
+        assert_eq!(client_ip_rate_key(Some("203.0.113.8")), "ip:203.0.113.8");
+        assert_eq!(client_ip_rate_key(Some("2001:db8::1")), "ip:2001:db8::1");
+        assert_eq!(client_ip_rate_key(None), "ip:unknown");
+        assert_eq!(client_ip_rate_key(Some("203.0.113.8:forged")), "ip:unknown");
+        assert_eq!(client_ip_rate_key(Some(&"1".repeat(65))), "ip:unknown");
     }
 
     #[test]

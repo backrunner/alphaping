@@ -1,0 +1,1 @@
+ALTER TABLE agents ADD COLUMN auth_cooldown_until INTEGER NOT NULL DEFAULT 0;

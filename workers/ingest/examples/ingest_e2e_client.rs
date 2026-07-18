@@ -434,6 +434,26 @@ async fn verify_rotation_activation(
     {
         return Err(invalid_data("rotated key report did not activate the new epoch").into());
     }
+    for sequence in [100, 99] {
+        let envelope = codec.encode_report(sequence, now_ms()?, &report.report_id, &payload)?;
+        let response = post_protobuf(client, &endpoint, envelope).await?;
+        if response.status() != StatusCode::OK {
+            return Err(
+                invalid_data("rotated epoch replay window rejected a valid sequence").into(),
+            );
+        }
+        codec.decode_ack(
+            &response.bytes().await?,
+            sequence,
+            &report.report_id,
+            blake3::hash(&payload).as_bytes(),
+        )?;
+    }
+    let stale = codec.encode_report(37, now_ms()?, &report.report_id, &payload)?;
+    let response = post_protobuf(client, &endpoint, stale).await?;
+    if response.status() != StatusCode::NOT_FOUND {
+        return Err(invalid_data("sequence outside the replay window was accepted").into());
+    }
     println!("Ingest accepted the rotated key epoch and committed its report");
     Ok(())
 }
@@ -688,6 +708,33 @@ async fn main() -> Result<(), Box<dyn Error>> {
     )?;
     if AckStatus::try_from(acknowledgement.status)? != AckStatus::Committed {
         return Err(invalid_data("threshold report was not committed").into());
+    }
+
+    for sequence in [50, 49] {
+        let envelope = codec.encode_report(sequence, now_ms()?, &report_id, &compressed)?;
+        let response = post_protobuf(&client, &reports_endpoint, envelope).await?;
+        if response.status() != StatusCode::OK {
+            return Err(invalid_data("out-of-order transport sequence was rejected").into());
+        }
+        let acknowledgement = codec.decode_ack(
+            &response.bytes().await?,
+            sequence,
+            &report_id,
+            blake3::hash(&compressed).as_bytes(),
+        )?;
+        if AckStatus::try_from(acknowledgement.status)? != AckStatus::Duplicate {
+            return Err(invalid_data("out-of-order report did not receive a duplicate ACK").into());
+        }
+    }
+    let concurrent = codec.encode_report(48, now_ms()?, &report_id, &compressed)?;
+    let (left, right) = tokio::join!(
+        post_protobuf(&client, &reports_endpoint, concurrent.clone()),
+        post_protobuf(&client, &reports_endpoint, concurrent),
+    );
+    let mut statuses = [left?.status(), right?.status()];
+    statuses.sort();
+    if statuses != [StatusCode::OK, StatusCode::NOT_FOUND] {
+        return Err(invalid_data("concurrent replay claim was not atomic").into());
     }
 
     let replay = post_protobuf(&client, &reports_endpoint, first_envelope).await?;

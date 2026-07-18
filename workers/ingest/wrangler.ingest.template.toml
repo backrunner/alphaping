@@ -12,6 +12,41 @@ head_sampling_rate = 0.1
 [vars]
 LIVE_ORIGIN = "wss://live.example.com"
 
+[[ratelimits]]
+name = "ENROLLMENT_RATE_LIMITER"
+namespace_id = "1001"
+[ratelimits.simple]
+limit = 30
+period = 60
+
+[[ratelimits]]
+name = "REPORT_EDGE_RATE_LIMITER"
+namespace_id = "1002"
+[ratelimits.simple]
+limit = 12000
+period = 60
+
+[[ratelimits]]
+name = "REPORT_AGENT_RATE_LIMITER"
+namespace_id = "1003"
+[ratelimits.simple]
+limit = 120
+period = 60
+
+[[ratelimits]]
+name = "REPORT_WORKSPACE_RATE_LIMITER"
+namespace_id = "1004"
+[ratelimits.simple]
+limit = 6000
+period = 60
+
+[[ratelimits]]
+name = "AEAD_FAILURE_RATE_LIMITER"
+namespace_id = "1005"
+[ratelimits.simple]
+limit = 5
+period = 60
+
 [[d1_databases]]
 binding = "CONTROL_DB"
 database_name = "alphaping-control-template"
@@ -27,6 +62,41 @@ name = "alphaping-ingest-production"
 
 [env.production.vars]
 LIVE_ORIGIN = "wss://live.example.com"
+
+[[env.production.ratelimits]]
+name = "ENROLLMENT_RATE_LIMITER"
+namespace_id = "1001"
+[env.production.ratelimits.simple]
+limit = 30
+period = 60
+
+[[env.production.ratelimits]]
+name = "REPORT_EDGE_RATE_LIMITER"
+namespace_id = "1002"
+[env.production.ratelimits.simple]
+limit = 12000
+period = 60
+
+[[env.production.ratelimits]]
+name = "REPORT_AGENT_RATE_LIMITER"
+namespace_id = "1003"
+[env.production.ratelimits.simple]
+limit = 120
+period = 60
+
+[[env.production.ratelimits]]
+name = "REPORT_WORKSPACE_RATE_LIMITER"
+namespace_id = "1004"
+[env.production.ratelimits.simple]
+limit = 6000
+period = 60
+
+[[env.production.ratelimits]]
+name = "AEAD_FAILURE_RATE_LIMITER"
+namespace_id = "1005"
+[env.production.ratelimits.simple]
+limit = 5
+period = 60
 
 [[env.production.d1_databases]]
 binding = "CONTROL_DB"
