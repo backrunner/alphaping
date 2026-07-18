@@ -182,14 +182,32 @@ function advanceAgentConfigurationStatement(
   machineId: string,
   now: number,
   capacity?: AgentCapacityInput,
+  expectedCheckRevision?: { checkId: string; configRevision: number },
 ): D1PreparedStatement {
   return db
     .prepare(
       `UPDATE machines SET desired_config_revision = desired_config_revision + 1, updated_at = ?
        WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL
+       ${
+         expectedCheckRevision
+           ? `AND EXISTS (
+                SELECT 1 FROM check_configs current
+                WHERE current.id = ? AND current.workspace_id = ?
+                  AND current.config_revision = ?
+              )`
+           : ""
+       }
        ${capacity ? AGENT_CAPACITY_CONDITION : ""}`,
     )
-    .bind(now, machineId, workspaceId, ...(capacity ? agentCapacityBindings(capacity) : []));
+    .bind(
+      now,
+      machineId,
+      workspaceId,
+      ...(expectedCheckRevision
+        ? [expectedCheckRevision.checkId, workspaceId, expectedCheckRevision.configRevision]
+        : []),
+      ...(capacity ? agentCapacityBindings(capacity) : []),
+    );
 }
 
 function boundedPolicyInteger(
@@ -638,6 +656,7 @@ interface CheckPolicyRow {
 }
 
 interface CheckConfigurationEditRow extends CheckPolicyRow {
+  config_revision: number;
   name: string;
   kind: "http" | "tcp" | "icmp";
   request_json: string;
@@ -695,7 +714,7 @@ export async function replaceServiceCheckConfiguration(
   const row = await controlDb
     .prepare(
       `SELECT c.id, c.telemetry_pk, c.name, c.kind, c.executor_kind, c.executor_agent_id,
-              c.enabled, c.interval_seconds, c.timeout_ms, c.retry_count, c.critical,
+              c.config_revision, c.enabled, c.interval_seconds, c.timeout_ms, c.retry_count, c.critical,
               c.failure_confirmations, c.recovery_confirmations, c.request_json,
               c.secret_refs_json, c.config_bytes, c.assignment_revision,
               s.telemetry_pk AS service_telemetry_pk, s.name AS service_name,
@@ -818,6 +837,27 @@ export async function replaceServiceCheckConfiguration(
     reasonCode: "check_configuration",
     updatedAt: now,
   });
+  const audit = await prepareAuditStatement(controlDb, {
+    workspaceId: access.workspaceId,
+    actorUserId: userId,
+    action: "service.check.configuration.replace",
+    resourceType: "service",
+    resourceId: serviceId,
+    before: {
+      checkId,
+      checkName: row.name,
+      request: row.request_json,
+      secretCount: oldSecretIds.length,
+    },
+    after: {
+      checkId,
+      checkName,
+      request: JSON.stringify(finalCompiled.request),
+      secretCount: referencedSecretIds(JSON.stringify(finalCompiled.secretRefs)).length,
+    },
+    now,
+    onlyIfPreviousStatementChanged: true,
+  });
   const mutationIndex = agentMachineId ? 1 : 0;
   const statements: D1PreparedStatement[] = [
     ...(agentMachineId
@@ -828,6 +868,7 @@ export async function replaceServiceCheckConfiguration(
             agentMachineId,
             now,
             capacity ?? undefined,
+            { checkId, configRevision: row.config_revision },
           ),
         ]
       : []),
@@ -840,7 +881,7 @@ export async function replaceServiceCheckConfiguration(
              WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL
              ${AGENT_CAPACITY_CONDITION}
            ) END, updated_at = ?
-         WHERE id = ? AND service_id = ? AND workspace_id = ?`,
+         WHERE id = ? AND service_id = ? AND workspace_id = ? AND config_revision = ?`,
       )
       .bind(
         checkName,
@@ -857,9 +898,19 @@ export async function replaceServiceCheckConfiguration(
         checkId,
         serviceId,
         access.workspaceId,
+        row.config_revision,
       ),
     prepareServiceStateSyncJob(controlDb, syncJob, true),
-    controlDb.prepare(`DELETE FROM check_assertions WHERE check_id = ?`).bind(checkId),
+    audit,
+    controlDb
+      .prepare(
+        `DELETE FROM check_assertions WHERE check_id = ?
+         AND EXISTS (
+           SELECT 1 FROM service_state_sync_jobs
+           WHERE job_key = ? AND sync_token = ?
+         )`,
+      )
+      .bind(checkId, syncJob.jobKey, syncJob.syncToken),
   ];
   for (const [index, assertion] of finalCompiled.assertions.entries()) {
     statements.push(
@@ -867,7 +918,11 @@ export async function replaceServiceCheckConfiguration(
         .prepare(
           `INSERT INTO check_assertions
             (id, check_id, sort_order, source, operator, selector, expected_json, severity, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+           WHERE EXISTS (
+             SELECT 1 FROM service_state_sync_jobs
+             WHERE job_key = ? AND sync_token = ?
+           )`,
         )
         .bind(
           crypto.randomUUID(),
@@ -879,6 +934,8 @@ export async function replaceServiceCheckConfiguration(
           JSON.stringify(assertion.expected),
           assertion.severity,
           now,
+          syncJob.jobKey,
+          syncJob.syncToken,
         ),
     );
   }
@@ -887,9 +944,13 @@ export async function replaceServiceCheckConfiguration(
       controlDb
         .prepare(
           `DELETE FROM check_secrets WHERE workspace_id = ?
-           AND id IN (${oldSecretIds.map(() => "?").join(", ")})`,
+           AND id IN (${oldSecretIds.map(() => "?").join(", ")})
+           AND EXISTS (
+             SELECT 1 FROM service_state_sync_jobs
+             WHERE job_key = ? AND sync_token = ?
+           )`,
         )
-        .bind(access.workspaceId, ...oldSecretIds),
+        .bind(access.workspaceId, ...oldSecretIds, syncJob.jobKey, syncJob.syncToken),
     );
   }
   for (const secret of finalCompiled.secrets) {
@@ -898,33 +959,24 @@ export async function replaceServiceCheckConfiguration(
         .prepare(
           `INSERT INTO check_secrets
             (id, workspace_id, name, wrapped_value, wrapping_key_id, nonce, created_at)
-           VALUES (?, ?, ?, ?, 'v1', ?, ?)`,
+           SELECT ?, ?, ?, ?, 'v1', ?, ?
+           WHERE EXISTS (
+             SELECT 1 FROM service_state_sync_jobs
+             WHERE job_key = ? AND sync_token = ?
+           )`,
         )
-        .bind(secret.id, access.workspaceId, secret.name, secret.wrappedValue, secret.nonce, now),
+        .bind(
+          secret.id,
+          access.workspaceId,
+          secret.name,
+          secret.wrappedValue,
+          secret.nonce,
+          now,
+          syncJob.jobKey,
+          syncJob.syncToken,
+        ),
     );
   }
-  statements.push(
-    await prepareAuditStatement(controlDb, {
-      workspaceId: access.workspaceId,
-      actorUserId: userId,
-      action: "service.check.configuration.replace",
-      resourceType: "service",
-      resourceId: serviceId,
-      before: {
-        checkId,
-        checkName: row.name,
-        request: row.request_json,
-        secretCount: oldSecretIds.length,
-      },
-      after: {
-        checkId,
-        checkName,
-        request: JSON.stringify(finalCompiled.request),
-        secretCount: referencedSecretIds(JSON.stringify(finalCompiled.secretRefs)).length,
-      },
-      now,
-    }),
-  );
   let results: D1Result[];
   try {
     results = await controlDb.batch(statements);

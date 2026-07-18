@@ -29,6 +29,7 @@ import {
   setServicePublicAccess,
   updateServiceCheckPolicy,
 } from "./service-config.js";
+import { compileServiceConfig, type CompiledServiceConfig } from "./service-config-compiler.js";
 import { loadMonitoringAccess } from "./monitoring-access.js";
 
 const input = {
@@ -195,7 +196,11 @@ beforeEach(async () => {
       `CREATE TABLE check_secrets (
         id TEXT PRIMARY KEY,
         workspace_id TEXT NOT NULL,
-        wrapped_value BLOB NOT NULL
+        name TEXT NOT NULL,
+        wrapped_value BLOB NOT NULL,
+        wrapping_key_id TEXT NOT NULL,
+        nonce BLOB NOT NULL,
+        created_at INTEGER NOT NULL
       )`,
     ),
     database.prepare(
@@ -439,6 +444,38 @@ function synchronizeAgentSnapshots(db: D1Database, expectedReads: number): D1Dat
       };
     },
   });
+}
+
+function pauseNextBatch(db: D1Database): {
+  db: D1Database;
+  reached: Promise<void>;
+  release: () => void;
+} {
+  let markReached: (() => void) | undefined;
+  let releaseBatch: (() => void) | undefined;
+  const reached = new Promise<void>((resolve) => {
+    markReached = resolve;
+  });
+  const blocked = new Promise<void>((resolve) => {
+    releaseBatch = resolve;
+  });
+  return {
+    db: new Proxy(db, {
+      get(target, property) {
+        if (property !== "batch") {
+          const value = Reflect.get(target, property);
+          return typeof value === "function" ? value.bind(target) : value;
+        }
+        return async (statements: D1PreparedStatement[]) => {
+          markReached?.();
+          await blocked;
+          return target.batch(statements);
+        };
+      },
+    }),
+    reached,
+    release: () => releaseBatch?.(),
+  };
 }
 
 async function seedAgentChecks(count: number, configBytes: number): Promise<void> {
@@ -731,6 +768,158 @@ describe("Agent check configuration revision", () => {
 });
 
 describe("service check invariants", () => {
+  it("rejects a stale target replacement without mixing its assertions or secrets", async () => {
+    await seedServiceChecks();
+    await assignCheckToAgent("check-a");
+    setMemberAccess("manage");
+    const oldReferences = {
+      headers: { authorization: "secret-old" },
+      body: null,
+      tcpPayload: null,
+    };
+    await database.batch([
+      database
+        .prepare(
+          "UPDATE check_configs SET request_json = ?, secret_refs_json = ? WHERE id = 'check-a'",
+        )
+        .bind(
+          JSON.stringify({ kind: "http", url: "https://old.example.test" }),
+          JSON.stringify(oldReferences),
+        ),
+      database.prepare(
+        `INSERT INTO check_assertions
+          (id, check_id, sort_order, source, operator, selector, expected_json, severity, created_at)
+         VALUES ('assertion-old', 'check-a', 0, 'status', 'equals', NULL, '200', 'down', 1)`,
+      ),
+      database
+        .prepare(
+          `INSERT INTO check_secrets
+            (id, workspace_id, name, wrapped_value, wrapping_key_id, nonce, created_at)
+           VALUES ('secret-old', 'workspace-1', 'Authorization', ?, 'v1', ?, 1)`,
+        )
+        .bind(new Uint8Array([1]).buffer, new Uint8Array([2]).buffer),
+    ]);
+    const preserved: CompiledServiceConfig = {
+      request: { kind: "http", url: "https://stale.example.test" },
+      assertions: [
+        {
+          source: "body",
+          operator: "contains",
+          selector: null,
+          expected: "stale",
+          severity: "down",
+        },
+      ],
+      secretRefs: { headers: {}, body: null, tcpPayload: null },
+      secrets: [],
+    };
+    const replacement: CompiledServiceConfig = {
+      request: { kind: "http", url: "https://current.example.test" },
+      assertions: [
+        {
+          source: "body",
+          operator: "contains",
+          selector: null,
+          expected: "current",
+          severity: "down",
+        },
+      ],
+      secretRefs: {
+        headers: { authorization: "secret-current" },
+        body: null,
+        tcpPayload: null,
+      },
+      secrets: [
+        {
+          id: "secret-current",
+          name: "Authorization",
+          wrappedValue: new Uint8Array([3]).buffer,
+          nonce: new Uint8Array([4]).buffer,
+        },
+      ],
+    };
+    vi.mocked(compileServiceConfig)
+      .mockResolvedValueOnce(preserved)
+      .mockResolvedValueOnce(replacement);
+    const paused = pauseNextBatch(database);
+    const staleReplacement = replaceServiceCheckConfiguration(
+      paused.db,
+      telemetryDatabase,
+      "operations",
+      "user-1",
+      "unused",
+      "service-1",
+      "check-a",
+      {
+        ...input,
+        checkName: "Stale target",
+        retryCount: 0,
+        replaceSecrets: false,
+      },
+    );
+    await paused.reached;
+    await expect(
+      replaceServiceCheckConfiguration(
+        database,
+        telemetryDatabase,
+        "operations",
+        "user-1",
+        "unused",
+        "service-1",
+        "check-a",
+        {
+          ...input,
+          checkName: "Current target",
+          retryCount: 0,
+          secretRequestHeaders: "Authorization: replacement",
+          replaceSecrets: true,
+        },
+      ),
+    ).resolves.toBeUndefined();
+    paused.release();
+    await expect(staleReplacement).rejects.toMatchObject({ status: 409 });
+
+    await expect(
+      first<{
+        name: string;
+        request_json: string;
+        secret_refs_json: string;
+        config_revision: number;
+        assignment_revision: number;
+      }>(
+        `SELECT name, request_json, secret_refs_json, config_revision, assignment_revision
+         FROM check_configs WHERE id = 'check-a'`,
+      ),
+    ).resolves.toEqual({
+      name: "Current target",
+      request_json: JSON.stringify(replacement.request),
+      secret_refs_json: JSON.stringify(replacement.secretRefs),
+      config_revision: 2,
+      assignment_revision: 2,
+    });
+    await expect(
+      first<{ revision: number }>(
+        "SELECT desired_config_revision AS revision FROM machines WHERE id = 'machine-1'",
+      ),
+    ).resolves.toEqual({ revision: 2 });
+    await expect(
+      database
+        .prepare(
+          `SELECT source, operator, expected_json FROM check_assertions
+           WHERE check_id = 'check-a' ORDER BY sort_order`,
+        )
+        .all(),
+    ).resolves.toMatchObject({
+      results: [{ source: "body", operator: "contains", expected_json: '"current"' }],
+    });
+    await expect(
+      database.prepare("SELECT id FROM check_secrets ORDER BY id").all(),
+    ).resolves.toMatchObject({ results: [{ id: "secret-current" }] });
+    await expect(
+      first<{ count: number }>("SELECT COUNT(*) AS count FROM audit_logs"),
+    ).resolves.toEqual({ count: 1 });
+  });
+
   it("prevents concurrent policy updates from disabling every check", async () => {
     await seedServiceChecks();
     const synchronized = synchronizeCheckCounts(database, 2);
