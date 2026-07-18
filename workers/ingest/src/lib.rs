@@ -42,6 +42,10 @@ pub fn client_ip_rate_key(value: Option<&str>) -> String {
     format!("ip:{value}")
 }
 
+pub fn within_clock_skew(now_ms: i64, sent_at_ms: i64, maximum_skew_ms: u64) -> bool {
+    now_ms.abs_diff(sent_at_ms) <= maximum_skew_ms
+}
+
 fn bounded_system_text(value: &str, maximum: usize) -> bool {
     value.len() <= maximum && value.chars().all(|character| !character.is_control())
 }
@@ -364,7 +368,7 @@ mod tests {
     use super::{
         EnrollmentValidationError, MachineHealthState, ValidationError, client_ip_rate_key,
         enrollment_token_digest, is_protobuf_content_type, machine_health_state,
-        validate_enrollment_request, validate_report,
+        validate_enrollment_request, validate_report, within_clock_skew,
     };
 
     #[test]
@@ -385,6 +389,15 @@ mod tests {
         assert_eq!(client_ip_rate_key(None), "ip:unknown");
         assert_eq!(client_ip_rate_key(Some("203.0.113.8:forged")), "ip:unknown");
         assert_eq!(client_ip_rate_key(Some(&"1".repeat(65))), "ip:unknown");
+    }
+
+    #[test]
+    fn clock_skew_validation_cannot_overflow() {
+        assert!(within_clock_skew(1_000, 301_000, 300_000));
+        assert!(within_clock_skew(1_000, -299_000, 300_000));
+        assert!(!within_clock_skew(1_000, 301_001, 300_000));
+        assert!(!within_clock_skew(0, i64::MIN, 300_000));
+        assert!(!within_clock_skew(i64::MAX, i64::MIN, 300_000));
     }
 
     #[test]

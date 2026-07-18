@@ -21,7 +21,7 @@ use crate::{
     check_results::{ProbePersistenceError, persist_probe_results},
     client_ip_rate_key, enrollment_token_digest, is_protobuf_content_type,
     live_session::issue_live_session,
-    machine_health_state, validate_enrollment_request, validate_report,
+    machine_health_state, validate_enrollment_request, validate_report, within_clock_skew,
 };
 
 const MAX_CLOCK_SKEW_MS: i64 = 5 * 60_000;
@@ -1286,7 +1286,7 @@ async fn handle_report(mut request: Request, env: Env) -> Result<Response, Inges
     if header.protocol_version != PROTOCOL_VERSION
         || header.sequence == 0
         || header.sequence > MAX_SAFE_SEQUENCE
-        || (now_ms() - header.sent_at_ms).abs() > MAX_CLOCK_SKEW_MS
+        || !within_clock_skew(now_ms(), header.sent_at_ms, MAX_CLOCK_SKEW_MS as u64)
     {
         return Err(IngestError::Unauthorized);
     }
