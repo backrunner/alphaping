@@ -267,12 +267,18 @@ export async function loadPublicStatusPage(
       );
     }
   }
+  const bucketsByService = new Map<number, PublicStatusBucketRow[]>();
+  for (const bucket of buckets) {
+    const serviceBuckets = bucketsByService.get(bucket.resource_pk) ?? [];
+    serviceBuckets.push(bucket);
+    bucketsByService.set(bucket.resource_pk, serviceBuckets);
+  }
   const publicServices = services.map((service) =>
     projectPublicStatusService({
       service,
       latest: latestByService.get(service.telemetry_pk),
       lastCheckedAt: lastCheckedByService.get(service.id) ?? null,
-      buckets,
+      buckets: bucketsByService.get(service.telemetry_pk) ?? [],
       now,
     }),
   );

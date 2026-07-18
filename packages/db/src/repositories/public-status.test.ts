@@ -38,6 +38,69 @@ describe("public status projection", () => {
     }
   });
 
+  it("aggregates each service timeline in one pass without mixing resources", () => {
+    const halfHourMs = 30 * 60_000;
+    const fiveMinutesMs = 5 * 60_000;
+    const timelineStart = halfHourMs;
+    const projected = projectPublicStatusService({
+      service: {
+        id: "service-7",
+        telemetry_pk: 7,
+        name: "Public API",
+        slug: "public-api",
+        description: "Customer API",
+        projection_profile: "summary",
+      },
+      latest: undefined,
+      lastCheckedAt: null,
+      buckets: [
+        {
+          resource_pk: 7,
+          bucket_start: timelineStart,
+          state: "healthy",
+          availability_permille: 1_000,
+          latency_avg_ms: 10,
+          summary_code: "healthy",
+        },
+        {
+          resource_pk: 8,
+          bucket_start: timelineStart,
+          state: "down",
+          availability_permille: 0,
+          latency_avg_ms: 999,
+          summary_code: "other-service-down",
+        },
+        {
+          resource_pk: 7,
+          bucket_start: timelineStart + fiveMinutesMs,
+          state: "degraded",
+          availability_permille: 800,
+          latency_avg_ms: 30,
+          summary_code: "latency-warning",
+        },
+        {
+          resource_pk: 7,
+          bucket_start: timelineStart + 2 * fiveMinutesMs,
+          state: "degraded",
+          availability_permille: 900,
+          latency_avg_ms: null,
+          summary_code: "later-warning",
+        },
+      ],
+      now: 24 * 60 * 60_000 + halfHourMs / 2,
+    });
+
+    expect(projected.availability24hPermille).toBe(900);
+    expect(projected.timeline[0]).toEqual({
+      bucketStart: timelineStart,
+      state: "degraded",
+      availabilityPermille: 900,
+      latencyMs: 20,
+      summaryCode: "latency-warning",
+    });
+    expect(projected.timeline[1]?.state).toBe("unknown");
+  });
+
   it("projects only explicitly public machine and container fields", () => {
     const projected = projectPublicStatusMachine({
       machine: {

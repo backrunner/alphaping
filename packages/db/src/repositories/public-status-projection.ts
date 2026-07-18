@@ -169,36 +169,45 @@ function buildTimeline(
   const count = 48;
   const end = Math.floor(now / bucketMs) * bucketMs + bucketMs;
   const start = end - count * bucketMs;
-  return Array.from({ length: count }, (_, index) => {
-    const bucketStart = start + index * bucketMs;
-    const rows = buckets.filter(
-      (row) =>
-        row.resource_pk === servicePk &&
-        row.bucket_start >= bucketStart &&
-        row.bucket_start < bucketStart + bucketMs,
-    );
-    const state = rows.reduce<MonitorState>((worst, row) => {
-      const candidate = normalizeState(row.state);
-      return stateRank(candidate) > stateRank(worst) ? candidate : worst;
-    }, "unknown");
-    const availability =
-      rows.length === 0
+  const timeline = Array.from({ length: count }, (_, index) => ({
+    bucketStart: start + index * bucketMs,
+    hasRows: false,
+    state: "unknown" as MonitorState,
+    availabilityTotal: 0,
+    availabilityCount: 0,
+    latencyTotal: 0,
+    latencyCount: 0,
+    summaryCode: null as string | null,
+  }));
+  for (const row of buckets) {
+    if (row.resource_pk !== servicePk) continue;
+    const index = Math.floor((row.bucket_start - start) / bucketMs);
+    const bucket = timeline[index];
+    if (!bucket || row.bucket_start >= end) continue;
+    const candidate = normalizeState(row.state);
+    if (!bucket.hasRows || stateRank(candidate) > stateRank(bucket.state)) {
+      bucket.state = candidate;
+      bucket.summaryCode = row.summary_code;
+    }
+    bucket.hasRows = true;
+    bucket.availabilityTotal += row.availability_permille;
+    bucket.availabilityCount += 1;
+    if (row.latency_avg_ms !== null) {
+      bucket.latencyTotal += row.latency_avg_ms;
+      bucket.latencyCount += 1;
+    }
+  }
+  return timeline.map((bucket) => ({
+    bucketStart: bucket.bucketStart,
+    state: bucket.state,
+    availabilityPermille:
+      bucket.availabilityCount === 0
         ? null
-        : Math.round(rows.reduce((sum, row) => sum + row.availability_permille, 0) / rows.length);
-    const latencyRows = rows.flatMap((row) =>
-      row.latency_avg_ms === null ? [] : [row.latency_avg_ms],
-    );
-    return {
-      bucketStart,
-      state,
-      availabilityPermille: availability,
-      latencyMs:
-        latencyRows.length === 0
-          ? null
-          : Math.round(latencyRows.reduce((sum, value) => sum + value, 0) / latencyRows.length),
-      summaryCode: rows.find((row) => normalizeState(row.state) === state)?.summary_code ?? null,
-    };
-  });
+        : Math.round(bucket.availabilityTotal / bucket.availabilityCount),
+    latencyMs:
+      bucket.latencyCount === 0 ? null : Math.round(bucket.latencyTotal / bucket.latencyCount),
+    summaryCode: bucket.summaryCode,
+  }));
 }
 
 export function projectPublicStatusService(input: {
@@ -225,6 +234,6 @@ export function projectPublicStatusService(input: {
             serviceBuckets.reduce((sum, row) => sum + row.availability_permille, 0) /
               serviceBuckets.length,
           ),
-    timeline: buildTimeline(input.service.telemetry_pk, input.buckets, input.now),
+    timeline: buildTimeline(input.service.telemetry_pk, serviceBuckets, input.now),
   };
 }
