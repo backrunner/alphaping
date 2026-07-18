@@ -1,7 +1,12 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { ARTIFACT_EXPIRY_METADATA, cleanArtifactBucket } from "./artifact-retention";
+import {
+  acquirePrefixLease,
+  ARTIFACT_EXPIRY_METADATA,
+  cleanArtifactBucket,
+  releasePrefixLease,
+} from "./artifact-retention";
 
 const NOW = 1_752_580_800_000;
 
@@ -87,6 +92,36 @@ describe("R2 artifact retention", () => {
       scanned: 0,
       deleted: 0,
       skippedPrefixes: 1,
+    });
+  });
+
+  it("prevents a stale lease holder from overwriting a replacement cursor", async () => {
+    const first = await acquirePrefixLease(env.TELEMETRY_DB, "exports/v1/", NOW);
+    if (!first) throw new Error("missing first artifact lease");
+    const replacementLeaseUntil = first.leaseUntil + 5 * 60_000;
+    await env.TELEMETRY_DB.prepare(
+      `UPDATE artifact_retention_cursors
+       SET last_key = 'exports/v1/replacement', lease_until = ?
+       WHERE prefix = 'exports/v1/'`,
+    )
+      .bind(replacementLeaseUntil)
+      .run();
+
+    await expect(
+      releasePrefixLease(
+        env.TELEMETRY_DB,
+        "exports/v1/",
+        "exports/v1/stale",
+        first.leaseUntil,
+        NOW + 1,
+      ),
+    ).rejects.toThrow("artifact_retention_lease_lost");
+    const cursor = await env.TELEMETRY_DB.prepare(
+      "SELECT last_key, lease_until FROM artifact_retention_cursors WHERE prefix = 'exports/v1/'",
+    ).first<{ last_key: string; lease_until: number }>();
+    expect(cursor).toEqual({
+      last_key: "exports/v1/replacement",
+      lease_until: replacementLeaseUntil,
     });
   });
 });
