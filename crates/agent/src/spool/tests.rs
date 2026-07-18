@@ -41,6 +41,105 @@ fn ack_is_the_only_path_that_removes_a_delivery() {
 }
 
 #[test]
+fn more_than_24_hours_of_deliveries_survive_restart_and_recover_in_order() {
+    const MINUTES: i64 = 24 * 60 + 1;
+    const SAMPLES_PER_MINUTE: i64 = 6;
+    const MINUTE_MS: i64 = 60_000;
+    const SAMPLE_INTERVAL_MS: i64 = 10_000;
+
+    let directory = tempdir().expect("temp directory");
+    let path = directory.path().join("spool.db");
+    let first_minute = MINUTE_MS;
+    let report_cutoff = (MINUTES + 1) * MINUTE_MS;
+    let retry_at = report_cutoff + 300_000;
+    let mut report_ids = Vec::with_capacity(usize::try_from(MINUTES).expect("minute count"));
+
+    {
+        let mut spool = Spool::open(&path).expect("open spool");
+        for minute in 0..MINUTES {
+            let nominal_minute = first_minute + minute * MINUTE_MS;
+            for sample_index in 0..SAMPLES_PER_MINUTE {
+                spool
+                    .append_sample(
+                        &sample(nominal_minute + sample_index * SAMPLE_INTERVAL_MS),
+                        report_cutoff,
+                    )
+                    .expect("append offline sample");
+            }
+            let report_id = spool
+                .create_next_delivery(7, 2, report_cutoff)
+                .expect("create offline delivery")
+                .expect("offline delivery exists");
+            spool
+                .mark_failure(&report_id, retry_at + 300_000, "network")
+                .expect("mark offline delivery failure");
+            report_ids.push(report_id);
+        }
+        assert_eq!(
+            spool.delivery_count().expect("offline delivery count"),
+            u64::try_from(MINUTES).expect("minute count")
+        );
+        assert!(
+            spool
+                .due_delivery(retry_at)
+                .expect("read sleeping backlog")
+                .is_none()
+        );
+    }
+
+    let mut reopened = Spool::open(&path).expect("reopen spool after outage");
+    assert_eq!(
+        reopened
+            .wake_backlog(retry_at)
+            .expect("wake offline backlog"),
+        usize::try_from(MINUTES).expect("minute count")
+    );
+    for (minute, expected_report_id) in report_ids.iter().enumerate() {
+        let delivery = reopened
+            .due_delivery(retry_at)
+            .expect("read recovered delivery")
+            .expect("recovered delivery exists");
+        let expected_minute =
+            first_minute + i64::try_from(minute).expect("minute index") * MINUTE_MS;
+        assert_eq!(delivery.nominal_minute_ms, expected_minute);
+        assert_eq!(&delivery.report_id, expected_report_id);
+        assert_eq!(delivery.attempt_count, 1);
+
+        let report: MachineReport =
+            decompress_message(&delivery.payload).expect("decode recovered report");
+        assert_eq!(report.nominal_minute_ms, expected_minute);
+        assert_eq!(
+            report.samples.len(),
+            usize::try_from(SAMPLES_PER_MINUTE).unwrap()
+        );
+        assert_eq!(
+            report
+                .samples
+                .iter()
+                .map(|sample| sample.observed_at_ms)
+                .collect::<Vec<_>>(),
+            (0..SAMPLES_PER_MINUTE)
+                .map(|sample_index| expected_minute + sample_index * SAMPLE_INTERVAL_MS)
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            reopened
+                .acknowledge(&delivery.report_id)
+                .expect("ack recovered delivery")
+        );
+    }
+    let last_minute = first_minute + (MINUTES - 1) * MINUTE_MS;
+    assert!(last_minute - first_minute >= 24 * 60 * MINUTE_MS);
+    assert_eq!(reopened.delivery_count().expect("final delivery count"), 0);
+    assert!(
+        reopened
+            .due_delivery(retry_at)
+            .expect("read empty backlog")
+            .is_none()
+    );
+}
+
+#[test]
 fn sequence_is_persisted_before_use() {
     let directory = tempdir().expect("temp directory");
     let path = directory.path().join("spool.db");
