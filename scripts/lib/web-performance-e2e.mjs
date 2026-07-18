@@ -74,6 +74,20 @@ async function fetchServiceCollection(baseUrl, adminCookie) {
   return html;
 }
 
+async function fetchPublicStatus(baseUrl) {
+  const response = await fetch(`${baseUrl}/status/operations?fixture=performance`);
+  const html = await response.text();
+  if (response.status !== 200) {
+    throw new Error(
+      `200-resource public status returned ${response.status}, expected 200; body starts with ${JSON.stringify(html.slice(0, 500))}`,
+    );
+  }
+  if (response.headers.get("x-alphaping-status-source") !== "live") {
+    throw new Error("200-resource public status did not use the live projection");
+  }
+  return html;
+}
+
 export async function runWebPerformanceE2e({
   baseUrl,
   adminCookie,
@@ -82,7 +96,7 @@ export async function runWebPerformanceE2e({
 }) {
   const workspace = onlyRow(
     queryControlDb(
-      `SELECT id, telemetry_pk FROM workspaces
+      `SELECT id, telemetry_pk, default_dashboard_id FROM workspaces
        WHERE slug = 'operations' AND deleted_at IS NULL`,
     ),
     "performance workspace lookup",
@@ -235,6 +249,62 @@ export async function runWebPerformanceE2e({
     );
   }
 
+  queryControlDb(
+    `INSERT OR IGNORE INTO dashboard_resources
+       (dashboard_id, resource_type, resource_id, sort_order, public_override)
+     SELECT ${sqlString(workspace.default_dashboard_id)}, 'machine', id, 0, 'inherit'
+     FROM machines WHERE workspace_id = ${sqlString(workspace.id)} AND deleted_at IS NULL
+     ORDER BY name LIMIT 200`,
+  );
+  queryControlDb(
+    `INSERT OR REPLACE INTO resource_public_policies
+       (workspace_id, resource_type, resource_id, effect, projection_profile, updated_at)
+     SELECT ${sqlString(workspace.id)}, 'machine', id, 'allow', 'summary', ${now}
+     FROM machines WHERE workspace_id = ${sqlString(workspace.id)} AND deleted_at IS NULL
+     ORDER BY name LIMIT 200`,
+  );
+  queryControlDb(
+    `INSERT OR IGNORE INTO dashboard_resources
+       (dashboard_id, resource_type, resource_id, sort_order, public_override)
+     SELECT ${sqlString(workspace.default_dashboard_id)}, 'service', id, 0, 'inherit'
+     FROM services WHERE workspace_id = ${sqlString(workspace.id)} AND deleted_at IS NULL
+     ORDER BY name LIMIT 200`,
+  );
+  queryControlDb(
+    `INSERT OR REPLACE INTO resource_public_policies
+       (workspace_id, resource_type, resource_id, effect, projection_profile, updated_at)
+     SELECT ${sqlString(workspace.id)}, 'service', id, 'allow', 'summary', ${now}
+     FROM services WHERE workspace_id = ${sqlString(workspace.id)} AND deleted_at IS NULL
+     ORDER BY name LIMIT 200`,
+  );
+  const publicMachineRows = queryControlDb(
+    `SELECT m.name FROM dashboard_resources dr
+     JOIN machines m ON m.id = dr.resource_id AND m.workspace_id = ${sqlString(workspace.id)}
+     JOIN resource_public_policies p
+       ON p.workspace_id = m.workspace_id AND p.resource_type = 'machine'
+      AND p.resource_id = m.id AND p.effect = 'allow'
+     WHERE dr.dashboard_id = ${sqlString(workspace.default_dashboard_id)}
+       AND dr.resource_type = 'machine' AND dr.public_override != 'deny'
+       AND m.deleted_at IS NULL
+     ORDER BY dr.sort_order, m.name LIMIT 200`,
+  );
+  const publicServiceRows = queryControlDb(
+    `SELECT s.name FROM dashboard_resources dr
+     JOIN services s ON s.id = dr.resource_id AND s.workspace_id = ${sqlString(workspace.id)}
+     JOIN resource_public_policies p
+       ON p.workspace_id = s.workspace_id AND p.resource_type = 'service'
+      AND p.resource_id = s.id AND p.effect = 'allow'
+     WHERE dr.dashboard_id = ${sqlString(workspace.default_dashboard_id)}
+       AND dr.resource_type = 'service' AND dr.public_override != 'deny'
+       AND s.deleted_at IS NULL
+     ORDER BY dr.sort_order, s.name LIMIT 200`,
+  );
+  if (publicMachineRows.length !== 200 || publicServiceRows.length !== 200) {
+    throw new Error(
+      `performance public fixture contains ${publicMachineRows.length} machines and ${publicServiceRows.length} services`,
+    );
+  }
+
   const machineCollection = await fetchMachineCollection(baseUrl, adminCookie);
   if (
     !machineCollection.includes(machineRows[0].name) ||
@@ -248,6 +318,17 @@ export async function runWebPerformanceE2e({
     !serviceCollection.includes(serviceRows.at(-1).name)
   ) {
     throw new Error("200-service collection did not render the complete bounded resource set");
+  }
+  const publicStatus = await fetchPublicStatus(baseUrl);
+  for (const resource of [
+    publicMachineRows[0],
+    publicMachineRows.at(-1),
+    publicServiceRows[0],
+    publicServiceRows.at(-1),
+  ]) {
+    if (!resource || !publicStatus.includes(resource.name)) {
+      throw new Error("200-resource public status omitted a bounded resource");
+    }
   }
 
   await fetchDashboard(baseUrl, adminCookie);

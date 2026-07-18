@@ -10,6 +10,7 @@ import {
   type PublicStatusBucketRow,
   type PublicStatusService,
 } from "./public-status-projection.js";
+import { queryInBatches } from "./d1-query-batches.js";
 import { parseContainerInventory } from "./machines.js";
 
 export {
@@ -35,6 +36,11 @@ interface CheckIdentityRow {
 interface CheckLatestRow {
   check_pk: number;
   observed_at: number;
+}
+
+interface PublicContainerQueryRow extends PublicContainerRow {
+  name_sort_key: string;
+  id_sort_key: string;
 }
 
 interface IncidentRow {
@@ -104,6 +110,10 @@ function placeholders(length: number): string {
   return Array.from({ length }, () => "?").join(", ");
 }
 
+function compareText(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
 export async function loadPublicStatusPage(
   controlDb: D1Database,
   telemetryDb: D1Database,
@@ -140,47 +150,50 @@ export async function loadPublicStatusPage(
   ).results;
   const machinePks = machines.map((machine) => machine.telemetry_pk);
   const machineIds = machines.map((machine) => machine.id);
-  const [latestMachines, publicContainers] = await Promise.all([
-    machinePks.length === 0
-      ? Promise.resolve({ results: [] as PublicMachineLatestRow[] })
-      : telemetryDb
-          .prepare(
-            `SELECT machine_pk, observed_at, received_at, state, cpu_permille,
+  const [latestMachines, publicContainerRows] = await Promise.all([
+    queryInBatches<PublicMachineLatestRow, number>(telemetryDb, machinePks, (batch) =>
+      telemetryDb
+        .prepare(
+          `SELECT machine_pk, observed_at, received_at, state, cpu_permille,
                     memory_used_bytes, memory_total_bytes, storage_used_bytes,
                     storage_total_bytes, network_rx_bps, network_tx_bps,
                     container_inventory_json
              FROM machine_latest WHERE workspace_pk = ?
-               AND machine_pk IN (${placeholders(machinePks.length)})`,
-          )
-          .bind(workspace.telemetry_pk, ...machinePks)
-          .all<PublicMachineLatestRow>(),
-    machineIds.length === 0
-      ? Promise.resolve({ results: [] as PublicContainerRow[] })
-      : controlDb
-          .prepare(
-            `SELECT c.id, c.machine_id, p.projection_profile FROM containers c
+               AND machine_pk IN (${placeholders(batch.length)})`,
+        )
+        .bind(workspace.telemetry_pk, ...batch),
+    ),
+    queryInBatches<PublicContainerQueryRow, string>(controlDb, machineIds, (batch) =>
+      controlDb
+        .prepare(
+          `SELECT c.id, c.machine_id, p.projection_profile,
+                    hex(c.name) AS name_sort_key, hex(c.id) AS id_sort_key
+             FROM containers c
              JOIN resource_public_policies p
                ON p.workspace_id = c.workspace_id AND p.resource_type = 'container'
               AND p.resource_id = c.id AND p.effect = 'allow'
              WHERE c.workspace_id = ? AND c.deleted_at IS NULL
-               AND c.machine_id IN (${placeholders(machineIds.length)})
-             ORDER BY c.name LIMIT 500`,
-          )
-          .bind(workspace.id, ...machineIds)
-          .all<PublicContainerRow>(),
+               AND c.machine_id IN (${placeholders(batch.length)})
+             ORDER BY c.name, c.id LIMIT 500`,
+        )
+        .bind(workspace.id, ...batch),
+    ),
   ]);
-  const latestByMachine = new Map(
-    latestMachines.results.map((latest) => [latest.machine_pk, latest]),
-  );
+  const publicContainers = publicContainerRows
+    .sort(
+      (left, right) =>
+        compareText(left.name_sort_key, right.name_sort_key) ||
+        compareText(left.id_sort_key, right.id_sort_key),
+    )
+    .slice(0, 500);
+  const latestByMachine = new Map(latestMachines.map((latest) => [latest.machine_pk, latest]));
   const publicMachines = machines.map((machine) => {
     const latest = latestByMachine.get(machine.telemetry_pk);
     return projectPublicStatusMachine({
       machine,
       latest,
       inventory: parseContainerInventory(latest?.container_inventory_json ?? null),
-      publicContainers: publicContainers.results.filter(
-        (container) => container.machine_id === machine.id,
-      ),
+      publicContainers: publicContainers.filter((container) => container.machine_id === machine.id),
       now,
     });
   });
@@ -202,61 +215,50 @@ export async function loadPublicStatusPage(
   ).results;
   const servicePks = services.map((service) => service.telemetry_pk);
   const serviceIds = services.map((service) => service.id);
-  const checks =
-    serviceIds.length === 0
-      ? []
-      : (
-          await controlDb
-            .prepare(
-              `SELECT telemetry_pk, service_id FROM check_configs
-         WHERE enabled = 1 AND service_id IN (${placeholders(serviceIds.length)})`,
-            )
-            .bind(...serviceIds)
-            .all<CheckIdentityRow>()
-        ).results;
+  const checks = await queryInBatches<CheckIdentityRow, string>(controlDb, serviceIds, (batch) =>
+    controlDb
+      .prepare(
+        `SELECT telemetry_pk, service_id FROM check_configs
+           WHERE workspace_id = ? AND enabled = 1
+             AND service_id IN (${placeholders(batch.length)})`,
+      )
+      .bind(workspace.id, ...batch),
+  );
   const checkPks = checks.map((check) => check.telemetry_pk);
   const since = now - 24 * 60 * 60_000;
-  const [latestServices, latestChecks, buckets] =
-    servicePks.length === 0
-      ? [
-          { results: [] as PublicServiceLatestRow[] },
-          { results: [] as CheckLatestRow[] },
-          { results: [] as PublicStatusBucketRow[] },
-        ]
-      : await Promise.all([
-          telemetryDb
-            .prepare(
-              `SELECT service_pk, state, last_transition_at FROM service_latest
-           WHERE workspace_pk = ? AND service_pk IN (${placeholders(servicePks.length)})`,
-            )
-            .bind(workspace.telemetry_pk, ...servicePks)
-            .all<PublicServiceLatestRow>(),
-          checkPks.length === 0
-            ? Promise.resolve({ results: [] as CheckLatestRow[] })
-            : telemetryDb
-                .prepare(
-                  `SELECT check_pk, observed_at FROM check_latest
-               WHERE workspace_pk = ? AND check_pk IN (${placeholders(checkPks.length)})`,
-                )
-                .bind(workspace.telemetry_pk, ...checkPks)
-                .all<CheckLatestRow>(),
-          telemetryDb
-            .prepare(
-              `SELECT resource_pk, bucket_start, state, availability_permille,
+  const [latestServices, latestChecks, buckets] = await Promise.all([
+    queryInBatches<PublicServiceLatestRow, number>(telemetryDb, servicePks, (batch) =>
+      telemetryDb
+        .prepare(
+          `SELECT service_pk, state, last_transition_at FROM service_latest
+               WHERE workspace_pk = ? AND service_pk IN (${placeholders(batch.length)})`,
+        )
+        .bind(workspace.telemetry_pk, ...batch),
+    ),
+    queryInBatches<CheckLatestRow, number>(telemetryDb, checkPks, (batch) =>
+      telemetryDb
+        .prepare(
+          `SELECT check_pk, observed_at FROM check_latest
+                   WHERE workspace_pk = ? AND check_pk IN (${placeholders(batch.length)})`,
+        )
+        .bind(workspace.telemetry_pk, ...batch),
+    ),
+    queryInBatches<PublicStatusBucketRow, number>(telemetryDb, servicePks, (batch) =>
+      telemetryDb
+        .prepare(
+          `SELECT resource_pk, bucket_start, state, availability_permille,
                   latency_avg_ms, summary_code
-           FROM status_buckets WHERE workspace_pk = ? AND resource_type = 2
-             AND bucket_seconds = 300 AND resource_pk IN (${placeholders(servicePks.length)})
-             AND bucket_start >= ? ORDER BY bucket_start`,
-            )
-            .bind(workspace.telemetry_pk, ...servicePks, since)
-            .all<PublicStatusBucketRow>(),
-        ]);
-  const latestByService = new Map(
-    latestServices.results.map((latest) => [latest.service_pk, latest]),
-  );
+               FROM status_buckets WHERE workspace_pk = ? AND resource_type = 2
+                 AND bucket_seconds = 300 AND resource_pk IN (${placeholders(batch.length)})
+                 AND bucket_start >= ? ORDER BY bucket_start`,
+        )
+        .bind(workspace.telemetry_pk, ...batch, since),
+    ),
+  ]);
+  const latestByService = new Map(latestServices.map((latest) => [latest.service_pk, latest]));
   const checkService = new Map(checks.map((check) => [check.telemetry_pk, check.service_id]));
   const lastCheckedByService = new Map<string, number>();
-  for (const latest of latestChecks.results) {
+  for (const latest of latestChecks) {
     const serviceId = checkService.get(latest.check_pk);
     if (serviceId !== undefined) {
       lastCheckedByService.set(
@@ -270,28 +272,30 @@ export async function loadPublicStatusPage(
       service,
       latest: latestByService.get(service.telemetry_pk),
       lastCheckedAt: lastCheckedByService.get(service.id) ?? null,
-      buckets: buckets.results,
+      buckets,
       now,
     }),
   );
 
-  const incidentRows =
-    serviceIds.length === 0
-      ? []
-      : (
-          await controlDb
-            .prepare(
-              `SELECT DISTINCT i.id, i.title, i.summary, i.severity, i.state,
+  const incidentCandidates = await queryInBatches<IncidentRow, string>(
+    controlDb,
+    serviceIds,
+    (batch) =>
+      controlDb
+        .prepare(
+          `SELECT DISTINCT i.id, i.title, i.summary, i.severity, i.state,
                 i.starts_at, i.resolved_at
          FROM incidents i JOIN incident_resources ir ON ir.incident_id = i.id
          WHERE i.workspace_id = ? AND i.deleted_at IS NULL
-           AND ir.resource_type = 'service' AND ir.resource_id IN (${placeholders(serviceIds.length)})
+           AND ir.resource_type = 'service' AND ir.resource_id IN (${placeholders(batch.length)})
            AND (i.state != 'resolved' OR i.resolved_at >= ?)
-         ORDER BY i.starts_at DESC LIMIT 20`,
-            )
-            .bind(workspace.id, ...serviceIds, now - 7 * 24 * 60 * 60_000)
-            .all<IncidentRow>()
-        ).results;
+         ORDER BY i.starts_at DESC, i.id LIMIT 20`,
+        )
+        .bind(workspace.id, ...batch, now - 7 * 24 * 60 * 60_000),
+  );
+  const incidentRows = [...new Map(incidentCandidates.map((row) => [row.id, row])).values()]
+    .sort((left, right) => right.starts_at - left.starts_at || compareText(left.id, right.id))
+    .slice(0, 20);
   const incidentIds = incidentRows.map((incident) => incident.id);
   const [incidentResources, incidentUpdates] =
     incidentIds.length === 0
@@ -351,11 +355,11 @@ export async function loadPublicStatusPage(
         publishedAt: update.published_at ?? update.created_at,
       })),
   }));
-  const serviceUpdatedAt = latestChecks.results.reduce<number | null>(
+  const serviceUpdatedAt = latestChecks.reduce<number | null>(
     (latest, check) => Math.max(latest ?? 0, check.observed_at),
     null,
   );
-  const updatedAt = latestMachines.results.reduce<number | null>(
+  const updatedAt = latestMachines.reduce<number | null>(
     (latest, machine) => Math.max(latest ?? 0, machine.observed_at),
     serviceUpdatedAt,
   );
