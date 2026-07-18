@@ -156,6 +156,10 @@ test("Linux installer verifies the artifact and enables a hardened systemd servi
     assert.match(unit, /Restart=always/);
     assert.match(unit, /NoNewPrivileges=true/);
     assert.match(unit, /ProtectSystem=strict/);
+    assert.match(
+      unit,
+      /ReadWritePaths=\/var\/lib\/alphaping \/opt\/alphaping\/bin \/etc\/alphaping/,
+    );
     assert.match(unit, /ExecStart=\/opt\/alphaping\/bin\/alphaping-agent/);
     assert.equal(statSync(join(installRoot, "etc/alphaping")).mode & 0o777, 0o700);
     assert.equal(statSync(join(installRoot, "etc/alphaping/agent.toml")).mode & 0o777, 0o600);

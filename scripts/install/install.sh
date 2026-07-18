@@ -170,7 +170,7 @@ ProtectSystem=strict
 ProtectControlGroups=true
 ProtectKernelModules=true
 ProtectKernelTunables=true
-ReadWritePaths=/var/lib/alphaping /opt/alphaping/bin
+ReadWritePaths=/var/lib/alphaping /opt/alphaping/bin /etc/alphaping
 
 [Install]
 WantedBy=multi-user.target
