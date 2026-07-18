@@ -704,6 +704,15 @@ async fn record_aead_failure(
     Ok(())
 }
 
+fn warn_ack_attachment_omitted(agent_id: &str, attachment: &str) {
+    let agent_hash = blake3::hash(agent_id.as_bytes());
+    worker::console_warn!(
+        "{{\"event\":\"agent_ack_attachment_omitted\",\"agent_hash\":\"{}\",\"attachment\":\"{}\"}}",
+        hex::encode(&agent_hash.as_bytes()[..8]),
+        attachment
+    );
+}
+
 async fn sync_container_catalog(
     db: &D1Database,
     agent: &AgentKeyRow,
@@ -1145,6 +1154,7 @@ async fn durable_ack(
     compressed_payload: &[u8],
     payload_hash: &[u8],
     duplicate: bool,
+    config_revision: u64,
     config: Option<AgentConfigSnapshot>,
     commands: Vec<AgentCommand>,
     live_session: Option<alphaping_protocol::v1::LiveSessionCredential>,
@@ -1227,7 +1237,7 @@ async fn durable_ack(
             .run()
             .await?;
     }
-    let key_rotation = key_rotation_proposal(
+    let key_rotation = match key_rotation_proposal(
         control_db,
         agent_id,
         header.key_epoch,
@@ -1235,7 +1245,14 @@ async fn durable_ack(
         now,
         wrapping_key,
     )
-    .await?;
+    .await
+    {
+        Ok(proposal) => proposal,
+        Err(_) => {
+            warn_ack_attachment_omitted(agent_id, "key_rotation");
+            None
+        }
+    };
     let acknowledgement = DurableAck {
         report_id: report.report_id.clone(),
         status: if duplicate {
@@ -1244,7 +1261,7 @@ async fn durable_ack(
             AckStatus::Committed as i32
         },
         committed_at_ms: now,
-        config_revision: agent_key.desired_config_revision as u64,
+        config_revision,
         config,
         commands,
         live_session,
@@ -1397,20 +1414,25 @@ async fn handle_report(mut request: Request, env: Env) -> Result<Response, Inges
     let duplicate = classify_slot(&telemetry_db, &report, payload_hash.as_bytes()).await?;
     persist_probe_results(&control_db, &telemetry_db, agent_id, &report).await?;
     persist_command_results(&control_db, agent_id, &report).await?;
-    let config = if report.applied_config_revision < agent_key.desired_config_revision as u64 {
-        Some(
-            build_config_snapshot(
-                &control_db,
-                &env,
-                agent_id,
-                agent_key.desired_config_revision as u64,
-            )
-            .await?,
-        )
+    let desired_config_revision = agent_key.desired_config_revision as u64;
+    let (config_revision, config) = if report.applied_config_revision < desired_config_revision {
+        match build_config_snapshot(&control_db, &env, agent_id, desired_config_revision).await {
+            Ok(config) => (desired_config_revision, Some(config)),
+            Err(_) => {
+                warn_ack_attachment_omitted(agent_id, "config");
+                (report.applied_config_revision, None)
+            }
+        }
     } else {
-        None
+        (desired_config_revision, None)
     };
-    let commands = load_commands(&control_db, agent_id, now).await?;
+    let commands = match load_commands(&control_db, agent_id, now).await {
+        Ok(commands) => commands,
+        Err(_) => {
+            warn_ack_attachment_omitted(agent_id, "commands");
+            Vec::new()
+        }
+    };
     let live_session = env
         .secret("LIVE_TICKET_SECRET")
         .ok()
@@ -1438,6 +1460,7 @@ async fn handle_report(mut request: Request, env: Env) -> Result<Response, Inges
         &compressed_payload,
         payload_hash.as_bytes(),
         duplicate,
+        config_revision,
         config,
         commands,
         live_session,

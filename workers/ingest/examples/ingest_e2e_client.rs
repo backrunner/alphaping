@@ -468,6 +468,69 @@ async fn verify_rotation_activation(
     Ok(())
 }
 
+async fn verify_ack_attachment_failure_isolation(
+    client: &Client,
+    origin: &str,
+    state_path: &str,
+    rotation_path: &str,
+) -> Result<(), Box<dyn Error>> {
+    let session: StoredSession = serde_json::from_slice(&fs::read(state_path)?)?;
+    let rotation: StoredRotation = serde_json::from_slice(&fs::read(rotation_path)?)?;
+    let root_key: [u8; 32] = hex::decode(&rotation.root_key_hex)?
+        .try_into()
+        .map_err(|_| invalid_data("rotated E2E root key length changed"))?;
+    let nonce_prefix: [u8; 4] = hex::decode(&rotation.nonce_prefix_hex)?
+        .try_into()
+        .map_err(|_| invalid_data("rotated E2E nonce prefix length changed"))?;
+    let codec = EnvelopeCodec::new(
+        session.agent_id.into_bytes(),
+        rotation.key_epoch,
+        root_key,
+        nonce_prefix,
+    )?;
+    let mut report: MachineReport =
+        decompress_message(&hex::decode(&session.compressed_payload_hex)?)?;
+    report.report_id = vec![0xaf; 16];
+    report.nominal_minute_ms -= 240_000;
+    for sample in &mut report.samples {
+        sample.observed_at_ms -= 240_000;
+    }
+    if let Some(inventory) = &mut report.container_inventory {
+        inventory.observed_at_ms -= 240_000;
+    }
+    let payload = compress_message(&report)?;
+    let endpoint = format!("{origin}/v1/reports");
+    let envelope = codec.encode_report(101, now_ms()?, &report.report_id, &payload)?;
+    let response = post_protobuf(client, &endpoint, envelope).await?;
+    if response.status() != StatusCode::OK {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(invalid_data(&format!(
+            "ACK attachment failure blocked durable telemetry with {status}: {body}"
+        ))
+        .into());
+    }
+    let acknowledgement = codec.decode_ack(
+        &response.bytes().await?,
+        101,
+        &report.report_id,
+        blake3::hash(&payload).as_bytes(),
+    )?;
+    if AckStatus::try_from(acknowledgement.status)? != AckStatus::Committed
+        || acknowledgement.config_revision != report.applied_config_revision
+        || acknowledgement.config.is_some()
+        || !acknowledgement.commands.is_empty()
+        || acknowledgement.key_rotation.is_some()
+    {
+        return Err(invalid_data(
+            "durable ACK did not safely omit failed control-plane attachments",
+        )
+        .into());
+    }
+    println!("Ingest isolated ACK attachment failures from durable telemetry");
+    Ok(())
+}
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn Error>> {
     let mut arguments = env::args().skip(1);
@@ -504,6 +567,27 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .into());
         }
         return verify_config_delivery(&client, &origin, &state_path).await;
+    }
+    if mode == "verify-ack-attachment-failures" {
+        let state_path = arguments
+            .next()
+            .ok_or_else(|| invalid_data("missing E2E session path"))?;
+        let rotation_path = arguments
+            .next()
+            .ok_or_else(|| invalid_data("missing E2E rotation path"))?;
+        if arguments.next().is_some() || !origin.starts_with("http://127.0.0.1:") {
+            return Err(invalid_data(
+                "usage: ingest_e2e_client verify-ack-attachment-failures LOCAL_ORIGIN SESSION_PATH ROTATION_PATH",
+            )
+            .into());
+        }
+        return verify_ack_attachment_failure_isolation(
+            &client,
+            &origin,
+            &state_path,
+            &rotation_path,
+        )
+        .await;
     }
     if mode == "verify-rotation-proposal" || mode == "verify-rotation-activation" {
         let state_path = arguments

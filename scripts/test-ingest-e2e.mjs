@@ -93,6 +93,9 @@ const enrollmentId = "018f5f7e-7d28-7e12-a521-000000000004";
 const expiredEnrollmentId = "018f5f7e-7d28-7e12-a521-000000000005";
 const revokedEnrollmentId = "018f5f7e-7d28-7e12-a521-000000000006";
 const commandId = "018f5f7e-7d28-7e12-a521-000000000007";
+const malformedServiceId = "018f5f7e-7d28-7e12-a521-000000000010";
+const malformedCheckId = "018f5f7e-7d28-7e12-a521-000000000011";
+const malformedCommandId = "018f5f7e-7d28-7e12-a521-000000000012";
 let child = null;
 
 try {
@@ -569,6 +572,90 @@ try {
   ) {
     throw new Error("new key activation did not apply the 24-hour old-epoch overlap");
   }
+  const attachmentFailureNow = Date.now();
+  run(
+    pnpm,
+    [
+      "exec",
+      "wrangler",
+      "d1",
+      "execute",
+      "CONTROL_DB",
+      "--local",
+      "--config",
+      config,
+      "--persist-to",
+      persistTo,
+      "--command",
+      `INSERT INTO services
+        (id, telemetry_pk, workspace_id, name, created_at, updated_at)
+       VALUES ('${malformedServiceId}', 3, '${workspaceId}', 'Malformed attachment service',
+         ${attachmentFailureNow}, ${attachmentFailureNow});
+       INSERT INTO check_configs
+        (id, telemetry_pk, workspace_id, service_id, name, kind, executor_kind,
+         executor_agent_id, enabled, interval_seconds, phase_seconds, timeout_ms, request_json,
+         assignment_revision, created_at, updated_at)
+       SELECT '${malformedCheckId}', 3, '${workspaceId}', '${malformedServiceId}',
+         'Malformed attachment check', 'http', 'agent', id, 1, 60, 0, 5000, '{', 3,
+         ${attachmentFailureNow}, ${attachmentFailureNow}
+       FROM agents WHERE status = 'active' LIMIT 1;
+       UPDATE machines SET desired_config_revision = 3, updated_at = ${attachmentFailureNow}
+         WHERE id = '${machineId}';
+       INSERT INTO agent_commands
+        (id, workspace_id, agent_id, type, payload_json, state, not_before, expires_at,
+         attempt_limit, payload_schema_version, created_by, created_at)
+       SELECT '${malformedCommandId}', '${workspaceId}', id, 'check_update', '{', 'pending',
+         ${attachmentFailureNow}, ${attachmentFailureNow + 30 * 60_000}, 3, 1, '${userId}',
+         ${attachmentFailureNow}
+       FROM agents WHERE status = 'active' LIMIT 1;
+       UPDATE agent_keys SET valid_from = ${attachmentFailureNow - 30 * 24 * 60 * 60_000}
+         WHERE key_epoch = 2;
+       INSERT INTO agent_keys
+        (agent_id, key_epoch, wrapped_data_key, wrapping_key_id, nonce_prefix,
+         valid_from, valid_until)
+       SELECT id, 3, X'00', 'primary', X'00000000', ${attachmentFailureNow},
+         ${attachmentFailureNow + 90 * 24 * 60 * 60_000}
+       FROM agents WHERE status = 'active' LIMIT 1`,
+    ],
+    "Malformed ACK attachment seed",
+    { quiet: true },
+  );
+  run(
+    process.execPath,
+    [
+      resolve(root, "scripts/run-cargo.mjs"),
+      "run",
+      "--quiet",
+      "-p",
+      "alphaping-ingest",
+      "--example",
+      "ingest_e2e_client",
+      "--",
+      "verify-ack-attachment-failures",
+      origin,
+      sessionPath,
+      rotationPath,
+    ],
+    "ACK attachment failure isolation client",
+  );
+  const [isolatedAttachmentReport] = query(
+    "TELEMETRY_DB",
+    `SELECT COUNT(*) AS report_count FROM telemetry_blocks_5m
+     WHERE report_id_0 = X'${"af".repeat(16)}' OR report_id_1 = X'${"af".repeat(16)}'
+       OR report_id_2 = X'${"af".repeat(16)}' OR report_id_3 = X'${"af".repeat(16)}'
+       OR report_id_4 = X'${"af".repeat(16)}'`,
+  );
+  const [isolatedAttachmentCommand] = query(
+    "CONTROL_DB",
+    `SELECT state, delivery_count FROM agent_commands WHERE id = '${malformedCommandId}'`,
+  );
+  if (
+    isolatedAttachmentReport?.report_count !== 1 ||
+    isolatedAttachmentCommand?.state !== "pending" ||
+    isolatedAttachmentCommand.delivery_count !== 0
+  ) {
+    throw new Error("failed ACK attachments changed command state or blocked durable telemetry");
+  }
   run(
     pnpm,
     [
@@ -732,12 +819,12 @@ try {
   const containerInventory = JSON.parse(telemetry?.container_inventory_json ?? "null");
   if (
     ![1, 2, 3].includes(telemetry?.block_count) ||
-    telemetry.populated_slots !== 5 ||
+    telemetry.populated_slots !== 6 ||
     telemetry.cpu_permille !== 980 ||
     telemetry.load_1m_milli !== 1250 ||
     telemetry.uptime_seconds !== 86405 ||
     telemetry.machine_state !== "down" ||
-    telemetry.highest_sequence !== 100 ||
+    telemetry.highest_sequence !== 101 ||
     telemetry.replay_epochs !== 2 ||
     telemetry.recovery_events !== 1 ||
     telemetry.threshold_events !== 1 ||
