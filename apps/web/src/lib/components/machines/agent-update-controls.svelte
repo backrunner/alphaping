@@ -9,10 +9,12 @@
     agent,
     commands,
     result,
+    canInstall,
   }: {
     agent: NonNullable<MachineDetail["agent"]>;
     commands: MachineDetail["agentCommands"];
     result?: { command?: string; queued?: boolean; message?: string } | null;
+    canInstall: boolean;
   } = $props();
 
   const commandNames: Record<MachineDetail["agentCommands"][number]["type"], string> = {
@@ -30,31 +32,35 @@
       <p>Installed {agent.version}</p>
     </div>
     <div class="quick-actions">
-      <form method="POST" action="?/checkUpdate">
-        <Button type="submit" variant="secondary"><RefreshCw size={13} />Check now</Button>
-      </form>
+      {#if canInstall}
+        <form method="POST" action="?/checkUpdate">
+          <Button type="submit" variant="secondary"><RefreshCw size={13} />Check now</Button>
+        </form>
+      {/if}
       <form method="POST" action="?/redetectRuntimes">
         <Button type="submit" variant="secondary"><Boxes size={13} />Scan runtimes</Button>
       </form>
     </div>
   </header>
 
-  <form class="install" method="POST" action="?/installVersion">
-    <label>
-      <span>Exact version</span>
-      <input
-        name="version"
-        required
-        pattern="[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?"
-        placeholder="0.2.0"
-      />
-    </label>
-    <label class="checkbox">
-      <input type="checkbox" name="bypassRollout" />
-      <span>Bypass rollout</span>
-    </label>
-    <Button type="submit"><Download size={13} />Install</Button>
-  </form>
+  {#if canInstall}
+    <form class="install" method="POST" action="?/installVersion">
+      <label>
+        <span>Exact version</span>
+        <input
+          name="version"
+          required
+          pattern="[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?"
+          placeholder="0.2.0"
+        />
+      </label>
+      <label class="checkbox">
+        <input type="checkbox" name="bypassRollout" />
+        <span>Bypass rollout</span>
+      </label>
+      <Button type="submit"><Download size={13} />Install</Button>
+    </form>
+  {/if}
 
   {#if result?.message}
     <p class="feedback error" role="alert">{result.message}</p>

@@ -24,7 +24,8 @@ export const load: PageServerLoad = async ({ locals, params, platform, url }) =>
       locals.session.user.id,
       params.machineId,
     );
-    const [enrollmentTokens, checksums] = detail.canManage
+    const canAdministerAgent = detail.workspace.role === "admin";
+    const [enrollmentTokens, checksums] = canAdministerAgent
       ? await Promise.all([
           listMachineEnrollmentTokens(
             platform.env.CONTROL_DB,
@@ -37,6 +38,7 @@ export const load: PageServerLoad = async ({ locals, params, platform, url }) =>
       : [[], { unix: "", windows: "" }];
     return {
       ...detail,
+      canAdministerAgent,
       enrollmentTokens,
       installerChecksums: checksums,
       ingestOrigin: platform.env.INGEST_ORIGIN,

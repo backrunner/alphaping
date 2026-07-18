@@ -1,6 +1,10 @@
 import { error } from "@sveltejs/kit";
 
-import { loadMonitoringAccess, requireResourceCapability } from "$lib/server/monitoring-access";
+import {
+  loadMonitoringAccess,
+  requireAdmin,
+  requireResourceCapability,
+} from "$lib/server/monitoring-access";
 
 type CommandType = "check_update" | "install_version" | "redetect_runtimes";
 
@@ -19,7 +23,11 @@ export async function queueAgentCommand(
   now = Date.now(),
 ): Promise<{ commandId: string }> {
   const access = await loadMonitoringAccess(db, workspaceSlug, userId);
-  requireResourceCapability(access, "machine", machineId, "manage");
+  if (input.type === "redetect_runtimes") {
+    requireResourceCapability(access, "machine", machineId, "manage");
+  } else {
+    requireAdmin(access);
+  }
   const agent = await db
     .prepare(
       `SELECT a.id FROM agents a JOIN machines m ON m.id = a.machine_id

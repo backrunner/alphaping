@@ -147,16 +147,23 @@
       <MachineEvents events={data.events} />
     {:else if activeTab === "config" && data.canManage}
       <MachineConfig machine={data.machine} result={form ?? null} />
-      <MachineEnrollment
-        tokens={data.enrollmentTokens}
-        result={form ?? null}
-        ingestOrigin={data.ingestOrigin}
-        installOrigin={data.installOrigin}
-        checksums={data.installerChecksums}
-        manageHref={`/${data.workspace.slug}/machines/${data.machine.id}?tab=config`}
-      />
+      {#if data.canAdministerAgent}
+        <MachineEnrollment
+          tokens={data.enrollmentTokens}
+          result={form ?? null}
+          ingestOrigin={data.ingestOrigin}
+          installOrigin={data.installOrigin}
+          checksums={data.installerChecksums}
+          manageHref={`/${data.workspace.slug}/machines/${data.machine.id}?tab=config`}
+        />
+      {/if}
       {#if data.agent}
-        <AgentUpdateControls agent={data.agent} commands={data.agentCommands} result={form} />
+        <AgentUpdateControls
+          agent={data.agent}
+          commands={data.agentCommands}
+          result={form}
+          canInstall={data.canAdministerAgent}
+        />
       {/if}
     {/if}
   </div>

@@ -377,14 +377,14 @@ export async function updateMachineConfiguration(
   return { revision };
 }
 
-async function requireManagedMachine(
+async function requireAdminMachine(
   db: D1Database,
   workspaceSlug: string,
   userId: string,
   machineId: string,
 ) {
   const access = await loadMonitoringAccess(db, workspaceSlug, userId);
-  requireResourceCapability(access, "machine", machineId, "manage");
+  requireAdmin(access);
   const machine = await db
     .prepare(`SELECT id FROM machines WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL`)
     .bind(machineId, access.workspaceId)
@@ -417,7 +417,7 @@ export async function listMachineEnrollmentTokens(
   userId: string,
   machineId: string,
 ): Promise<readonly EnrollmentTokenSummary[]> {
-  const access = await requireManagedMachine(db, workspaceSlug, userId, machineId);
+  const access = await requireAdminMachine(db, workspaceSlug, userId, machineId);
   const tokens = await db
     .prepare(
       `SELECT id, expires_at, used_at, revoked_at, created_at
@@ -438,7 +438,7 @@ export async function revokeMachineEnrollmentToken(
   machineId: string,
   tokenId: string,
 ): Promise<void> {
-  const access = await requireManagedMachine(db, workspaceSlug, userId, machineId);
+  const access = await requireAdminMachine(db, workspaceSlug, userId, machineId);
   const token = await db
     .prepare(
       `SELECT id, expires_at, used_at, revoked_at, created_at
@@ -485,7 +485,7 @@ export async function regenerateMachineEnrollmentToken(
   enrollmentPepper: string,
   machineId: string,
 ): Promise<{ token: string; tokenId: string; machineId: string; expiresAt: number }> {
-  const access = await requireManagedMachine(db, workspaceSlug, userId, machineId);
+  const access = await requireAdminMachine(db, workspaceSlug, userId, machineId);
   const previous = await db
     .prepare(
       `SELECT id, expires_at, used_at, revoked_at, created_at
