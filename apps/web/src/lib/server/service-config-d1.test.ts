@@ -19,7 +19,11 @@ vi.mock("./service-config-compiler.js", () => ({
   })),
 }));
 
-import { createServiceMonitor } from "./service-config.js";
+import {
+  createServiceMonitor,
+  deleteServiceCheck,
+  updateServiceCheckPolicy,
+} from "./service-config.js";
 
 const input = {
   name: "Public API",
@@ -57,15 +61,17 @@ const input = {
 
 let miniflare: Miniflare;
 let database: D1Database;
+let telemetryDatabase: D1Database;
 
 beforeEach(async () => {
   miniflare = new Miniflare({
     compatibilityDate: "2026-07-17",
-    d1Databases: { CONTROL_DB: "control-test" },
+    d1Databases: { CONTROL_DB: "control-test", TELEMETRY_DB: "telemetry-test" },
     modules: true,
     script: "export default { fetch() { return new Response('ok'); } }",
   });
   database = await miniflare.getD1Database("CONTROL_DB");
+  telemetryDatabase = await miniflare.getD1Database("TELEMETRY_DB");
   await database.batch([
     database.prepare(
       `CREATE TABLE telemetry_resource_sequences (
@@ -91,6 +97,13 @@ beforeEach(async () => {
       )`,
     ),
     database.prepare(
+      `CREATE TABLE workspaces (
+        id TEXT PRIMARY KEY,
+        telemetry_pk INTEGER NOT NULL,
+        deleted_at INTEGER
+      )`,
+    ),
+    database.prepare(
       `CREATE TABLE services (
         id TEXT PRIMARY KEY,
         telemetry_pk INTEGER NOT NULL,
@@ -99,6 +112,7 @@ beforeEach(async () => {
         slug TEXT NOT NULL,
         description TEXT NOT NULL,
         status_rule_json TEXT NOT NULL,
+        maintenance_until INTEGER,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
         deleted_at INTEGER
@@ -129,6 +143,13 @@ beforeEach(async () => {
         last_claimed_slot INTEGER NOT NULL,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
+      )`,
+    ),
+    database.prepare(
+      `CREATE TABLE check_secrets (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        wrapped_value BLOB NOT NULL
       )`,
     ),
     database.prepare(
@@ -170,6 +191,39 @@ beforeEach(async () => {
     database.prepare("INSERT INTO machines VALUES ('machine-1', 'workspace-1', 1, 1, NULL)"),
     database.prepare("INSERT INTO agents VALUES ('agent-1', 'machine-1', 'workspace-1', 'active')"),
   ]);
+  await telemetryDatabase.batch([
+    telemetryDatabase.prepare(
+      `CREATE TABLE check_latest (
+        check_pk INTEGER PRIMARY KEY,
+        service_pk INTEGER NOT NULL,
+        state TEXT NOT NULL,
+        critical INTEGER NOT NULL
+      )`,
+    ),
+    telemetryDatabase.prepare(
+      `CREATE TABLE service_latest (
+        service_pk INTEGER PRIMARY KEY,
+        workspace_pk INTEGER NOT NULL,
+        state TEXT NOT NULL,
+        status_since INTEGER NOT NULL,
+        reason_code TEXT NOT NULL,
+        last_transition_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )`,
+    ),
+    telemetryDatabase.prepare(
+      `CREATE TABLE state_events (
+        workspace_pk INTEGER NOT NULL,
+        resource_type INTEGER NOT NULL,
+        resource_pk INTEGER NOT NULL,
+        occurred_at INTEGER NOT NULL,
+        event_id BLOB NOT NULL,
+        previous_state TEXT NOT NULL,
+        current_state TEXT NOT NULL,
+        reason_code TEXT NOT NULL
+      )`,
+    ),
+  ]);
 });
 
 afterEach(async () => {
@@ -178,6 +232,72 @@ afterEach(async () => {
 
 async function first<T>(query: string): Promise<T | null> {
   return database.prepare(query).first<T>();
+}
+
+async function seedServiceChecks(): Promise<void> {
+  await database.batch([
+    database.prepare("INSERT INTO workspaces VALUES ('workspace-1', 1, NULL)"),
+    database.prepare(
+      `INSERT INTO services
+        (id, telemetry_pk, workspace_id, name, slug, description, status_rule_json,
+         maintenance_until, created_at, updated_at, deleted_at)
+       VALUES ('service-1', 10, 'workspace-1', 'API', 'api', '', '{}', NULL, 1, 1, NULL)`,
+    ),
+    database.prepare(
+      `INSERT INTO check_configs VALUES
+        ('check-a', 101, 'workspace-1', 'service-1', 'A', 'http', 'cloudflare', NULL,
+         0, 1, 60, 1, 5000, 0, 1, '{}', '{}', 2, 2, 512, 0, 1, 1),
+        ('check-b', 102, 'workspace-1', 'service-1', 'B', 'http', 'cloudflare', NULL,
+         0, 1, 60, 2, 5000, 0, 1, '{}', '{}', 2, 2, 512, 0, 1, 1)`,
+    ),
+  ]);
+}
+
+function synchronizeCheckCounts(db: D1Database, expectedReads: number): D1Database {
+  let completedReads = 0;
+  let releaseReads: (() => void) | undefined;
+  const allReadsCompleted = new Promise<void>((resolve) => {
+    releaseReads = resolve;
+  });
+
+  return new Proxy(db, {
+    get(target, property) {
+      if (property !== "prepare") {
+        const value = Reflect.get(target, property);
+        return typeof value === "function" ? value.bind(target) : value;
+      }
+      return (query: string) => {
+        const statement = target.prepare(query);
+        if (!query.includes("SELECT COUNT(*) AS count FROM check_configs")) return statement;
+        return new Proxy(statement, {
+          get(statementTarget, statementProperty) {
+            if (statementProperty !== "bind") {
+              const value = Reflect.get(statementTarget, statementProperty);
+              return typeof value === "function" ? value.bind(statementTarget) : value;
+            }
+            return (...values: unknown[]) => {
+              const bound = statementTarget.bind(...values);
+              return new Proxy(bound, {
+                get(boundTarget, boundProperty) {
+                  if (boundProperty !== "first") {
+                    const value = Reflect.get(boundTarget, boundProperty);
+                    return typeof value === "function" ? value.bind(boundTarget) : value;
+                  }
+                  return async <T>() => {
+                    const row = await boundTarget.first<T>();
+                    completedReads += 1;
+                    if (completedReads === expectedReads) releaseReads?.();
+                    await allReadsCompleted;
+                    return row;
+                  };
+                },
+              });
+            };
+          },
+        });
+      };
+    },
+  });
 }
 
 describe("Agent check configuration revision", () => {
@@ -220,5 +340,86 @@ describe("Agent check configuration revision", () => {
     await expect(
       first<{ count: number }>("SELECT COUNT(*) AS count FROM check_configs"),
     ).resolves.toEqual({ count: 0 });
+  });
+});
+
+describe("service check invariants", () => {
+  it("prevents concurrent policy updates from disabling every check", async () => {
+    await seedServiceChecks();
+    const synchronized = synchronizeCheckCounts(database, 2);
+    const policy = {
+      enabled: false,
+      intervalSeconds: 60,
+      timeoutMs: 5_000,
+      retryCount: 0,
+      failureConfirmations: 2,
+      recoveryConfirmations: 2,
+      critical: true,
+    };
+    const outcomes = await Promise.allSettled([
+      updateServiceCheckPolicy(
+        synchronized,
+        telemetryDatabase,
+        "operations",
+        "user-1",
+        "service-1",
+        "check-a",
+        policy,
+      ),
+      updateServiceCheckPolicy(
+        synchronized,
+        telemetryDatabase,
+        "operations",
+        "user-1",
+        "service-1",
+        "check-b",
+        policy,
+      ),
+    ]);
+
+    expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
+    expect(outcomes.find((outcome) => outcome.status === "rejected")).toMatchObject({
+      reason: { status: 409 },
+    });
+    await expect(
+      first<{ count: number }>("SELECT COUNT(*) AS count FROM check_configs WHERE enabled = 1"),
+    ).resolves.toEqual({ count: 1 });
+    await expect(
+      first<{ count: number }>("SELECT COUNT(*) AS count FROM audit_logs"),
+    ).resolves.toEqual({ count: 1 });
+  });
+
+  it("prevents concurrent deletes from removing every check", async () => {
+    await seedServiceChecks();
+    const synchronized = synchronizeCheckCounts(database, 2);
+    const outcomes = await Promise.allSettled([
+      deleteServiceCheck(
+        synchronized,
+        telemetryDatabase,
+        "operations",
+        "user-1",
+        "service-1",
+        "check-a",
+      ),
+      deleteServiceCheck(
+        synchronized,
+        telemetryDatabase,
+        "operations",
+        "user-1",
+        "service-1",
+        "check-b",
+      ),
+    ]);
+
+    expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
+    expect(outcomes.find((outcome) => outcome.status === "rejected")).toMatchObject({
+      reason: { status: 409 },
+    });
+    await expect(
+      first<{ count: number }>("SELECT COUNT(*) AS count FROM check_configs"),
+    ).resolves.toEqual({ count: 1 });
+    await expect(
+      first<{ count: number }>("SELECT COUNT(*) AS count FROM audit_logs"),
+    ).resolves.toEqual({ count: 1 });
   });
 });

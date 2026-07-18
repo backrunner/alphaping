@@ -931,7 +931,8 @@ export async function updateServiceCheckPolicy(
     critical: row.critical === 1,
   };
   const after = input;
-  await controlDb.batch([
+  const mutationIndex = agentMachineId ? 1 : 0;
+  const statements: D1PreparedStatement[] = [
     ...(agentMachineId
       ? [advanceAgentConfigurationStatement(controlDb, access.workspaceId, agentMachineId, now)]
       : []),
@@ -944,7 +945,15 @@ export async function updateServiceCheckPolicy(
              SELECT desired_config_revision FROM machines
              WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL
            ) END, updated_at = ?
-         WHERE id = ? AND service_id = ? AND workspace_id = ?`,
+         WHERE id = ? AND service_id = ? AND workspace_id = ? AND enabled = ?
+           AND (
+             ? = 1 OR EXISTS (
+               SELECT 1 FROM check_configs remaining
+               WHERE remaining.service_id = check_configs.service_id
+                 AND remaining.workspace_id = check_configs.workspace_id
+                 AND remaining.id != check_configs.id AND remaining.enabled = 1
+             )
+           )`,
       )
       .bind(
         input.enabled ? 1 : 0,
@@ -962,6 +971,8 @@ export async function updateServiceCheckPolicy(
         checkId,
         serviceId,
         access.workspaceId,
+        row.enabled,
+        input.enabled ? 1 : 0,
       ),
     await prepareAuditStatement(controlDb, {
       workspaceId: access.workspaceId,
@@ -972,8 +983,13 @@ export async function updateServiceCheckPolicy(
       before,
       after,
       now,
+      onlyIfPreviousStatementChanged: true,
     }),
-  ]);
+  ];
+  const results = await controlDb.batch(statements);
+  if (results[mutationIndex]?.meta.changes !== 1) {
+    throw error(409, "Check policy changed; reload and try again");
+  }
   await synchronizeCheckPolicyTelemetry(telemetryDb, row, input, now);
 }
 
@@ -1038,42 +1054,59 @@ export async function deleteServiceCheck(
     throw error(409, "The Agent executor is unavailable");
   }
   const secretIds = referencedSecretIds(row.secret_refs_json);
+  const mutationIndex = agentMachineId ? 1 : 0;
+  const audit = await prepareAuditStatement(controlDb, {
+    workspaceId: access.workspaceId,
+    actorUserId: userId,
+    action: "service.check.delete",
+    resourceType: "service",
+    resourceId: serviceId,
+    before: {
+      checkId,
+      enabled: row.enabled === 1,
+      executorKind: row.executor_kind,
+      critical: row.critical === 1,
+    },
+    after: null,
+    now,
+    onlyIfPreviousStatementChanged: true,
+  });
   const statements: D1PreparedStatement[] = [
     ...(agentMachineId
       ? [advanceAgentConfigurationStatement(controlDb, access.workspaceId, agentMachineId, now)]
       : []),
     controlDb
-      .prepare(`DELETE FROM check_configs WHERE id = ? AND service_id = ? AND workspace_id = ?`)
+      .prepare(
+        `DELETE FROM check_configs
+         WHERE id = ? AND service_id = ? AND workspace_id = ?
+           AND EXISTS (
+             SELECT 1 FROM check_configs remaining
+             WHERE remaining.service_id = check_configs.service_id
+               AND remaining.workspace_id = check_configs.workspace_id
+               AND remaining.id != check_configs.id
+           )`,
+      )
       .bind(checkId, serviceId, access.workspaceId),
+    audit,
   ];
   if (secretIds.length > 0) {
     statements.push(
       controlDb
         .prepare(
           `DELETE FROM check_secrets WHERE workspace_id = ?
-           AND id IN (${secretIds.map(() => "?").join(", ")})`,
+           AND id IN (${secretIds.map(() => "?").join(", ")})
+           AND NOT EXISTS (
+             SELECT 1 FROM check_configs
+             WHERE id = ? AND service_id = ? AND workspace_id = ?
+           )`,
         )
-        .bind(access.workspaceId, ...secretIds),
+        .bind(access.workspaceId, ...secretIds, checkId, serviceId, access.workspaceId),
     );
   }
-  statements.push(
-    await prepareAuditStatement(controlDb, {
-      workspaceId: access.workspaceId,
-      actorUserId: userId,
-      action: "service.check.delete",
-      resourceType: "service",
-      resourceId: serviceId,
-      before: {
-        checkId,
-        enabled: row.enabled === 1,
-        executorKind: row.executor_kind,
-        critical: row.critical === 1,
-      },
-      after: null,
-      now,
-    }),
-  );
-  await controlDb.batch(statements);
+  const results = await controlDb.batch(statements);
+  if (results[mutationIndex]?.meta.changes !== 1) {
+    throw error(409, "A service must keep at least one check");
+  }
   await synchronizeCheckPolicyTelemetry(
     telemetryDb,
     row,
