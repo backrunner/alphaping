@@ -47,6 +47,22 @@ async function submitAction(baseUrl, path, cookie, values, label, expected = {})
   return { result, serialized };
 }
 
+async function submitHtmlAction(baseUrl, path, cookie, values, label, expectedStatus = 400) {
+  const response = await fetch(`${baseUrl}${path}`, {
+    method: "POST",
+    headers: {
+      accept: "text/html",
+      "content-type": "application/x-www-form-urlencoded",
+      cookie,
+      origin: baseUrl,
+    },
+    body: form(values),
+    redirect: "manual",
+  });
+  assertResponse(response, expectedStatus, label);
+  return response.text();
+}
+
 function onlyRow(rows, label) {
   if (rows.length !== 1) throw new Error(`${label} returned ${rows.length} rows, expected one`);
   return rows[0];
@@ -1167,6 +1183,28 @@ export async function runWebManagementE2e({
     );
   }
 
+  const invalidIncidentPage = await submitHtmlAction(
+    baseUrl,
+    "/operations/incidents?/incident",
+    adminCookie,
+    {
+      title: "Unassigned incident",
+      summary: "This request must retain its validation feedback.",
+      severity: "major",
+      impact: "degraded",
+      timezoneOffsetMinutes: "0",
+    },
+    "invalid incident form feedback",
+  );
+  if (
+    !invalidIncidentPage.includes('id="create-incident-panel"') ||
+    !invalidIncidentPage.includes('aria-controls="create-incident-panel"') ||
+    !invalidIncidentPage.includes('aria-expanded="true"') ||
+    !invalidIncidentPage.includes("Select at least one affected service")
+  ) {
+    throw new Error("invalid incident feedback was hidden after the failed form action");
+  }
+
   await submitAction(
     baseUrl,
     "/operations/incidents?/incident",
@@ -1224,8 +1262,43 @@ export async function runWebManagementE2e({
     },
     "incident timeline update",
   );
+  const invalidUpdatePage = await submitHtmlAction(
+    baseUrl,
+    "/operations/incidents?/update",
+    adminCookie,
+    { incidentId: incident.id, state: "identified", body: "x" },
+    "invalid incident update feedback",
+  );
+  if (!invalidUpdatePage.includes("Incident update must contain between 2 and 4000 characters")) {
+    throw new Error("invalid incident update feedback was hidden from the timeline");
+  }
 
   const now = Date.now();
+  const invalidAnnouncementPage = await submitHtmlAction(
+    baseUrl,
+    "/operations/incidents?/announcement",
+    adminCookie,
+    {
+      title: "Invalid announcement window",
+      body: "This request must retain its validation feedback.",
+      severity: "info",
+      visibility: "public",
+      startsAt: dateTimeInput(now),
+      expiresAt: dateTimeInput(now - 60 * 60_000),
+      timezoneOffsetMinutes: "0",
+    },
+    "invalid announcement form feedback",
+  );
+  if (
+    !invalidAnnouncementPage.includes('id="create-announcement-panel"') ||
+    !invalidAnnouncementPage.includes('aria-controls="create-announcement-panel"') ||
+    !invalidAnnouncementPage.includes('aria-expanded="true"') ||
+    !invalidAnnouncementPage.includes(
+      "Announcement expiry must be after its start and within one year",
+    )
+  ) {
+    throw new Error("invalid announcement feedback was hidden after the failed form action");
+  }
   await submitAction(
     baseUrl,
     "/operations/incidents?/announcement",

@@ -16,7 +16,11 @@
   } = $props();
 </script>
 
-<section class="form-panel" aria-labelledby="create-announcement-title">
+<section
+  id="create-announcement-panel"
+  class="form-panel"
+  aria-labelledby="create-announcement-title"
+>
   <header>
     <div>
       <h2 id="create-announcement-title">Publish announcement</h2>

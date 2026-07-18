@@ -16,7 +16,7 @@
   } = $props();
 </script>
 
-<section class="form-panel" aria-labelledby="create-incident-title">
+<section id="create-incident-panel" class="form-panel" aria-labelledby="create-incident-title">
   <header>
     <div>
       <h2 id="create-incident-title">Create incident</h2>

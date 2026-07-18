@@ -8,8 +8,12 @@
   import Button from "$components/ui/button/button.svelte";
 
   let { data, form } = $props();
-  let showCreateIncident = $state(false);
-  let showCreateAnnouncement = $state(false);
+  let incidentFormOpen = $state<boolean | null>(null);
+  let announcementFormOpen = $state<boolean | null>(null);
+  const incidentFormError = $derived(form?.kind === "incident" && "message" in form);
+  const announcementFormError = $derived(form?.kind === "announcement" && "message" in form);
+  const showCreateIncident = $derived(incidentFormOpen ?? incidentFormError);
+  const showCreateAnnouncement = $derived(announcementFormOpen ?? announcementFormError);
   const activeOnly = $derived(page.url.searchParams.get("state") === "active");
   const visibleIncidents = $derived(
     activeOnly
@@ -28,6 +32,17 @@
   const announcementErrorProps = $derived(
     form?.kind === "announcement" && "message" in form ? { error: form.message } : {},
   );
+  const updateError = $derived(form?.kind === "update" && "message" in form ? form.message : null);
+
+  function toggleIncidentForm(): void {
+    incidentFormOpen = !showCreateIncident;
+    if (incidentFormOpen) announcementFormOpen = false;
+  }
+
+  function toggleAnnouncementForm(): void {
+    announcementFormOpen = !showCreateAnnouncement;
+    if (announcementFormOpen) incidentFormOpen = false;
+  }
 </script>
 
 <svelte:head><title>Incidents · {data.workspace.name}</title></svelte:head>
@@ -42,11 +57,14 @@
     <div class="actions">
       {#if data.canManageAnnouncements}<Button
           variant="secondary"
-          onclick={() => (showCreateAnnouncement = !showCreateAnnouncement)}
-          ><Megaphone size={14} />Announcement</Button
+          aria-controls="create-announcement-panel"
+          aria-expanded={showCreateAnnouncement}
+          onclick={toggleAnnouncementForm}><Megaphone size={14} />Announcement</Button
         >{/if}
-      {#if data.canCreateIncident}<Button onclick={() => (showCreateIncident = !showCreateIncident)}
-          ><Plus size={14} />New incident</Button
+      {#if data.canCreateIncident}<Button
+          aria-controls="create-incident-panel"
+          aria-expanded={showCreateIncident}
+          onclick={toggleIncidentForm}><Plus size={14} />New incident</Button
         >{/if}
     </div>
   </header>
@@ -57,7 +75,7 @@
       {localNow}
       {timezoneOffsetMinutes}
       {...incidentErrorProps}
-      oncancel={() => (showCreateIncident = false)}
+      oncancel={() => (incidentFormOpen = false)}
     />
   {/if}
 
@@ -67,7 +85,7 @@
       {localTomorrow}
       {timezoneOffsetMinutes}
       {...announcementErrorProps}
-      oncancel={() => (showCreateAnnouncement = false)}
+      oncancel={() => (announcementFormOpen = false)}
     />
   {/if}
 
@@ -110,6 +128,7 @@
         >
       </nav>
     </header>
+    {#if updateError}<p class="form-error" role="alert">{updateError}</p>{/if}
     {#if visibleIncidents.length > 0}
       {#each visibleIncidents as incident (incident.id)}<IncidentItem {incident} />{/each}
     {:else}
@@ -236,6 +255,14 @@
   .empty p {
     color: var(--text-muted);
     font-size: 10px;
+  }
+  .form-error {
+    margin: 0 0 10px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    color: var(--status-down);
+    background: var(--status-down-bg);
+    font-size: 11px;
   }
   @media (max-width: 720px) {
     .page-header {
