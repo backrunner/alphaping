@@ -35,15 +35,26 @@ export async function createIncident(
     startsAt: number;
   },
 ): Promise<{ incidentId: string }> {
-  const access = await loadMonitoringAccess(db, workspaceSlug, userId);
-  const serviceIds = [...new Set(input.serviceIds)].slice(0, 20);
+  const serviceIds = [...new Set(input.serviceIds)];
   if (serviceIds.length === 0) throw error(400, "Select at least one affected service");
+  if (serviceIds.length > 20) throw error(400, "An incident can affect at most 20 services");
   if (!(["minor", "major", "critical"] as const).includes(input.severity)) {
     throw error(400, "Incident severity is invalid");
   }
   if (input.impact !== "degraded" && input.impact !== "down") {
     throw error(400, "Incident impact is invalid");
   }
+  const now = Date.now();
+  if (
+    !Number.isSafeInteger(input.startsAt) ||
+    input.startsAt < now - 365 * 24 * 60 * 60_000 ||
+    input.startsAt > now + 30 * 24 * 60 * 60_000
+  ) {
+    throw error(400, "Incident start time is outside the allowed range");
+  }
+  const title = validText(input.title, 2, 120, "Incident title");
+  const summary = validText(input.summary, 2, 2_000, "Incident summary");
+  const access = await loadMonitoringAccess(db, workspaceSlug, userId);
   const services = await db
     .prepare(
       `SELECT id FROM services WHERE workspace_id = ? AND deleted_at IS NULL
@@ -59,14 +70,7 @@ export async function createIncident(
   ) {
     throw error(404, "Service not found");
   }
-  const now = Date.now();
-  const startsAt = Number.isFinite(input.startsAt) ? input.startsAt : now;
-  if (startsAt < now - 365 * 24 * 60 * 60_000 || startsAt > now + 30 * 24 * 60 * 60_000) {
-    throw error(400, "Incident start time is outside the allowed range");
-  }
   const incidentId = crypto.randomUUID();
-  const title = validText(input.title, 2, 120, "Incident title");
-  const summary = validText(input.summary, 2, 2_000, "Incident summary");
   const statements: D1PreparedStatement[] = [
     db
       .prepare(
@@ -81,7 +85,7 @@ export async function createIncident(
         title,
         summary,
         input.severity,
-        startsAt,
+        input.startsAt,
         userId,
         now,
         now,
@@ -185,8 +189,8 @@ export async function createAnnouncement(
     throw error(400, "Announcement options are invalid");
   }
   if (
-    !Number.isFinite(input.startsAt) ||
-    !Number.isFinite(input.expiresAt) ||
+    !Number.isSafeInteger(input.startsAt) ||
+    !Number.isSafeInteger(input.expiresAt) ||
     input.expiresAt <= input.startsAt ||
     input.expiresAt - input.startsAt > 365 * 24 * 60 * 60_000
   ) {
