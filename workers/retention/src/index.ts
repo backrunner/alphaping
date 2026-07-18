@@ -1,5 +1,10 @@
 import { cleanArtifactBucket } from "./artifact-retention";
-import { cleanAgentCommands, cleanAuditLogs, cleanExpiredAnnouncements } from "./control-retention";
+import {
+  cleanAgentCommands,
+  cleanAuditLogs,
+  cleanExpiredAnnouncements,
+  cleanOrphanCheckSecrets,
+} from "./control-retention";
 import { acquireWorkspaceRetentionLease, releaseWorkspaceRetentionLease } from "./cursor";
 import { finalizeDeletedWorkspace, finalizeSoftDeletedResources } from "./soft-delete";
 import {
@@ -151,10 +156,18 @@ async function cleanWorkspace(
     policy.audit_log_days,
   );
   const softDeletes = await finalizeSoftDeletedResources(env, policy, now);
+  const orphanSecrets = await cleanOrphanCheckSecrets(env.CONTROL_DB, policy.workspace_id, now);
   await releaseWorkspaceRetentionLease(env.TELEMETRY_DB, lease, events.timeCursor, Date.now());
   const workspace = await finalizeDeletedWorkspace(env, policy, now);
   return {
-    deletedRows: telemetry + events.deleted + announcements + auditLogs + softDeletes + workspace,
+    deletedRows:
+      telemetry +
+      events.deleted +
+      announcements +
+      auditLogs +
+      softDeletes +
+      orphanSecrets +
+      workspace,
     processed: true,
   };
 }

@@ -1,5 +1,7 @@
 const DAY_MS = 86_400_000;
 const COMMAND_AUDIT_DAYS = 30;
+const ORPHAN_SECRET_GRACE_MS = DAY_MS;
+const ORPHAN_SECRET_BATCH = 50;
 
 export interface CommandCleanupResult {
   deleted: number;
@@ -95,6 +97,37 @@ export async function cleanAuditLogs(
        )`,
     )
     .bind(workspaceId, now - retentionDays * DAY_MS, rowBatch)
+    .run();
+  return result.meta.changes ?? 0;
+}
+
+export async function cleanOrphanCheckSecrets(
+  db: D1Database,
+  workspaceId: string,
+  now: number,
+  rowBatch = ORPHAN_SECRET_BATCH,
+): Promise<number> {
+  if (!Number.isInteger(rowBatch) || rowBatch < 1 || rowBatch > ORPHAN_SECRET_BATCH) {
+    throw new Error("orphan check secret batch must be between 1 and 50");
+  }
+  const result = await db
+    .prepare(
+      `DELETE FROM check_secrets WHERE id IN (
+         SELECT secret.id FROM check_secrets secret
+         WHERE secret.workspace_id = ? AND secret.created_at < ?
+           AND NOT EXISTS (
+             SELECT 1 FROM check_configs config,
+               json_tree(
+                 CASE WHEN json_valid(config.secret_refs_json)
+                   THEN config.secret_refs_json ELSE '{}' END
+               ) secret_ref
+             WHERE config.workspace_id = secret.workspace_id
+               AND secret_ref.type = 'text' AND secret_ref.atom = secret.id
+           )
+         ORDER BY secret.id LIMIT ?
+       )`,
+    )
+    .bind(workspaceId, now - ORPHAN_SECRET_GRACE_MS, rowBatch)
     .run();
   return result.meta.changes ?? 0;
 }

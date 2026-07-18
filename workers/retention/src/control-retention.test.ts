@@ -1,7 +1,12 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { cleanAgentCommands, cleanAuditLogs, cleanExpiredAnnouncements } from "./control-retention";
+import {
+  cleanAgentCommands,
+  cleanAuditLogs,
+  cleanExpiredAnnouncements,
+  cleanOrphanCheckSecrets,
+} from "./control-retention";
 
 const DAY_MS = 86_400_000;
 
@@ -28,6 +33,22 @@ beforeEach(async () => {
     env.CONTROL_DB.prepare("DROP TABLE IF EXISTS audit_logs"),
     env.CONTROL_DB.prepare(
       `CREATE TABLE audit_logs (
+        id TEXT PRIMARY KEY NOT NULL,
+        workspace_id TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      )`,
+    ),
+    env.CONTROL_DB.prepare("DROP TABLE IF EXISTS check_configs"),
+    env.CONTROL_DB.prepare(
+      `CREATE TABLE check_configs (
+        id TEXT PRIMARY KEY NOT NULL,
+        workspace_id TEXT NOT NULL,
+        secret_refs_json TEXT NOT NULL
+      )`,
+    ),
+    env.CONTROL_DB.prepare("DROP TABLE IF EXISTS check_secrets"),
+    env.CONTROL_DB.prepare(
+      `CREATE TABLE check_secrets (
         id TEXT PRIMARY KEY NOT NULL,
         workspace_id TEXT NOT NULL,
         created_at INTEGER NOT NULL
@@ -64,6 +85,50 @@ describe("workspace control retention", () => {
     ).all<{ id: string }>();
     expect(remainingAnnouncements.results).toEqual([{ id: "recent-announcement" }]);
     expect(remainingAudit.results).toEqual([{ id: "recent-audit" }]);
+  });
+
+  it("deletes only aged unreferenced check secrets in bounded workspace batches", async () => {
+    const now = 100 * DAY_MS;
+    const insertSecret = env.CONTROL_DB.prepare(
+      "INSERT INTO check_secrets (id, workspace_id, created_at) VALUES (?, ?, ?)",
+    );
+    await env.CONTROL_DB.batch([
+      env.CONTROL_DB.prepare(
+        `INSERT INTO check_configs (id, workspace_id, secret_refs_json)
+         VALUES ('check-1', 'workspace-1', ?)`,
+      ).bind(
+        JSON.stringify({
+          headers: { authorization: "referenced-header" },
+          body: "referenced-body",
+          tcpPayload: "referenced-tcp",
+        }),
+      ),
+      env.CONTROL_DB.prepare(
+        `INSERT INTO check_configs (id, workspace_id, secret_refs_json)
+         VALUES ('malformed-check', 'workspace-1', '{')`,
+      ),
+      insertSecret.bind("orphan-a", "workspace-1", now - 2 * DAY_MS),
+      insertSecret.bind("orphan-b", "workspace-1", now - 2 * DAY_MS),
+      insertSecret.bind("orphan-c", "workspace-1", now - 2 * DAY_MS),
+      insertSecret.bind("recent-orphan", "workspace-1", now - 1_000),
+      insertSecret.bind("referenced-header", "workspace-1", now - 2 * DAY_MS),
+      insertSecret.bind("referenced-body", "workspace-1", now - 2 * DAY_MS),
+      insertSecret.bind("referenced-tcp", "workspace-1", now - 2 * DAY_MS),
+      insertSecret.bind("other-workspace", "workspace-2", now - 2 * DAY_MS),
+    ]);
+
+    await expect(cleanOrphanCheckSecrets(env.CONTROL_DB, "workspace-1", now, 2)).resolves.toBe(2);
+    await expect(cleanOrphanCheckSecrets(env.CONTROL_DB, "workspace-1", now, 2)).resolves.toBe(1);
+    const remaining = await env.CONTROL_DB.prepare("SELECT id FROM check_secrets ORDER BY id").all<{
+      id: string;
+    }>();
+    expect(remaining.results).toEqual([
+      { id: "other-workspace" },
+      { id: "recent-orphan" },
+      { id: "referenced-body" },
+      { id: "referenced-header" },
+      { id: "referenced-tcp" },
+    ]);
   });
 });
 

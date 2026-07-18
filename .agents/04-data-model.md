@@ -472,6 +472,7 @@ HTTP 检查的敏感 header/body 字段：
 - `service_checks.secret_refs_json` 只保存 secret ID 和目标字段。
 - 管理 API 返回 masked metadata，不返回明文。
 - 编辑 secret 时视为替换，不能读取旧值。
+- Retention Worker 在 workspace lease 内按结构化 JSON 引用检查，每小时最多删除 50 个创建超过 24 小时且未被任何 check 引用的孤儿 secret；malformed 引用不能阻断有界清理。
 
 ## 13. Migration 规则
 

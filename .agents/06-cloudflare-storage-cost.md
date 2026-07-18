@@ -159,6 +159,8 @@ Paid included                        25,000.000m/month
 
 Retention 每个 workspace 每小时最多写 7 个 resource cursor、1 次 workspace lease claim 和 1 次 lease release，即 `9 * 720 = 6,480` cursor rows written/月。一个常见单 workspace 部署只占 30 台模型 2.484m margin 的 0.261%。Agent command expiry/completion partial indexes 只随低频管理命令变化，不进入稳态遥测账本。
 
+Check secret orphan cleanup 复用同一 hourly workspace lease 和 CONTROL_DB invocation，不增加 Worker request。每轮结构化扫描当前 check secret references，并最多删除 50 个创建超过 24 小时的未引用行；正常无 orphan 时不产生 D1 write，历史异常行的有界 DELETE 属于一次性收敛负载并由 25% 配置/retention margin 覆盖。
+
 `retention_runs` 保留 30 天。稳态每小时的 run insert、completion update、到期 delete 及主键/`started_at` 索引维护按保守上界计 `7 * 720 = 5,040` rows written/月；旧版本积压每小时最多额外删除 100 行，属于有界迁移期负载，不进入长期稳态基线。
 
 R2 artifact retention 每小时对 `exports/v1/` 和 `backups/v1/` 各执行一次最多 500 object 的 list，并为每个 prefix 做一次 D1 lease claim 和 release。固定成本为每月 `2 * 720 = 1,440` Class A 和 `4 * 720 = 2,880` D1 cursor writes；分别只占 R2 included Class A 的 0.144% 和 D1 write margin 的 0.116%。DeleteObject 免费。该成本不随 machine/service 数量增长，只随积压 artifact 跨更多 hourly cursor 周期收敛。

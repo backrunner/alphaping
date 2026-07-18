@@ -238,6 +238,8 @@ src/
 
 软删除 finalizer 使用配置的 `soft_delete_grace_days`。机器的历史 Agent ID 和服务的 check telemetry PK 使用 CONTROL_DB 持久游标分批遍历；每页关联项的 block/latest/rollup/event 或 Agent replay 确认清空后才推进游标。服务端为每个 check 独立生成的 secret 随已完成页删除，最后再删除关联授权和 CONTROL_DB 记录；没有 purge claim 列的 control-only 资源必须在同一 CONTROL_DB 事务内重新确认仍满足删除条件后才能删除授权。workspace 删除将未单独标记的子资源视为同时删除，只有两库都无业务行后才物理删除 workspace。跨 D1 不宣称原子性，恢复只允许在 grace window 内完成。
 
+每个 workspace lease 内还使用结构化 JSON tree 检查 `check_configs.secret_refs_json`，每轮最多删除 50 个创建超过 24 小时且没有任何当前引用的 `check_secrets`。清理在 soft-delete 收敛之后执行；malformed 引用按空对象处理，不能阻断该 workspace 的 retention。
+
 ## 11. `crates/agent`
 
 ```text
