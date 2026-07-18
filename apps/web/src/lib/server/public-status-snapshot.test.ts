@@ -56,4 +56,28 @@ describe("public status snapshot", () => {
       ),
     ).toBeNull();
   });
+
+  it("does not extend announcement visibility while serving a stale snapshot", () => {
+    const expiringPage = {
+      ...page,
+      announcements: [
+        {
+          id: "maintenance-1",
+          title: "Scheduled maintenance",
+          body: "Maintenance is complete.",
+          severity: "maintenance" as const,
+          startsAt: now - 60_000,
+          expiresAt: now + 1_000,
+        },
+      ],
+    };
+    const serialized = JSON.stringify(buildPublicStatusSnapshot(expiringPage, now));
+
+    expect(
+      parsePublicStatusSnapshot(serialized, "operations", now)?.page.announcements,
+    ).toHaveLength(1);
+    expect(
+      parsePublicStatusSnapshot(serialized, "operations", now + 1_000)?.page.announcements,
+    ).toEqual([]);
+  });
 });

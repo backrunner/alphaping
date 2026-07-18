@@ -227,10 +227,11 @@ export async function loadIncidentCenter(
       .prepare(
         `SELECT id, title, body, severity, starts_at, expires_at, visibility
      FROM announcements WHERE workspace_id = ? AND deleted_at IS NULL
-       AND expires_at > ? AND (visibility != 'private' OR ? = 'admin')
+       AND expires_at > ? AND (starts_at <= ? OR ? = 'admin')
+       AND (visibility != 'private' OR ? = 'admin')
      ORDER BY starts_at DESC LIMIT 100`,
       )
-      .bind(workspace.id, now, workspace.role)
+      .bind(workspace.id, now, now, workspace.role, workspace.role)
       .all<AnnouncementRow>()
   ).results;
   return {

@@ -292,6 +292,15 @@ function sanitizePage(value: unknown, workspaceSlug: string): PublicStatusPage |
   };
 }
 
+function visibleAnnouncements(
+  page: PublicStatusPage,
+  now: number,
+): PublicStatusPage["announcements"] {
+  return page.announcements.filter(
+    (announcement) => announcement.startsAt <= now && announcement.expiresAt > now,
+  );
+}
+
 export function publicStatusSnapshotKey(origin: string, workspaceSlug: string): Request {
   const url = new URL(
     `/__alphaping_cache__/public-status/v1/${encodeURIComponent(workspaceSlug)}`,
@@ -327,7 +336,12 @@ export function parsePublicStatusSnapshot(
       return null;
     }
     const page = sanitizePage(parsed.page, workspaceSlug);
-    return page ? { page, cachedAt } : null;
+    return page
+      ? {
+          page: { ...page, announcements: visibleAnnouncements(page, now) },
+          cachedAt,
+        }
+      : null;
   } catch {
     return null;
   }

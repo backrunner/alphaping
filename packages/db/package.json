@@ -19,6 +19,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "catalog:",
+    "miniflare": "4.20260710.0",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }
