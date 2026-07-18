@@ -1,8 +1,10 @@
 import { performance } from "node:perf_hooks";
 
 const MACHINE_TARGET = 500;
+const MACHINE_PREVIEW_TARGET = 12;
 const MEASURED_REQUESTS = 20;
 const SSR_P95_LIMIT_MS = 500;
+const SSR_HTML_LIMIT_BYTES = 250_000;
 const TELEMETRY_PK_BASE = 1_000_000;
 
 function onlyRow(rows, label) {
@@ -128,25 +130,40 @@ export async function runWebPerformanceE2e({
   await fetchDashboard(baseUrl, adminCookie);
   const timings = [];
   let htmlBytes = 0;
+  const previewMachines = machineRows.slice(0, MACHINE_PREVIEW_TARGET);
+  const firstOmittedMachine = machineRows[MACHINE_PREVIEW_TARGET];
+  const lastOmittedMachine = machineRows.at(-1);
+  if (!firstOmittedMachine || !lastOmittedMachine) {
+    throw new Error("performance fixture does not exceed the dashboard preview limit");
+  }
   for (let request = 0; request < MEASURED_REQUESTS; request += 1) {
     const result = await fetchDashboard(baseUrl, adminCookie);
     timings.push(result.durationMs);
     htmlBytes = Buffer.byteLength(result.html);
-    for (const machine of machineRows) {
+    for (const machine of previewMachines) {
       if (!result.html.includes(machine.name)) {
-        throw new Error(`500-machine dashboard omitted ${machine.name}`);
+        throw new Error(`500-machine dashboard preview omitted ${machine.name}`);
       }
+    }
+    if (
+      result.html.includes(firstOmittedMachine.name) ||
+      result.html.includes(lastOmittedMachine.name)
+    ) {
+      throw new Error("500-machine dashboard rendered resources beyond its bounded preview");
     }
   }
 
   const p95Ms = percentile95(timings);
   const maxMs = Math.max(...timings);
   console.log(
-    `Web 500-machine SSR: p95=${p95Ms.toFixed(1)}ms max=${maxMs.toFixed(1)}ms html=${htmlBytes}B`,
+    `Web 500-machine SSR: p95=${p95Ms.toFixed(1)}ms max=${maxMs.toFixed(1)}ms html=${htmlBytes}B preview=${MACHINE_PREVIEW_TARGET}`,
   );
   if (p95Ms >= SSR_P95_LIMIT_MS) {
     throw new Error(
       `500-machine dashboard SSR p95 ${p95Ms.toFixed(1)}ms exceeded ${SSR_P95_LIMIT_MS}ms`,
     );
+  }
+  if (htmlBytes > SSR_HTML_LIMIT_BYTES) {
+    throw new Error(`500-machine dashboard HTML ${htmlBytes}B exceeded ${SSR_HTML_LIMIT_BYTES}B`);
   }
 }

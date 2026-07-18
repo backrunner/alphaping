@@ -61,7 +61,7 @@
       detail={formatBytes(data.summary.networkTxTotal)}
       href={`/${data.workspace.slug}/machines?sort=upload`}
     />
-    {#if data.services.length > 0}
+    {#if data.summary.services > 0}
       <Metric
         label="Service faults"
         value={data.summary.servicesDown}
@@ -77,12 +77,12 @@
     />
   </section>
 
-  {#if data.machines.length > 0}
+  {#if data.summary.machines > 0}
     <section class="section">
       <header class="section__header">
         <div>
           <h2>Machines</h2>
-          <span>{data.machines.length} resources</span>
+          <span>Showing {data.machines.length} of {data.summary.machines}</span>
         </div>
         <a href={`/${data.workspace.slug}/machines`}>View all</a>
       </header>
@@ -94,12 +94,12 @@
     </section>
   {/if}
 
-  {#if data.services.length > 0}
+  {#if data.summary.services > 0}
     <section class="section">
       <header class="section__header">
         <div>
           <h2>Services</h2>
-          <span>Last 150 minutes</span>
+          <span>Showing {data.services.length} of {data.summary.services} · Last 150 minutes</span>
         </div>
         <a href={`/${data.workspace.slug}/services`}>Open status view</a>
       </header>
@@ -111,7 +111,7 @@
     </section>
   {/if}
 
-  {#if data.machines.length === 0 && data.services.length === 0}
+  {#if data.summary.machines === 0 && data.summary.services === 0}
     <section class="empty">
       <Boxes size={28} />
       {#if data.workspace.role === "admin"}

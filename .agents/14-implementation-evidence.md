@@ -19,7 +19,7 @@
 
 Agent 本地 credential 也遵循平台保护：Windows 配置使用 DPAPI LocalMachine；macOS enrollment 和旧配置迁移优先写 `/Library/Keychains/System.keychain`，data key 按 epoch 使用独立 account，配置文件只保留 storage 标记和 nonce prefix。Keychain 无权限或不可用时保留 0600 restricted file 并输出结构化 capability warning。macOS 自动化使用临时 keychain 验证二进制 secret 往返，不向宿主 System Keychain 写测试项；配置测试验证旧格式默认回退和 Keychain 模式不序列化 identity/data key。真实 System Keychain 写入仍需在 root LaunchDaemon 安装验收中确认。
 
-非功能目标有直接门禁：Agent spool 测试持久化 1,441 分钟、8,646 个 10 秒 samples，模拟失败后关闭并重开 SQLite，再验证网络 wake、按 nominal minute 补报和逐 ACK 清空；`scripts/check-agent-resources.mjs` 先创建有效 resource spool fixture，再启动真实 release Agent，预热后测量 30 秒，记录为 12.48 MiB peak RSS 和 0.129% 单核 CPU。采样器仍每 10 秒刷新已发现磁盘容量，但只每 60 秒重新枚举 mount。Web E2E 在临时双 D1 中创建 500 台 active machines 和 latest rows，分块读取 D1 后完整 SSR 20 次，最近一轮 p95/max 为 125.2/142.9 ms，低于 500 ms 目标，并验证全部机器均进入响应。
+非功能目标有直接门禁：Agent spool 测试持久化 1,441 分钟、8,646 个 10 秒 samples，模拟失败后关闭并重开 SQLite，再验证网络 wake、按 nominal minute 补报和逐 ACK 清空；`scripts/check-agent-resources.mjs` 先创建有效 resource spool fixture，再启动真实 release Agent，预热后测量 30 秒，记录为 12.48 MiB peak RSS 和 0.129% 单核 CPU。采样器仍每 10 秒刷新已发现磁盘容量，但只每 60 秒重新枚举 mount。Web E2E 在临时双 D1 中创建 500 台 active machines 和 latest rows，分块读取全部授权 latest 计算汇总后只 SSR 12 台问题优先预览；20 次测量要求 p95 低于 500 ms、HTML 不超过 250 KiB，并验证预览边界内外的机器分别出现与省略。
 
 ## 2. 本轮安全与可靠性加固
 

@@ -135,6 +135,7 @@ export interface DashboardSnapshot {
     networkTxBps: number;
     networkRxTotal: number;
     networkTxTotal: number;
+    services: number;
     servicesDown: number;
     activeIncidents: number;
   };
@@ -145,6 +146,8 @@ export interface DashboardSnapshot {
 export class DashboardNotFoundError extends Error {}
 
 const D1_IN_BATCH_SIZE = 90;
+const DASHBOARD_MACHINE_PREVIEW = 12;
+const DASHBOARD_SERVICE_PREVIEW = 10;
 
 function placeholders(length: number): string {
   return Array.from({ length }, () => "?").join(", ");
@@ -399,6 +402,20 @@ export async function loadDashboardSnapshot(
       timeline,
     };
   });
+  const machinePreview = machines
+    .toSorted(
+      (left, right) =>
+        machineStatePriority(left.state) - machineStatePriority(right.state) ||
+        left.name.localeCompare(right.name),
+    )
+    .slice(0, DASHBOARD_MACHINE_PREVIEW);
+  const servicePreview = services
+    .toSorted(
+      (left, right) =>
+        serviceStatePriority(left.state) - serviceStatePriority(right.state) ||
+        left.name.localeCompare(right.name),
+    )
+    .slice(0, DASHBOARD_SERVICE_PREVIEW);
   return {
     workspace: {
       id: workspace.id,
@@ -417,12 +434,21 @@ export async function loadDashboardSnapshot(
       networkTxBps: machines.reduce((total, machine) => total + machine.networkTxBps, 0),
       networkRxTotal: machines.reduce((total, machine) => total + machine.networkRxTotal, 0),
       networkTxTotal: machines.reduce((total, machine) => total + machine.networkTxTotal, 0),
+      services: services.length,
       servicesDown: services.filter((service) => service.state === "down").length,
       activeIncidents: activeIncidentCount,
     },
-    machines,
-    services,
+    machines: machinePreview,
+    services: servicePreview,
   };
+}
+
+function machineStatePriority(state: DashboardMachine["state"]): number {
+  return { down: 0, degraded: 1, offline: 2, unknown: 3, maintenance: 4, healthy: 5 }[state];
+}
+
+function serviceStatePriority(state: DashboardService["state"]): number {
+  return { down: 0, degraded: 1, unknown: 2, maintenance: 3, healthy: 4 }[state];
 }
 
 function normalizeMachineState(state: string): DashboardMachine["state"] {
