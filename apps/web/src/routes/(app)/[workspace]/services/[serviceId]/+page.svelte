@@ -56,7 +56,7 @@
           <ExternalLink size={14} />View status page
         </a>
       {/if}
-      {#if data.service.canManage}
+      {#if data.workspace.role === "admin"}
         <form method="POST" action="?/visibility">
           <input type="hidden" name="visibility" value={data.publicAccess ? "private" : "public"} />
           <Button type="submit" variant="secondary">
@@ -65,6 +65,8 @@
               />Publish{/if}
           </Button>
         </form>
+      {/if}
+      {#if data.service.canManage}
         <form
           method="POST"
           action="?/delete"

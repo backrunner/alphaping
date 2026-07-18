@@ -22,6 +22,7 @@ vi.mock("./service-config-compiler.js", () => ({
 import {
   createServiceMonitor,
   deleteServiceCheck,
+  setServicePublicAccess,
   updateServiceCheckPolicy,
 } from "./service-config.js";
 
@@ -153,12 +154,21 @@ beforeEach(async () => {
       )`,
     ),
     database.prepare(
+      `CREATE TABLE dashboards (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        visibility TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      )`,
+    ),
+    database.prepare(
       `CREATE TABLE dashboard_resources (
         dashboard_id TEXT NOT NULL,
         resource_type TEXT NOT NULL,
         resource_id TEXT NOT NULL,
         sort_order INTEGER NOT NULL,
-        public_override TEXT NOT NULL
+        public_override TEXT NOT NULL,
+        PRIMARY KEY (dashboard_id, resource_type, resource_id)
       )`,
     ),
     database.prepare(
@@ -168,7 +178,8 @@ beforeEach(async () => {
         resource_id TEXT NOT NULL,
         effect TEXT NOT NULL,
         projection_profile TEXT NOT NULL,
-        updated_at INTEGER NOT NULL
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (workspace_id, resource_type, resource_id)
       )`,
     ),
     database.prepare(
@@ -537,6 +548,38 @@ describe("service check invariants", () => {
     await expect(
       first<{ count: number }>("SELECT COUNT(*) AS count FROM check_configs"),
     ).resolves.toEqual({ count: 1 });
+    await expect(
+      first<{ count: number }>("SELECT COUNT(*) AS count FROM audit_logs"),
+    ).resolves.toEqual({ count: 1 });
+  });
+});
+
+describe("service public access persistence", () => {
+  it("updates the resource policy, dashboard, and audit together", async () => {
+    await database.batch([
+      database.prepare("INSERT INTO workspaces VALUES ('workspace-1', 1, NULL)"),
+      database.prepare(
+        `INSERT INTO services
+          (id, telemetry_pk, workspace_id, name, slug, description, status_rule_json,
+           maintenance_until, created_at, updated_at, deleted_at)
+         VALUES ('service-1', 10, 'workspace-1', 'API', 'api', '', '{}', NULL, 1, 1, NULL)`,
+      ),
+      database.prepare(
+        "INSERT INTO dashboards VALUES ('dashboard-1', 'workspace-1', 'private', 1)",
+      ),
+    ]);
+
+    await expect(
+      setServicePublicAccess(database, "operations", "user-1", "service-1", true),
+    ).resolves.toBeUndefined();
+    await expect(
+      first<{ effect: string }>(
+        "SELECT effect FROM resource_public_policies WHERE resource_id = 'service-1'",
+      ),
+    ).resolves.toEqual({ effect: "allow" });
+    await expect(
+      first<{ visibility: string }>("SELECT visibility FROM dashboards WHERE id = 'dashboard-1'"),
+    ).resolves.toEqual({ visibility: "public" });
     await expect(
       first<{ count: number }>("SELECT COUNT(*) AS count FROM audit_logs"),
     ).resolves.toEqual({ count: 1 });

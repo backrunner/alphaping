@@ -1270,14 +1270,28 @@ export async function setServicePublicAccess(
   isPublic: boolean,
 ): Promise<void> {
   const access = await loadMonitoringAccess(db, workspaceSlug, userId);
-  requireResourceCapability(access, "service", serviceId, "manage");
-  const service = await db
-    .prepare(`SELECT id FROM services WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL`)
-    .bind(serviceId, access.workspaceId)
-    .first<{ id: string }>();
+  requireAdmin(access);
+  const [service, policy, dashboard] = await Promise.all([
+    db
+      .prepare(`SELECT id FROM services WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL`)
+      .bind(serviceId, access.workspaceId)
+      .first<{ id: string }>(),
+    db
+      .prepare(
+        `SELECT effect, projection_profile FROM resource_public_policies
+         WHERE workspace_id = ? AND resource_type = 'service' AND resource_id = ?`,
+      )
+      .bind(access.workspaceId, serviceId)
+      .first<{ effect: "allow" | "deny"; projection_profile: "summary" | "detailed" }>(),
+    db
+      .prepare(`SELECT visibility FROM dashboards WHERE id = ? AND workspace_id = ?`)
+      .bind(access.defaultDashboardId, access.workspaceId)
+      .first<{ visibility: "private" | "authenticated" | "public" }>(),
+  ]);
   if (!service) throw error(404, "Service not found");
+  if (!dashboard) throw error(409, "The default dashboard is unavailable");
   const now = Date.now();
-  const statements = [
+  const statements: D1PreparedStatement[] = [
     db
       .prepare(
         `INSERT INTO resource_public_policies
@@ -1308,6 +1322,26 @@ export async function setServicePublicAccess(
         .bind(now, access.defaultDashboardId, access.workspaceId),
     );
   }
+  statements.push(
+    await prepareAuditStatement(db, {
+      workspaceId: access.workspaceId,
+      actorUserId: userId,
+      action: "service.public_access.update",
+      resourceType: "service",
+      resourceId: serviceId,
+      before: {
+        effect: policy?.effect ?? "deny",
+        projectionProfile: policy?.projection_profile ?? "summary",
+        dashboardVisibility: dashboard.visibility,
+      },
+      after: {
+        effect: isPublic ? "allow" : "deny",
+        projectionProfile: "detailed",
+        dashboardVisibility: isPublic ? "public" : dashboard.visibility,
+      },
+      now,
+    }),
+  );
   await db.batch(statements);
 }
 
