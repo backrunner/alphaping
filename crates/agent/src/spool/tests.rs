@@ -41,6 +41,48 @@ fn ack_is_the_only_path_that_removes_a_delivery() {
 }
 
 #[test]
+fn delivery_attempt_persists_sequence_and_retry_schedule_together() {
+    let directory = tempdir().expect("temp directory");
+    let mut spool = Spool::open(directory.path().join("spool.db")).expect("open spool");
+    spool
+        .append_sample(&sample(60_000), 120_000)
+        .expect("append sample");
+    let report_id = spool
+        .create_next_delivery(7, 2, 120_000)
+        .expect("create delivery")
+        .expect("delivery exists");
+    assert_eq!(
+        spool
+            .begin_delivery_attempt(&report_id, 130_000)
+            .expect("begin delivery"),
+        1
+    );
+    assert!(
+        spool
+            .due_delivery(129_999)
+            .expect("read pending delivery")
+            .is_none()
+    );
+    spool
+        .reschedule_delivery(&report_id, 140_000, "local_config")
+        .expect("reschedule delivery");
+    assert!(
+        spool
+            .due_delivery(139_999)
+            .expect("read rescheduled delivery")
+            .is_none()
+    );
+    assert_eq!(
+        spool
+            .due_delivery(140_000)
+            .expect("read retry delivery")
+            .expect("retry delivery")
+            .attempt_count,
+        1
+    );
+}
+
+#[test]
 fn more_than_24_hours_of_deliveries_survive_restart_and_recover_in_order() {
     const MINUTES: i64 = 24 * 60 + 1;
     const SAMPLES_PER_MINUTE: i64 = 6;
@@ -170,7 +212,7 @@ fn enrollment_initializes_the_server_sequence_and_refuses_overwrite() {
 }
 
 #[test]
-fn sequence_rollback_below_the_config_checkpoint_fails_closed() {
+fn sequence_rollback_skips_the_reserved_range() {
     let directory = tempdir().expect("temp directory");
     let path = directory.path().join("spool.db");
     let mut spool = Spool::create(&path, 1).expect("create enrollment spool");
@@ -179,7 +221,13 @@ fn sequence_rollback_below_the_config_checkpoint_fails_closed() {
     spool
         .set_transport_sequence(1)
         .expect("simulate restored database");
-    assert!(spool.verify_sequence_checkpoint(2).is_err());
+    assert_eq!(
+        spool
+            .reconcile_sequence_checkpoint(2)
+            .expect("reconcile reserved sequence"),
+        2
+    );
+    assert_eq!(spool.next_sequence().expect("sequence after recovery"), 3);
 }
 
 #[test]

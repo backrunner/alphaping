@@ -24,7 +24,7 @@ use crate::{
     sampler::Sampler,
     spool::Spool,
     updater::{UpdateRequest, Updater},
-    uploader::{UploadError, Uploader},
+    uploader::Uploader,
 };
 
 struct RuntimeControl<'a> {
@@ -34,6 +34,8 @@ struct RuntimeControl<'a> {
     config: &'a mut AgentConfig,
     container_monitor: &'a mut Option<ContainerMonitor>,
 }
+
+const TRANSPORT_SEQUENCE_RESERVATION: u64 = 1_024;
 
 pub async fn run(
     config_path: &Path,
@@ -48,12 +50,7 @@ pub async fn run(
         );
     }
     let mut spool = Spool::open_existing(&config.spool_path)?;
-    let persisted_sequence =
-        spool.verify_sequence_checkpoint(config.transport_sequence_checkpoint)?;
-    if persisted_sequence > config.transport_sequence_checkpoint {
-        config.transport_sequence_checkpoint = persisted_sequence;
-        config.save(config_path)?;
-    }
+    spool.reconcile_sequence_checkpoint(config.transport_sequence_checkpoint)?;
     let mut sampler = Sampler::new();
     let initial_probe_config = spool.load_probe_config()?;
     let (probe_monitor, mut probe_results) =
@@ -217,9 +214,12 @@ async fn upload_due_report(
         return Ok(false);
     };
     let mut schedule_changed = false;
-    let sequence = spool.next_sequence()?;
-    control.config.transport_sequence_checkpoint = sequence;
-    control.config.save(control.config_path)?;
+    let random = rand::rng().random_range(0.0..=1.0);
+    let delay = equal_jitter_delay(delivery.attempt_count, random);
+    let next_attempt_at =
+        now_ms.saturating_add(i64::try_from(delay.as_millis()).unwrap_or(300_000));
+    ensure_sequence_reservation(spool, control.config, control.config_path)?;
+    let sequence = spool.begin_delivery_attempt(&delivery.report_id, next_attempt_at)?;
     match uploader.upload(&delivery, sequence, now_ms).await {
         Ok(acknowledgement) => {
             match apply_ack(
@@ -236,7 +236,7 @@ async fn upload_due_report(
                     spool.wake_backlog(now_ms.saturating_add(recovery_jitter_ms))?;
                 }
                 Err(error) => {
-                    spool.mark_failure(
+                    spool.reschedule_delivery(
                         &delivery.report_id,
                         now_ms.saturating_add(300_000),
                         "local_config",
@@ -246,14 +246,31 @@ async fn upload_due_report(
             }
         }
         Err(error) => {
-            let random = rand::rng().random_range(0.0..=1.0);
-            let delay = equal_jitter_delay(delivery.attempt_count, random);
-            let next = now_ms.saturating_add(i64::try_from(delay.as_millis()).unwrap_or(300_000));
-            spool.mark_failure(&delivery.report_id, next, upload_error_code(&error))?;
             warn!(error = %error, retry_seconds = delay.as_secs(), "durable report upload failed");
         }
     }
     Ok(schedule_changed)
+}
+
+fn ensure_sequence_reservation(
+    spool: &mut Spool,
+    config: &mut AgentConfig,
+    config_path: &Path,
+) -> Result<()> {
+    let current = spool.transport_sequence()?;
+    if current >= config.transport_sequence_checkpoint {
+        let checkpoint = current
+            .saturating_add(TRANSPORT_SEQUENCE_RESERVATION)
+            .min(alphaping_protocol::MAX_SEQUENCE);
+        if checkpoint == current {
+            bail!("transport sequence reached the protocol limit; key rotation is required");
+        }
+        let mut updated = config.clone();
+        updated.transport_sequence_checkpoint = checkpoint;
+        updated.save(config_path)?;
+        *config = updated;
+    }
+    Ok(())
 }
 
 fn apply_ack(
@@ -443,13 +460,87 @@ fn unix_time_ms() -> Result<i64> {
     i64::try_from(millis).context("system time is outside the protocol range")
 }
 
-fn upload_error_code(error: &UploadError) -> &'static str {
-    match error {
-        UploadError::Transport(_) => "network",
-        UploadError::Revoked => "revoked",
-        UploadError::ServerStatus => "server_status",
-        UploadError::ResponseTooLarge => "response_too_large",
-        UploadError::Protocol => "protocol",
-        UploadError::Authentication => "authentication",
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use alphaping_protocol::v1::MetricSample;
+    use tempfile::tempdir;
+
+    use super::ensure_sequence_reservation;
+    use crate::{
+        config::{AgentConfig, CredentialStorage},
+        spool::Spool,
+    };
+
+    #[test]
+    fn sequence_range_is_persisted_before_use_and_skipped_after_rollback() {
+        let directory = tempdir().expect("temporary directory");
+        let config_path = directory.path().join("agent.toml");
+        let spool_path = directory.path().join("spool.db");
+        let mut spool = Spool::create(&spool_path, 1).expect("enrollment spool");
+        spool
+            .append_sample(
+                &MetricSample {
+                    observed_at_ms: 60_000,
+                    ..MetricSample::default()
+                },
+                120_000,
+            )
+            .expect("append sample");
+        let report_id = spool
+            .create_next_delivery(7, 3, 120_000)
+            .expect("create delivery")
+            .expect("delivery exists");
+        let mut config = AgentConfig {
+            endpoint: "https://ingest.example.test/v1/reports".to_owned(),
+            agent_id: "018f5f7e-7d28-7e12-a521-123456789abc".to_owned(),
+            machine_pk: 7,
+            workspace_pk: 3,
+            key_epoch: 1,
+            data_key_hex: hex::encode([1; 32]),
+            nonce_prefix_hex: hex::encode([2; 4]),
+            identity_private_key_hex: hex::encode([3; 32]),
+            transport_sequence_checkpoint: 0,
+            credential_storage: CredentialStorage::RestrictedFile,
+            spool_path: spool_path.to_string_lossy().into_owned(),
+            sample_interval_seconds: 10,
+            report_interval_seconds: 60,
+            max_spool_bytes: 512 * 1024 * 1024,
+            container_monitoring_enabled: false,
+            auto_update: false,
+            update_channel: "stable".to_owned(),
+            pinned_version: None,
+        };
+
+        ensure_sequence_reservation(&mut spool, &mut config, &config_path)
+            .expect("first sequence reservation");
+        assert_eq!(
+            spool
+                .begin_delivery_attempt(&report_id, 130_000)
+                .expect("first sequence"),
+            1
+        );
+        assert_eq!(config.transport_sequence_checkpoint, 1_024);
+        let stored: AgentConfig =
+            toml::from_str(&fs::read_to_string(&config_path).expect("persisted Agent config"))
+                .expect("stored Agent config");
+        assert_eq!(stored.transport_sequence_checkpoint, 1_024);
+
+        assert_eq!(
+            spool
+                .reconcile_sequence_checkpoint(stored.transport_sequence_checkpoint)
+                .expect("skip reserved range"),
+            1_024
+        );
+        ensure_sequence_reservation(&mut spool, &mut config, &config_path)
+            .expect("sequence after restart reservation");
+        assert_eq!(
+            spool
+                .begin_delivery_attempt(&report_id, 130_000)
+                .expect("sequence after restart"),
+            1_025
+        );
+        assert_eq!(config.transport_sequence_checkpoint, 2_048);
     }
 }

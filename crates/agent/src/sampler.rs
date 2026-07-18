@@ -7,15 +7,22 @@ pub struct Sampler {
     system: System,
     disks: Disks,
     networks: Networks,
+    last_disk_list_refresh: Instant,
     last_network_refresh: Instant,
 }
 
+const DISK_LIST_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
+
 impl Sampler {
     pub fn new() -> Self {
+        let mut system = System::new();
+        system.refresh_cpu_usage();
+        system.refresh_memory();
         Self {
-            system: System::new_all(),
+            system,
             disks: Disks::new_with_refreshed_list(),
             networks: Networks::new_with_refreshed_list(),
+            last_disk_list_refresh: Instant::now(),
             last_network_refresh: Instant::now(),
         }
     }
@@ -23,7 +30,14 @@ impl Sampler {
     pub fn sample(&mut self, observed_at_ms: i64) -> MetricSample {
         self.system.refresh_cpu_usage();
         self.system.refresh_memory();
-        self.disks.refresh(true);
+        if self.last_disk_list_refresh.elapsed() >= DISK_LIST_REFRESH_INTERVAL {
+            self.disks.refresh(true);
+            self.last_disk_list_refresh = Instant::now();
+        } else {
+            for disk in &mut self.disks {
+                disk.refresh();
+            }
+        }
         self.networks.refresh(true);
         let elapsed = self
             .last_network_refresh

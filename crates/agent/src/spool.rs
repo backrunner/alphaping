@@ -206,12 +206,14 @@ impl Spool {
         u64::try_from(sequence).context("transport sequence is invalid")
     }
 
-    pub fn verify_sequence_checkpoint(&self, checkpoint: u64) -> Result<u64> {
-        let sequence = self.transport_sequence()?;
+    pub fn reconcile_sequence_checkpoint(&mut self, checkpoint: u64) -> Result<u64> {
+        if checkpoint > alphaping_protocol::MAX_SEQUENCE {
+            bail!("transport sequence checkpoint exceeds the protocol limit");
+        }
+        let mut sequence = self.transport_sequence()?;
         if sequence < checkpoint {
-            bail!(
-                "transport sequence state rolled back from checkpoint {checkpoint} to {sequence}; re-enrollment is required"
-            );
+            self.set_transport_sequence(checkpoint)?;
+            sequence = checkpoint;
         }
         if sequence > alphaping_protocol::MAX_SEQUENCE {
             bail!("transport sequence exceeds the protocol limit");
@@ -472,6 +474,40 @@ impl Spool {
         Ok(next_sequence)
     }
 
+    pub fn begin_delivery_attempt(
+        &mut self,
+        report_id: &[u8],
+        next_attempt_at: i64,
+    ) -> Result<u64> {
+        let transaction = self.connection.transaction()?;
+        let current: i64 = transaction.query_row(
+            "SELECT value FROM meta WHERE key = 'transport_sequence'",
+            [],
+            |row| row.get(0),
+        )?;
+        let next = current
+            .checked_add(1)
+            .context("transport sequence exhausted")?;
+        let next_sequence = u64::try_from(next).context("transport sequence rolled back")?;
+        if next_sequence > alphaping_protocol::MAX_SEQUENCE {
+            bail!("transport sequence reached the protocol limit; key rotation is required");
+        }
+        transaction.execute(
+            "UPDATE meta SET value = ? WHERE key = 'transport_sequence'",
+            [next],
+        )?;
+        let changed = transaction.execute(
+            "UPDATE deliveries SET attempt_count = attempt_count + 1,
+             next_attempt_at = ?, last_error_code = NULL WHERE report_id = ?",
+            params![next_attempt_at, report_id],
+        )?;
+        if changed != 1 {
+            bail!("Agent delivery is no longer pending");
+        }
+        transaction.commit()?;
+        Ok(next_sequence)
+    }
+
     pub fn next_live_sequence(&mut self, session_id: &[u8]) -> Result<u64> {
         if session_id.len() != 16 {
             bail!("live session ID must be 16 bytes");
@@ -520,6 +556,23 @@ impl Spool {
              next_attempt_at = ?, last_error_code = ? WHERE report_id = ?",
             params![next_attempt_at, error_code, report_id],
         )?;
+        Ok(())
+    }
+
+    pub fn reschedule_delivery(
+        &self,
+        report_id: &[u8],
+        next_attempt_at: i64,
+        error_code: &str,
+    ) -> Result<()> {
+        let changed = self.connection.execute(
+            "UPDATE deliveries SET next_attempt_at = ?, last_error_code = ?
+             WHERE report_id = ?",
+            params![next_attempt_at, error_code, report_id],
+        )?;
+        if changed != 1 {
+            bail!("Agent delivery is no longer pending");
+        }
         Ok(())
     }
 

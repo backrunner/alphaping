@@ -161,8 +161,8 @@ AES-GCM nonce 固定 96 bits：
 ```
 
 - c2s 与 s2c 使用不同 key 和 prefix。
-- sequence 必须持久化，不能只存在内存。
-- Agent 如果检测到 sequence 文件丢失或回退，停止上报并重新 enrollment/key rotation，禁止从 0 继续使用旧 epoch。
+- sequence 必须持久化，不能只存在内存。Agent 先在受限配置中原子持久化一段 sequence 高水位，再从 SQLite spool 逐个消费已保留值；配置持久化成功前不得构造或发送 envelope。
+- Agent 如果检测到 spool 丢失，停止上报并重新 enrollment/key rotation。若 spool sequence 低于配置中的已保留高水位，必须先单调跳到该高水位再继续，禁止复用可能已经发送过的 sequence；两份状态均无法恢复时必须重新 enrollment。
 - sequence 接近上限时必须提前轮换。
 
 ### 6.3 压缩

@@ -1,6 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { setTimeout as delay } from "node:timers/promises";
@@ -87,7 +86,9 @@ if (!skipBuild) {
   );
 }
 
-const temporary = mkdtempSync(join(tmpdir(), "alphaping-agent-resources-"));
+const temporaryRoot = join(root, "target");
+mkdirSync(temporaryRoot, { recursive: true });
+const temporary = mkdtempSync(join(temporaryRoot, "alphaping-agent-resources-"));
 const configPath = join(temporary, "agent.toml");
 const spoolPath = join(temporary, "spool.db");
 const binary = join(root, "target", "release", "alphaping-agent");
