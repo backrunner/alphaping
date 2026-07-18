@@ -1,7 +1,7 @@
 import { performance } from "node:perf_hooks";
 
 const MACHINE_TARGET = 500;
-const MEASURED_REQUESTS = 9;
+const MEASURED_REQUESTS = 20;
 const SSR_P95_LIMIT_MS = 500;
 const TELEMETRY_PK_BASE = 1_000_000;
 
