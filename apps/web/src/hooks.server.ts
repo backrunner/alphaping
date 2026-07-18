@@ -3,6 +3,7 @@ import { redirect, type Handle } from "@sveltejs/kit";
 import { svelteKitHandler } from "better-auth/svelte-kit";
 
 import { createAuth } from "$lib/server/auth";
+import { allowCredentialAttempt, emailFromBetterAuthRequest } from "$lib/server/auth-rate-limit";
 import { requestBodyLimit, withBoundedRequestBody } from "$lib/server/request-body";
 
 const SECURITY_HEADERS: Readonly<Record<string, string>> = {
@@ -29,6 +30,10 @@ export function isPublicStatusPath(pathname: string): boolean {
   return pathname.startsWith("/status/");
 }
 
+function applySecurityHeaders(response: Response): void {
+  for (const [name, value] of Object.entries(SECURITY_HEADERS)) response.headers.set(name, value);
+}
+
 export const handle: Handle = async ({ event, resolve }) => {
   const pathname = event.url.pathname;
   event.request = await withBoundedRequestBody(event.request, requestBodyLimit(pathname));
@@ -37,17 +42,38 @@ export const handle: Handle = async ({ event, resolve }) => {
   const platform = event.platform;
   if (!platform) return resolve(event);
 
+  if (pathname === "/api/auth/sign-in/email" && event.request.method === "POST") {
+    const email = await emailFromBetterAuthRequest(event.request);
+    const allowed = await allowCredentialAttempt(
+      platform.env.AUTH_EDGE_RATE_LIMITER,
+      platform.env.AUTH_ACCOUNT_RATE_LIMITER,
+      event.request.headers,
+      email,
+    );
+    if (!allowed) {
+      const response = Response.json(
+        { message: "Too many sign-in attempts. Try again later." },
+        {
+          status: 429,
+          headers: { "cache-control": "private, no-store", "retry-after": "60" },
+        },
+      );
+      applySecurityHeaders(response);
+      return response;
+    }
+  }
+
   const setupRoute = pathname.startsWith("/setup");
   if (setupRoute) {
     const response = await resolve(event);
-    for (const [name, value] of Object.entries(SECURITY_HEADERS)) response.headers.set(name, value);
+    applySecurityHeaders(response);
     response.headers.set("cache-control", "private, no-store");
     return response;
   }
 
   if (isPublicStatusPath(pathname)) {
     const response = await resolve(event);
-    for (const [name, value] of Object.entries(SECURITY_HEADERS)) response.headers.set(name, value);
+    applySecurityHeaders(response);
     return response;
   }
 
@@ -72,9 +98,7 @@ export const handle: Handle = async ({ event, resolve }) => {
   event.locals.session = await auth.api.getSession({ headers: event.request.headers });
 
   const response = await svelteKitHandler({ event, resolve, auth, building });
-  for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
-    response.headers.set(name, value);
-  }
+  applySecurityHeaders(response);
   if (requiresPrivateCaching(event.url.pathname, event.locals.session !== null)) {
     response.headers.set("cache-control", "private, no-store");
   }

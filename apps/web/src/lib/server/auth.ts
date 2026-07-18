@@ -20,9 +20,15 @@ export function createAuth(db: D1Database, secret: string, baseURL: string) {
       minPasswordLength: 12,
       maxPasswordLength: 128,
     },
+    rateLimit: {
+      enabled: true,
+    },
     advanced: {
       cookiePrefix: "alphaping",
       useSecureCookies: baseURL.startsWith("https://"),
+      ipAddress: {
+        ipAddressHeaders: ["cf-connecting-ip"],
+      },
     },
     plugins: [sveltekitCookies(getRequestEvent)],
   });

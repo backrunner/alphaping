@@ -2,6 +2,7 @@ export type SetupEnvironmentCheckId =
   | "control-db"
   | "telemetry-db"
   | "auth-secrets"
+  | "auth-rate-limiters"
   | "data-secrets"
   | "worker-runtime";
 
@@ -28,6 +29,7 @@ export interface SetupEnvironmentSnapshot {
   ingestOrigin: string;
   liveOrigin: string;
   webCryptoAvailable: boolean;
+  authRateLimitersAvailable: boolean;
 }
 
 const CONTROL_TABLES = [
@@ -116,6 +118,14 @@ export function evaluateSetupEnvironment(
         configuredTextSecret(snapshot.setupToken),
     },
     {
+      id: "auth-rate-limiters",
+      label: "Authentication rate limits",
+      detail: snapshot.authRateLimitersAvailable
+        ? "Client and account credential rate limiters are available"
+        : "AUTH_EDGE_RATE_LIMITER or AUTH_ACCOUNT_RATE_LIMITER is unavailable",
+      ready: snapshot.authRateLimitersAvailable,
+    },
+    {
       id: "data-secrets",
       label: "Data channel secrets",
       detail:
@@ -177,6 +187,9 @@ export async function inspectSetupEnvironment(env: Env): Promise<SetupEnvironmen
       typeof crypto !== "undefined" &&
       typeof crypto.randomUUID === "function" &&
       typeof crypto.subtle !== "undefined",
+    authRateLimitersAvailable:
+      typeof env.AUTH_EDGE_RATE_LIMITER?.limit === "function" &&
+      typeof env.AUTH_ACCOUNT_RATE_LIMITER?.limit === "function",
   });
 }
 

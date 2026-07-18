@@ -16,6 +16,20 @@ INGEST_ORIGIN = "https://ingest.example.com"
 LIVE_ORIGIN = "wss://live.example.com"
 AGENT_RELEASE_MANIFEST_JSON = '{"linux-x86_64":{"version":"0.1.0","length":0,"sha256":"0000000000000000000000000000000000000000000000000000000000000000"}}'
 
+[[ratelimits]]
+name = "AUTH_EDGE_RATE_LIMITER"
+namespace_id = "1010"
+[ratelimits.simple]
+limit = 60
+period = 60
+
+[[ratelimits]]
+name = "AUTH_ACCOUNT_RATE_LIMITER"
+namespace_id = "1011"
+[ratelimits.simple]
+limit = 10
+period = 60
+
 [[d1_databases]]
 binding = "CONTROL_DB"
 database_name = "alphaping-control-template"
@@ -33,6 +47,20 @@ name = "alphaping-web-production"
 INGEST_ORIGIN = "https://ingest.example.com"
 LIVE_ORIGIN = "wss://live.example.com"
 AGENT_RELEASE_MANIFEST_JSON = '{"linux-x86_64":{"version":"0.1.0","length":0,"sha256":"0000000000000000000000000000000000000000000000000000000000000000"}}'
+
+[[env.production.ratelimits]]
+name = "AUTH_EDGE_RATE_LIMITER"
+namespace_id = "1010"
+[env.production.ratelimits.simple]
+limit = 60
+period = 60
+
+[[env.production.ratelimits]]
+name = "AUTH_ACCOUNT_RATE_LIMITER"
+namespace_id = "1011"
+[env.production.ratelimits.simple]
+limit = 10
+period = 60
 
 [env.production.assets]
 directory = ".svelte-kit/cloudflare"

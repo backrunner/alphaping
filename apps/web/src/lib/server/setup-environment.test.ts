@@ -27,13 +27,14 @@ const readySnapshot: SetupEnvironmentSnapshot = {
   ingestOrigin: "https://ingest.example.test",
   liveOrigin: "wss://live.example.test",
   webCryptoAvailable: true,
+  authRateLimitersAvailable: true,
 };
 
 describe("setup environment", () => {
   it("requires both migrated databases and every security boundary", () => {
     const report = evaluateSetupEnvironment(readySnapshot);
     expect(report.ready).toBe(true);
-    expect(report.checks).toHaveLength(5);
+    expect(report.checks).toHaveLength(6);
     expect(report.checks.every((check) => check.ready)).toBe(true);
   });
 
@@ -65,6 +66,18 @@ describe("setup environment", () => {
     expect(report.checks.filter((check) => !check.ready).map((check) => check.id)).toEqual([
       "auth-secrets",
       "data-secrets",
+    ]);
+  });
+
+  it("requires both authentication rate limiter bindings", () => {
+    const report = evaluateSetupEnvironment({
+      ...readySnapshot,
+      authRateLimitersAvailable: false,
+    });
+
+    expect(report.ready).toBe(false);
+    expect(report.checks.filter((check) => !check.ready).map((check) => check.id)).toEqual([
+      "auth-rate-limiters",
     ]);
   });
 
