@@ -188,7 +188,7 @@
   input:focus,
   textarea:focus {
     border-color: var(--accent);
-    outline: 2px solid color-mix(in srgb, var(--accent) 22%, transparent);
+    outline: 2px solid var(--focus-ring);
   }
 
   .checkbox {

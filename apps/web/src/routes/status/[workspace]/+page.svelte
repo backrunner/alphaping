@@ -67,7 +67,7 @@
     gap: 8px;
     margin-bottom: 20px;
     padding: 9px 10px;
-    border-left: 3px solid var(--status-degraded);
+    border: 1px solid var(--border);
     color: var(--text-muted);
     background: var(--status-degraded-bg);
     font-size: 10px;

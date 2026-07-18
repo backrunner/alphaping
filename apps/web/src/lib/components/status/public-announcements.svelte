@@ -24,32 +24,47 @@
   }
 
   .announcement {
+    --announcement-accent: var(--accent);
+
     padding: 11px 12px;
-    border-left: 3px solid var(--accent);
+    border: 1px solid var(--border);
     background: var(--surface);
   }
 
   .announcement--maintenance {
-    border-color: var(--status-maintenance);
+    --announcement-accent: var(--status-maintenance);
   }
 
   .announcement--minor,
   .announcement--major {
-    border-color: var(--status-degraded);
+    --announcement-accent: var(--status-degraded);
   }
 
   .announcement--critical {
-    border-color: var(--status-down);
+    --announcement-accent: var(--status-down);
   }
 
   .announcement > div {
     display: flex;
+    align-items: center;
     justify-content: space-between;
     gap: 12px;
   }
 
   .announcement strong {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
     font-size: 12px;
+  }
+
+  .announcement strong::before {
+    width: 7px;
+    height: 7px;
+    flex: none;
+    border-radius: 2px;
+    background: var(--announcement-accent);
+    content: "";
   }
 
   .announcement span,

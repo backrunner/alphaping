@@ -127,7 +127,7 @@
   form input:focus,
   form select:focus {
     border-color: var(--accent);
-    outline: 2px solid color-mix(in srgb, var(--accent) 22%, transparent);
+    outline: 2px solid var(--focus-ring);
   }
   form :global(.icon-submit) {
     width: 28px;

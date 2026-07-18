@@ -329,6 +329,12 @@
     font: inherit;
   }
 
+  .search:focus-within {
+    border-color: var(--accent);
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 1px;
+  }
+
   .filters select,
   .search-submit {
     height: 30px;

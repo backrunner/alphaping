@@ -65,6 +65,7 @@
     margin-left: 5px;
     color: var(--text-faint);
     font-size: 11px;
+    white-space: nowrap;
   }
 
   .metric--healthy .metric__value {

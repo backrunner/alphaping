@@ -53,7 +53,7 @@
   }
 
   .button--primary {
-    color: white;
+    color: var(--accent-ink);
     background: var(--accent);
   }
 

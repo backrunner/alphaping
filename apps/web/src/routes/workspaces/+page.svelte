@@ -148,7 +148,7 @@
     height: 26px;
     place-items: center;
     border-radius: 5px;
-    color: white;
+    color: var(--accent-ink);
     background: var(--accent);
     font-family: var(--font-mono);
     font-weight: 750;

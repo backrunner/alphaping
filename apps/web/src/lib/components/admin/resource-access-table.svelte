@@ -151,7 +151,7 @@
 
   select:focus {
     border-color: var(--accent);
-    outline: 2px solid color-mix(in srgb, var(--accent) 20%, transparent);
+    outline: 2px solid var(--focus-ring);
   }
 
   .table-wrap {
@@ -233,6 +233,8 @@
 
   .sr-only {
     position: absolute;
+    top: 0;
+    left: 0;
     width: 1px;
     height: 1px;
     overflow: hidden;

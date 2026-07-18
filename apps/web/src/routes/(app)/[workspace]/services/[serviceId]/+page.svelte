@@ -164,6 +164,8 @@
   }
 
   h1 {
+    min-width: 0;
+    flex: 1;
     overflow: hidden;
     font-size: 22px;
     text-overflow: ellipsis;
@@ -245,6 +247,10 @@
       flex-direction: column;
     }
 
+    .heading {
+      width: 100%;
+    }
+
     .header-actions {
       width: 100%;
       justify-content: space-between;
@@ -278,6 +284,19 @@
 
     .maintenance input {
       width: 100%;
+    }
+  }
+
+  @media (max-width: 340px) {
+    .title-row {
+      align-items: flex-start;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .title-row h1 {
+      width: 100%;
+      flex: none;
     }
   }
 </style>

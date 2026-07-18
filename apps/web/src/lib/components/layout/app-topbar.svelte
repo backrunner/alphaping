@@ -99,6 +99,12 @@
     font-size: 11px;
   }
 
+  .search:focus-within {
+    border-color: var(--accent);
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 1px;
+  }
+
   .role {
     padding: 3px 7px;
     border-radius: 999px;

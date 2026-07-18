@@ -125,7 +125,7 @@
 
   input:focus {
     border-color: var(--status-down);
-    outline: 2px solid color-mix(in srgb, var(--status-down) 20%, transparent);
+    outline: 2px solid var(--focus-ring);
   }
 
   @media (max-width: 720px) {

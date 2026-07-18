@@ -85,7 +85,7 @@
     height: 24px;
     place-items: center;
     border-radius: 5px;
-    color: white;
+    color: var(--accent-ink);
     background: var(--accent);
     font-family: var(--font-mono);
     font-size: 12px;
@@ -158,7 +158,7 @@
       z-index: 70;
       translate: -100% 0;
       width: 216px;
-      box-shadow: 12px 0 30px rgb(0 0 0 / 0.14);
+      box-shadow: var(--navigation-shadow);
       transition: translate 140ms ease;
     }
 
@@ -176,7 +176,7 @@
       z-index: 60;
       display: block;
       border: 0;
-      background: rgb(16 18 20 / 0.34);
+      background: var(--overlay-backdrop);
     }
   }
 

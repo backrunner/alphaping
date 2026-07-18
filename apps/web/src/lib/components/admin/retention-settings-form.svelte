@@ -194,7 +194,7 @@
 
   label > div:focus-within {
     border-color: var(--accent);
-    outline: 2px solid color-mix(in srgb, var(--accent) 20%, transparent);
+    outline: 2px solid var(--focus-ring);
   }
 
   input {

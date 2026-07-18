@@ -19,7 +19,7 @@
   height: 26px;
   place-items: center;
   border-radius: 6px;
-  color: white;
+  color: var(--accent-ink);
   background: var(--accent);
   font-family: var(--font-mono);
   font-weight: 750;
@@ -91,7 +91,7 @@
 
 .setup__stepper li.active > span {
   border-color: var(--accent);
-  color: white;
+  color: var(--accent-ink);
   background: var(--accent);
 }
 
@@ -206,7 +206,7 @@
 .setup input:focus,
 .setup select:focus {
   border-color: var(--accent);
-  outline: 2px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  outline: 2px solid var(--focus-ring);
 }
 
 .field-note,
@@ -334,7 +334,7 @@
 
 .setup__next-actions a.primary {
   border-color: var(--accent);
-  color: white;
+  color: var(--accent-ink);
   background: var(--accent);
 }
 

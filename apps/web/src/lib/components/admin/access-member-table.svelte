@@ -213,7 +213,7 @@
   input:focus,
   select:focus {
     border-color: var(--accent);
-    outline: 2px solid color-mix(in srgb, var(--accent) 20%, transparent);
+    outline: 2px solid var(--focus-ring);
   }
 
   .invite-result {
@@ -315,6 +315,8 @@
 
   .sr-only {
     position: absolute;
+    top: 0;
+    left: 0;
     width: 1px;
     height: 1px;
     overflow: hidden;
@@ -338,6 +340,37 @@
     .invite-result code {
       grid-column: 1 / -1;
       grid-row: 2;
+    }
+
+    .member-form {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 28px;
+    }
+
+    .member-form select {
+      min-width: 0;
+    }
+  }
+
+  @media (max-width: 360px) {
+    .member-form {
+      grid-template-columns: minmax(0, 1fr) 28px;
+      grid-template-rows: 32px 32px;
+    }
+
+    .member-form select:first-of-type {
+      grid-column: 1;
+      grid-row: 1;
+    }
+
+    .member-form select:nth-of-type(2) {
+      grid-column: 1;
+      grid-row: 2;
+    }
+
+    .member-form .icon-action {
+      grid-column: 2;
+      grid-row: 1 / 3;
+      align-self: center;
     }
   }
 </style>

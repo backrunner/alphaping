@@ -224,6 +224,12 @@
     font: inherit;
   }
 
+  .search:focus-within {
+    border-color: var(--accent);
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 1px;
+  }
+
   .search button {
     height: 22px;
     padding: 0 7px;
