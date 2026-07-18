@@ -71,8 +71,7 @@ export const actions: Actions = {
           step: cause.status === 403 ? 2 : 5,
         });
       }
-      const message = cause instanceof Error ? cause.message : "Initialization failed";
-      return fail(400, { message, step: 5 });
+      return fail(500, { message: "Initialization failed", step: 5 });
     }
     throw redirect(303, "/setup");
   },
