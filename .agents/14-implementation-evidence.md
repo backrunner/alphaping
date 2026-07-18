@@ -44,7 +44,7 @@ Agent 38 项测试通过；协议对抗测试对随机输入保持有界且无 p
 - Agent SQLite WAL delivery 无限重试；equal-jitter 从 1 秒开始，绝对上限 300 秒，只有认证 ACK 才删除 delivery。
 - Agent key rotation 复用 `agent_keys`，每个 Agent 每 30 天至多新增一行，并在新 epoch 激活时对旧行执行一次有条件 update；不增加稳态遥测 rows written 或 Worker request。
 - R2 只存主动导出/备份。每小时 retention 对两个固定 prefix 各做一次 bounded list，即 1,440 Class A/月；DeleteObject 免费，正常落在 R2 included usage。
-- `pnpm cost:check` 的当前模型：30+30 为 12.432m budgeted D1 writes、1.634 GB、1.643m Worker requests、0 USD overage；100+100 为 41.412m、4.280 GB、4.969m requests、0 USD overage。两档都显式包含每月 9,360 D1 retention cursor writes 和 1,440 R2 Class A list，预计仍只有 Workers Paid 的 5 USD/月。
+- `pnpm cost:check` 的当前模型：30+30 为 12.546m budgeted D1 writes、1.634 GB、1.643m Worker requests、0 USD overage；100+100 为 41.526m、4.280 GB、4.969m requests、0 USD overage。两档都显式包含每月 14,400 D1 retention/cursor writes 和 1,440 R2 Class A list，预计仍只有 Workers Paid 的 5 USD/月。
 
 ## 4. 可复现命令
 

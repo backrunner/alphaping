@@ -478,6 +478,10 @@
         {
           "file": "0009_retention_workspace_cursor.sql",
           "sha256": "66efc761eb2105c98984da4171c5936c537bf758079f20a596786359dcd35197"
+        },
+        {
+          "file": "0010_retention_run_history.sql",
+          "sha256": "a53bdde319ef48ef186a88b1b9f636b5cf7ff2c2678c50cb247e3a502ed53062"
         }
       ],
       "objects": [
@@ -606,6 +610,12 @@
           "name": "resource_grants_subject_idx",
           "table": "resource_grants",
           "sql": "CREATE INDEX resource_grants_subject_idx\n  ON resource_grants (workspace_id, subject_user_id, resource_type)"
+        },
+        {
+          "type": "index",
+          "name": "retention_runs_started_at_idx",
+          "table": "retention_runs",
+          "sql": "CREATE INDEX retention_runs_started_at_idx\n  ON retention_runs (started_at, run_id)"
         },
         {
           "type": "index",

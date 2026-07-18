@@ -10,6 +10,8 @@ import {
 
 const POLICY_BATCH = 100;
 const RUN_WORK_BUDGET_MS = 12 * 60_000;
+const RUN_HISTORY_RETENTION_MS = 30 * 86_400_000;
+const RUN_HISTORY_BATCH = 100;
 
 export interface RetentionPolicyBatch {
   policies: readonly RetentionPolicyRow[];
@@ -57,6 +59,28 @@ export function resolveRetentionWorkspaceCursor(
   skippedWorkspaces: number,
 ): number {
   return skippedWorkspaces === 0 ? policyBatch.nextWorkspaceCursor : policyBatch.workspaceCursor;
+}
+
+export async function cleanRetentionRunHistory(
+  telemetryDb: D1Database,
+  currentRunId: string,
+  now: number,
+  batch = RUN_HISTORY_BATCH,
+): Promise<number> {
+  if (!Number.isInteger(batch) || batch < 1 || batch > RUN_HISTORY_BATCH) {
+    throw new Error("retention run history batch must be between 1 and 100");
+  }
+  const result = await telemetryDb
+    .prepare(
+      `DELETE FROM retention_runs WHERE run_id IN (
+         SELECT run_id FROM retention_runs
+         WHERE started_at < ? AND run_id != ?
+         ORDER BY started_at, run_id LIMIT ?
+       )`,
+    )
+    .bind(now - RUN_HISTORY_RETENTION_MS, currentRunId, batch)
+    .run();
+  return result.meta.changes ?? 0;
 }
 
 export async function loadRetentionPolicyBatch(
@@ -160,13 +184,22 @@ export async function runRetention(env: Env, scheduledTime: number): Promise<voi
       policyBatch,
       progress.skippedWorkspaces,
     );
-    await env.TELEMETRY_DB.prepare(
+    const completed = await env.TELEMETRY_DB.prepare(
       `UPDATE retention_runs
        SET completed_at = ?, deleted_rows = ?, workspace_cursor = ?
        WHERE run_id = ?`,
     )
       .bind(Date.now(), deleted, workspaceCursor, runId)
       .run();
+    if ((completed.meta.changes ?? 0) !== 1) {
+      throw new Error("retention_run_completion_conflict");
+    }
+    let deletedRunHistory = 0;
+    try {
+      deletedRunHistory = await cleanRetentionRunHistory(env.TELEMETRY_DB, runId, Date.now());
+    } catch {
+      console.warn(JSON.stringify({ event: "retention_run_history_cleanup_failed" }));
+    }
     console.log(
       JSON.stringify({
         event: "retention_completed",
@@ -177,6 +210,7 @@ export async function runRetention(env: Env, scheduledTime: number): Promise<voi
         skippedArtifactPrefixes: artifacts.skippedPrefixes,
         skippedWorkspaces: progress.skippedWorkspaces,
         deadlineReached: progress.deadlineReached,
+        deletedRunHistory,
       }),
     );
   } catch (error) {

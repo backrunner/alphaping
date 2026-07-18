@@ -2,6 +2,7 @@ import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
+  cleanRetentionRunHistory,
   loadRetentionPolicyBatch,
   processRetentionPolicies,
   resolveRetentionWorkspaceCursor,
@@ -37,6 +38,7 @@ beforeEach(async () => {
     env.TELEMETRY_DB.prepare(
       `CREATE TABLE retention_runs (
         run_id TEXT PRIMARY KEY NOT NULL,
+        started_at INTEGER NOT NULL DEFAULT 0,
         completed_at INTEGER,
         error_code TEXT,
         workspace_cursor INTEGER NOT NULL DEFAULT 0
@@ -170,5 +172,50 @@ describe("retention policy scheduler", () => {
       deadlineReached: true,
     });
     expect(resolveRetentionWorkspaceCursor(batch, progress.skippedWorkspaces)).toBe(0);
+  });
+
+  it("deletes old run history in bounded batches after preserving the current run", async () => {
+    const now = 100 * 86_400_000;
+    const cutoff = now - 30 * 86_400_000;
+    await env.TELEMETRY_DB.batch([
+      env.TELEMETRY_DB.prepare(
+        `INSERT INTO retention_runs (run_id, started_at, completed_at, error_code)
+         VALUES ('retention:old-1', 1, 1, NULL)`,
+      ),
+      env.TELEMETRY_DB.prepare(
+        `INSERT INTO retention_runs (run_id, started_at, completed_at, error_code)
+         VALUES ('retention:old-2', 2, 2, 'retention_failed')`,
+      ),
+      env.TELEMETRY_DB.prepare(
+        `INSERT INTO retention_runs (run_id, started_at, completed_at, error_code)
+         VALUES ('retention:old-3', 3, NULL, NULL)`,
+      ),
+      env.TELEMETRY_DB.prepare(
+        `INSERT INTO retention_runs (run_id, started_at, completed_at, error_code)
+         VALUES ('retention:recent', ?, ?, NULL)`,
+      ).bind(cutoff + 1, cutoff + 2),
+      env.TELEMETRY_DB.prepare(
+        `INSERT INTO retention_runs (run_id, started_at, completed_at, error_code)
+         VALUES ('retention:current', ?, ?, NULL)`,
+      ).bind(now, now),
+    ]);
+
+    await expect(
+      cleanRetentionRunHistory(env.TELEMETRY_DB, "retention:current", now, 2),
+    ).resolves.toBe(2);
+    await expect(
+      env.TELEMETRY_DB.prepare("SELECT run_id FROM retention_runs ORDER BY run_id")
+        .all<{ run_id: string }>()
+        .then((rows) => rows.results.map((row) => row.run_id)),
+    ).resolves.toEqual(["retention:current", "retention:old-3", "retention:recent"]);
+
+    await expect(
+      cleanRetentionRunHistory(env.TELEMETRY_DB, "retention:current", now, 2),
+    ).resolves.toBe(1);
+    await expect(
+      env.TELEMETRY_DB.prepare("SELECT run_id FROM retention_runs ORDER BY run_id")
+        .all<{ run_id: string }>()
+        .then((rows) => rows.results.map((row) => row.run_id)),
+    ).resolves.toEqual(["retention:current", "retention:recent"]);
   });
 });

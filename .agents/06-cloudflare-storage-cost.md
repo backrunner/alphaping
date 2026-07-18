@@ -119,12 +119,12 @@ Agent executor 即使配置 5/10 秒周期，也把同一 check/minute 的 obser
 ```text
 machine/check known rows written     9,936,000/month
 check scheduler cursor writes           86,400/month
-fixed retention cursor writes            9,360/month
-combined known rows written         10,031,760/month
-25% implementation/retry margin      2,507,940/month
-budgeted total                      12,539,700/month
+fixed retention/cursor writes           14,400/month
+combined known rows written         10,036,800/month
+25% implementation/retry margin      2,509,200/month
+budgeted total                      12,546,000/month
 Paid included                       50,000,000/month
-remaining headroom                  37,460,300/month
+remaining headroom                  37,454,000/month
 D1 write overage                          0.00 USD
 ```
 
@@ -155,6 +155,8 @@ Agent command delivery 在每个 report 增加一次 `(agent_id,state,not_before
 机器离线收敛复用 Checks Worker 现有每分钟 Cron，不增加 Worker request。每台每分钟最多读取一条 CONTROL_DB 配置和一条 TELEMETRY_DB latest；100 台增加 8.64m rows read/月。按 100+100 的 dashboard、scheduler、Agent path、liveness 和 5m reserve 合计约 68.36m rows read/月，只占 Paid included reads 的 0.273%。离线/恢复只在状态转换时写 latest/event，低频写入由 25% margin 覆盖。
 
 Retention 每个 workspace 每小时最多写 7 个 resource cursor、1 次 workspace lease claim 和 1 次 lease release，即 `9 * 720 = 6,480` cursor rows written/月。一个常见单 workspace 部署只占 30 台模型 2.484m margin 的 0.261%。Agent command expiry/completion partial indexes 只随低频管理命令变化，不进入稳态遥测账本。
+
+`retention_runs` 保留 30 天。稳态每小时的 run insert、completion update、到期 delete 及主键/`started_at` 索引维护按保守上界计 `7 * 720 = 5,040` rows written/月；旧版本积压每小时最多额外删除 100 行，属于有界迁移期负载，不进入长期稳态基线。
 
 R2 artifact retention 每小时对 `exports/v1/` 和 `backups/v1/` 各执行一次最多 500 object 的 list，并为每个 prefix 做一次 D1 lease claim 和 release。固定成本为每月 `2 * 720 = 1,440` Class A 和 `4 * 720 = 2,880` D1 cursor writes；分别只占 R2 included Class A 的 0.144% 和 D1 write margin 的 0.116%。DeleteObject 免费。该成本不随 machine/service 数量增长，只随积压 artifact 跨更多 hourly cursor 周期收敛。
 
@@ -222,7 +224,7 @@ Cloudflare 对 DO 入站 WebSocket 消息按 20:1 折算 request；WebSocket upg
 
 | 方案 | 30 machines + 30 checks | 100 machines + 100 checks |
 | --- | ---: | ---: |
-| 按需 10s Live Hub + 60s durable D1 writes | 10.032m | 33.216m |
+| 按需 10s Live Hub + 60s durable D1 writes | 10.037m | 33.221m |
 | 每 10s 全部 durable D1 writes | 28.858m | 96.192m |
 | 每 10s 全部 durable 的估算总费 | 约 5.24 USD | 至少 58.20 USD，未计 storage |
 
@@ -324,12 +326,12 @@ machine known D1 writes              15,696,000/month
 check known D1 writes                17,424,000/month
 combined known D1 writes             33,120,000/month
 check scheduler cursor writes            86,400/month
-fixed retention cursor writes             9,360/month
-combined deployment writes           33,215,760/month
-25% margin                            8,303,940/month
-budgeted D1 writes                   41,519,700/month
+fixed retention/cursor writes            14,400/month
+combined deployment writes           33,220,800/month
+25% margin                            8,305,200/month
+budgeted D1 writes                   41,526,000/month
 Paid included                        50,000,000/month
-headroom                              8,480,300/month
+headroom                              8,474,000/month
 ```
 
 Workers requests：
@@ -390,11 +392,11 @@ D1 storage overage at 0.75 USD/GB       4.1048 USD/month
 
 | Machines + checks | D1 known writes | Requests | Target storage | 估算总费 |
 | --- | ---: | ---: | ---: | ---: |
-| 30 + 30 | 10.032m | 1.64m | 约 1.63 GB | 5.00 USD |
-| 100 + 100 | 33.216m | 4.97m | 约 4.28 GB | 5.00-5.45 USD |
-| 150 + 150 | 49.776m | 7.34m | 约 6.17 GB | 约 19.08 USD，含 25% write margin 与保守 CPU |
-| 200 + 200 | 66.336m | 9.72m | 约 8.06 GB | 约 41.72 USD，含 25% write margin 与保守 CPU |
-| 300 + 300 | 99.456m | 14.47m | 约 11.84 GB | 约 88.41 USD，含 25% write margin、请求与保守 CPU |
+| 30 + 30 | 10.037m | 1.64m | 约 1.63 GB | 5.00 USD |
+| 100 + 100 | 33.221m | 4.97m | 约 4.28 GB | 5.00-5.45 USD |
+| 150 + 150 | 49.781m | 7.34m | 约 6.17 GB | 约 19.09 USD，含 25% write margin 与保守 CPU |
+| 200 + 200 | 66.341m | 9.72m | 约 8.06 GB | 约 41.73 USD，含 25% write margin 与保守 CPU |
+| 300 + 300 | 99.461m | 14.47m | 约 11.84 GB | 约 88.42 USD，含 25% write margin、请求与保守 CPU |
 
 增长最终由 D1 rows written 主导，大约在 100+100 之后开始逼近 included 边界。每台 60 秒 machine report 将已知月写入增加 156,960；每个 60 秒 centralized check 因增加可直接查询的 5 分钟 service status bucket，将已知月写入增加 174,240。将 interval 从 60 秒改为 300 秒时，该 check 的执行、CPU 和主要写入约降为五分之一。
 

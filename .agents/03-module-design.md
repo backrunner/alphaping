@@ -233,7 +233,7 @@ src/
 - `compactor`
 - `run-recorder`
 
-每个动作接收 batch limit、deadline 和 cursor。Cron 使用确定性 scheduled run ID；workspace 先取得 15 分钟 lease，防止重叠执行。资源 DELETE 删满一批时 cursor 停在当前资源之前，只有确认该资源没有剩余过期行才前进。CONTROL_DB 中近期到期 Agent command 转为 `expired`，超过 30 天审计窗口的 terminal/未送达命令直接分批删除，公告在失效 7 天后物理删除。运行接近 wall/CPU budget 时主动保存游标退出。
+每个动作接收 batch limit、deadline 和 cursor。Cron 使用确定性 scheduled run ID；workspace 先取得 15 分钟 lease，防止重叠执行。资源 DELETE 删满一批时 cursor 停在当前资源之前，只有确认该资源没有剩余过期行才前进。CONTROL_DB 中近期到期 Agent command 转为 `expired`，超过 30 天审计窗口的 terminal/未送达命令直接分批删除，公告在失效 7 天后物理删除。当前成功 run 和 workspace cursor 落库后，每小时最多删除 100 条超过 30 天的 run history；清理失败保留成功 cursor 并在下一轮重试。运行接近 wall/CPU budget 时主动保存游标退出。
 
 软删除 finalizer 使用配置的 `soft_delete_grace_days`。机器的历史 Agent ID 和服务的 check telemetry PK 使用 CONTROL_DB 持久游标分批遍历；每页关联项的 block/latest/rollup/event 或 Agent replay 确认清空后才推进游标。服务端为每个 check 独立生成的 secret 随已完成页删除，最后再删除关联授权和 CONTROL_DB 记录；workspace 删除将未单独标记的子资源视为同时删除，只有两库都无业务行后才物理删除 workspace。跨 D1 不宣称原子性，恢复只允许在 grace window 内完成。
 

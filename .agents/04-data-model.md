@@ -429,6 +429,8 @@ Checks Worker 只在五分钟 block 闭合时写一次 service bucket。同一�
 
 每小时 run 最多处理 100 个 workspace，并读取第 101 个候选判断是否保存 cursor。扫描到末尾后 cursor 归零，避免固定 `LIMIT` 永久饿死较大主键的 workspace。重叠 run 因已有 lease 跳过任何 workspace，或 run 达到 12 分钟工作预算时保留原 cursor，下一轮重试该页，不能越过未处理的 workspace；剩余 3 分钟用于全局清理和持久化 run 结果。
 
+运行历史保留 30 天。Retention 先保存当前成功 run 和 `workspace_cursor`，再按 `started_at,run_id` 索引每小时最多删除 100 条旧成功、失败或中断记录；历史清理失败不反转已经持久化的成功 cursor，下一轮继续重试。
+
 ### `audit_logs`
 
 - `id`, `workspace_id`, `actor_user_id`
