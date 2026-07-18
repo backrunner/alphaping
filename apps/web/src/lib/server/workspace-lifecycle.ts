@@ -230,7 +230,8 @@ export async function restoreWorkspace(
 ): Promise<{ slug: string }> {
   const workspace = await db
     .prepare(
-      `SELECT w.id, w.name, w.slug, w.deleted_at, m.role, p.soft_delete_grace_days
+      `SELECT w.id, w.name, w.slug, w.deleted_at, w.purge_started_at,
+              m.role, p.soft_delete_grace_days
        FROM workspaces w JOIN memberships m ON m.workspace_id = w.id
        LEFT JOIN retention_policies p ON p.workspace_id = w.id
        WHERE w.id = ? AND m.user_id = ? AND m.status = 'active'`,
@@ -241,6 +242,7 @@ export async function restoreWorkspace(
       name: string;
       slug: string;
       deleted_at: number | null;
+      purge_started_at: number | null;
       role: "admin" | "member";
       soft_delete_grace_days: number | null;
     }>();
@@ -252,10 +254,14 @@ export async function restoreWorkspace(
   if (workspace.deleted_at <= now - graceDays * 86_400_000) {
     throw error(409, "The workspace recovery window has expired");
   }
+  if (workspace.purge_started_at !== null) {
+    throw error(409, "The workspace recovery window has expired");
+  }
   const [updateResult] = await db.batch([
     db
       .prepare(
-        `UPDATE workspaces SET deleted_at = NULL, updated_at = ? WHERE id = ? AND deleted_at = ?`,
+        `UPDATE workspaces SET deleted_at = NULL, updated_at = ?
+         WHERE id = ? AND deleted_at = ? AND purge_started_at IS NULL`,
       )
       .bind(now, workspace.id, workspace.deleted_at),
     await prepareAuditStatement(db, {

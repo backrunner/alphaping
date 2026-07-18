@@ -39,6 +39,7 @@ Better Auth 核心表由其 schema 生成并纳入统一 migration：
 
 - `id`, `slug`, `name`
 - `created_at`, `updated_at`, `deleted_at`
+- `purge_started_at`，恢复窗口结束后由 Retention 原子领取；非空时禁止恢复
 - `default_dashboard_id`
 - `default_sampling_interval_seconds`，新机器表单的 workspace 默认值
 
@@ -114,6 +115,7 @@ Better Auth 核心表由其 schema 生成并纳入统一 migration：
 - `maintenance_until`
 - `desired_config_revision`
 - `created_at`, `updated_at`, `deleted_at`
+- `purge_started_at`，跨 D1 物理清理开始前的恢复 fencing claim
 
 索引：`workspace_id,deleted_at`。不要给每次报告都会变化的字段建立多余索引。
 
@@ -278,6 +280,7 @@ V1 默认不生成每容器长保留 rollup。七天内原始容器数据由 mac
 - `aggregation_policy`
 - `maintenance_until`
 - `created_at`, `updated_at`, `deleted_at`
+- `purge_started_at`，跨 D1 物理清理开始前的恢复 fencing claim
 
 ### `service_checks`
 

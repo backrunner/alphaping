@@ -23,6 +23,7 @@ export const workspaces = sqliteTable(
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
     deletedAt: integer("deleted_at"),
+    purgeStartedAt: integer("purge_started_at"),
   },
   (table) => [
     uniqueIndex("workspaces_telemetry_pk_uq").on(table.telemetryPk),
@@ -193,6 +194,7 @@ export const machines = sqliteTable(
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
     deletedAt: integer("deleted_at"),
+    purgeStartedAt: integer("purge_started_at"),
   },
   (table) => [uniqueIndex("machines_telemetry_pk_uq").on(table.telemetryPk)],
 );
@@ -333,6 +335,7 @@ export const services = sqliteTable(
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
     deletedAt: integer("deleted_at"),
+    purgeStartedAt: integer("purge_started_at"),
   },
   (table) => [
     uniqueIndex("services_telemetry_pk_uq").on(table.telemetryPk),

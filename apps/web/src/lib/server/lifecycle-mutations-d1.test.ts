@@ -29,7 +29,8 @@ beforeEach(async () => {
         name TEXT NOT NULL,
         slug TEXT NOT NULL,
         updated_at INTEGER NOT NULL,
-        deleted_at INTEGER
+        deleted_at INTEGER,
+        purge_started_at INTEGER
       )`,
     ),
     database.prepare(
@@ -52,7 +53,8 @@ beforeEach(async () => {
         workspace_id TEXT NOT NULL,
         name TEXT NOT NULL,
         updated_at INTEGER NOT NULL,
-        deleted_at INTEGER
+        deleted_at INTEGER,
+        purge_started_at INTEGER
       )`,
     ),
     database.prepare(
@@ -92,14 +94,16 @@ beforeEach(async () => {
     ),
     database.prepare(
       `INSERT INTO workspaces VALUES
-        ('workspace-1', 'Operations', 'operations', 1, NULL)`,
+        ('workspace-1', 'Operations', 'operations', 1, NULL, NULL)`,
     ),
     database.prepare(
       `INSERT INTO memberships VALUES
         ('workspace-1', 'user-1', 'admin', 'active')`,
     ),
     database.prepare(`INSERT INTO retention_policies VALUES ('workspace-1', 7)`),
-    database.prepare(`INSERT INTO machines VALUES ('machine-1', 'workspace-1', 'Edge', 1, NULL)`),
+    database.prepare(
+      `INSERT INTO machines VALUES ('machine-1', 'workspace-1', 'Edge', 1, NULL, NULL)`,
+    ),
     database.prepare(
       `INSERT INTO workspace_invitations VALUES
         ('invitation-1', 'workspace-1', 'member', 4102444800000, NULL, NULL)`,
@@ -176,6 +180,28 @@ describe("stale lifecycle mutations", () => {
     await expectNoAuditRows();
   });
 
+  it("rejects resource restoration after retention claims finalization", async () => {
+    const deletedAt = Date.now() - 1_000;
+    await database
+      .prepare("UPDATE machines SET deleted_at = ? WHERE id = 'machine-1'")
+      .bind(deletedAt)
+      .run();
+    const stale = mutateBeforeBatch(
+      database,
+      "UPDATE machines SET purge_started_at = 1 WHERE id = 'machine-1'",
+    );
+
+    await expect(
+      restoreResource(stale, "operations", "user-1", "machine", "machine-1"),
+    ).rejects.toMatchObject({ status: 409 });
+    await expect(
+      database
+        .prepare("SELECT deleted_at, purge_started_at FROM machines WHERE id = 'machine-1'")
+        .first<{ deleted_at: number; purge_started_at: number }>(),
+    ).resolves.toEqual({ deleted_at: deletedAt, purge_started_at: 1 });
+    await expectNoAuditRows();
+  });
+
   it("rejects workspace deletion after another request deletes it", async () => {
     const stale = mutateBeforeBatch(
       database,
@@ -202,6 +228,28 @@ describe("stale lifecycle mutations", () => {
     await expect(restoreWorkspace(stale, "workspace-1", "user-1")).rejects.toMatchObject({
       status: 409,
     });
+    await expectNoAuditRows();
+  });
+
+  it("rejects workspace restoration after retention claims finalization", async () => {
+    const deletedAt = Date.now() - 1_000;
+    await database
+      .prepare("UPDATE workspaces SET deleted_at = ? WHERE id = 'workspace-1'")
+      .bind(deletedAt)
+      .run();
+    const stale = mutateBeforeBatch(
+      database,
+      "UPDATE workspaces SET purge_started_at = 1 WHERE id = 'workspace-1'",
+    );
+
+    await expect(restoreWorkspace(stale, "workspace-1", "user-1")).rejects.toMatchObject({
+      status: 409,
+    });
+    await expect(
+      database
+        .prepare("SELECT deleted_at, purge_started_at FROM workspaces WHERE id = 'workspace-1'")
+        .first<{ deleted_at: number; purge_started_at: number }>(),
+    ).resolves.toEqual({ deleted_at: deletedAt, purge_started_at: 1 });
     await expectNoAuditRows();
   });
 

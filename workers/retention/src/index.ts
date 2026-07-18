@@ -50,6 +50,7 @@ export async function loadRetentionPolicyBatch(
     .prepare(
       `SELECT w.id AS workspace_id, w.telemetry_pk AS workspace_pk,
               w.deleted_at AS workspace_deleted_at,
+              w.purge_started_at AS workspace_purge_started_at,
               p.raw_days, p.rollup_5m_days, p.rollup_1h_days, p.event_days,
               p.audit_log_days, p.expired_announcement_grace_days,
               p.soft_delete_grace_days

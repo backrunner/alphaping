@@ -12,6 +12,7 @@ const policy: RetentionPolicyRow = {
   workspace_id: "workspace-1",
   workspace_pk: 1,
   workspace_deleted_at: null,
+  workspace_purge_started_at: null,
   raw_days: 1,
   rollup_5m_days: 7,
   rollup_1h_days: 30,

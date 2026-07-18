@@ -646,11 +646,11 @@ export async function restoreResource(
   const [resource, policy] = await Promise.all([
     db
       .prepare(
-        `SELECT id, name, deleted_at FROM ${table}
+        `SELECT id, name, deleted_at, purge_started_at FROM ${table}
          WHERE id = ? AND workspace_id = ? AND deleted_at IS NOT NULL`,
       )
       .bind(resourceId, access.workspaceId)
-      .first<{ id: string; name: string; deleted_at: number }>(),
+      .first<{ id: string; name: string; deleted_at: number; purge_started_at: number | null }>(),
     db
       .prepare(`SELECT soft_delete_grace_days FROM retention_policies WHERE workspace_id = ?`)
       .bind(access.workspaceId)
@@ -660,6 +660,9 @@ export async function restoreResource(
   const graceDays = policy?.soft_delete_grace_days ?? 7;
   const now = Date.now();
   if (resource.deleted_at <= now - graceDays * 86_400_000) {
+    throw error(409, "The resource recovery window has expired");
+  }
+  if (resource.purge_started_at !== null) {
     throw error(409, "The resource recovery window has expired");
   }
   const audit = await prepareAuditStatement(db, {
@@ -677,7 +680,7 @@ export async function restoreResource(
     db
       .prepare(
         `UPDATE ${table} SET deleted_at = NULL, updated_at = ?
-         WHERE id = ? AND workspace_id = ? AND deleted_at = ?`,
+         WHERE id = ? AND workspace_id = ? AND deleted_at = ? AND purge_started_at IS NULL`,
       )
       .bind(now, resourceId, access.workspaceId, resource.deleted_at),
     audit,

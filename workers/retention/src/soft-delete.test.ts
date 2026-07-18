@@ -13,6 +13,7 @@ const policy: SoftDeletePolicy = {
   workspace_id: "workspace-1",
   workspace_pk: 1,
   workspace_deleted_at: null,
+  workspace_purge_started_at: null,
   soft_delete_grace_days: 7,
 };
 
@@ -54,10 +55,10 @@ beforeEach(async () => {
   await env.CONTROL_DB.batch([
     ...controlTables.map((table) => env.CONTROL_DB.prepare(`DROP TABLE IF EXISTS ${table}`)),
     env.CONTROL_DB.prepare(
-      "CREATE TABLE machines (id TEXT PRIMARY KEY, telemetry_pk INTEGER, workspace_id TEXT, deleted_at INTEGER)",
+      "CREATE TABLE machines (id TEXT PRIMARY KEY, telemetry_pk INTEGER, workspace_id TEXT, deleted_at INTEGER, purge_started_at INTEGER)",
     ),
     env.CONTROL_DB.prepare(
-      "CREATE TABLE services (id TEXT PRIMARY KEY, telemetry_pk INTEGER, workspace_id TEXT, deleted_at INTEGER)",
+      "CREATE TABLE services (id TEXT PRIMARY KEY, telemetry_pk INTEGER, workspace_id TEXT, deleted_at INTEGER, purge_started_at INTEGER)",
     ),
     env.CONTROL_DB.prepare(
       "CREATE TABLE agents (id TEXT PRIMARY KEY, machine_id TEXT, created_at INTEGER)",
@@ -93,7 +94,9 @@ beforeEach(async () => {
     env.CONTROL_DB.prepare(
       "CREATE TABLE announcements (id TEXT PRIMARY KEY, workspace_id TEXT, deleted_at INTEGER)",
     ),
-    env.CONTROL_DB.prepare("CREATE TABLE workspaces (id TEXT PRIMARY KEY, deleted_at INTEGER)"),
+    env.CONTROL_DB.prepare(
+      "CREATE TABLE workspaces (id TEXT PRIMARY KEY, deleted_at INTEGER, purge_started_at INTEGER)",
+    ),
   ]);
   await env.TELEMETRY_DB.batch([
     ...telemetryTables.map((table) => env.TELEMETRY_DB.prepare(`DROP TABLE IF EXISTS ${table}`)),
@@ -159,13 +162,13 @@ describe("soft-delete finalization", () => {
   it("purges machine, service, replay, secret, and authorization rows", async () => {
     const deletedAt = now - 8 * DAY_MS;
     await env.CONTROL_DB.batch([
-      env.CONTROL_DB.prepare("INSERT INTO machines VALUES ('machine-1', 1, 'workspace-1', ?)").bind(
-        deletedAt,
-      ),
+      env.CONTROL_DB.prepare(
+        "INSERT INTO machines VALUES ('machine-1', 1, 'workspace-1', ?, NULL)",
+      ).bind(deletedAt),
       env.CONTROL_DB.prepare("INSERT INTO agents VALUES ('agent-1', 'machine-1', 1)"),
-      env.CONTROL_DB.prepare("INSERT INTO services VALUES ('service-1', 2, 'workspace-1', ?)").bind(
-        deletedAt,
-      ),
+      env.CONTROL_DB.prepare(
+        "INSERT INTO services VALUES ('service-1', 2, 'workspace-1', ?, NULL)",
+      ).bind(deletedAt),
       env.CONTROL_DB.prepare(
         `INSERT INTO check_configs VALUES (
           3, 'service-1', '{"headers":{"authorization":"secret-1"},"body":null,"tcpPayload":null}',
@@ -207,7 +210,9 @@ describe("soft-delete finalization", () => {
 
   it("keeps the control row until every bounded telemetry batch is gone", async () => {
     const deletedAt = now - 8 * DAY_MS;
-    await env.CONTROL_DB.prepare("INSERT INTO machines VALUES ('machine-1', 1, 'workspace-1', ?)")
+    await env.CONTROL_DB.prepare(
+      "INSERT INTO machines VALUES ('machine-1', 1, 'workspace-1', ?, NULL)",
+    )
       .bind(deletedAt)
       .run();
     const rows = Array.from({ length: 201 }, (_, index) =>
@@ -220,6 +225,11 @@ describe("soft-delete finalization", () => {
     await finalizeSoftDeletedResources(env, policy, now);
     await expect(count(env.CONTROL_DB, "machines")).resolves.toBe(1);
     await expect(count(env.TELEMETRY_DB, "telemetry_blocks_5m")).resolves.toBe(1);
+    await expect(
+      env.CONTROL_DB.prepare("SELECT purge_started_at FROM machines WHERE id = 'machine-1'").first<{
+        purge_started_at: number;
+      }>(),
+    ).resolves.toEqual({ purge_started_at: now });
 
     await finalizeSoftDeletedResources(env, policy, now);
     await expect(count(env.CONTROL_DB, "machines")).resolves.toBe(0);
@@ -229,7 +239,7 @@ describe("soft-delete finalization", () => {
   it("deletes a workspace only after child and telemetry rows are absent", async () => {
     const deletedAt = now - 8 * DAY_MS;
     const deletedPolicy = { ...policy, workspace_deleted_at: deletedAt };
-    await env.CONTROL_DB.prepare("INSERT INTO workspaces VALUES ('workspace-1', ?)")
+    await env.CONTROL_DB.prepare("INSERT INTO workspaces VALUES ('workspace-1', ?, NULL)")
       .bind(deletedAt)
       .run();
     await env.TELEMETRY_DB.batch([
@@ -241,5 +251,21 @@ describe("soft-delete finalization", () => {
     await expect(count(env.CONTROL_DB, "workspaces")).resolves.toBe(0);
     await expect(count(env.TELEMETRY_DB, "workspace_status_summary")).resolves.toBe(0);
     await expect(count(env.TELEMETRY_DB, "retention_cursors")).resolves.toBe(0);
+  });
+
+  it("does not purge children when a stale workspace policy loses the finalization claim", async () => {
+    const deletedAt = now - 8 * DAY_MS;
+    const stalePolicy = { ...policy, workspace_deleted_at: deletedAt };
+    await env.CONTROL_DB.batch([
+      env.CONTROL_DB.prepare("INSERT INTO workspaces VALUES ('workspace-1', NULL, NULL)"),
+      env.CONTROL_DB.prepare(
+        "INSERT INTO machines VALUES ('machine-1', 1, 'workspace-1', NULL, NULL)",
+      ),
+    ]);
+    await env.TELEMETRY_DB.prepare("INSERT INTO telemetry_blocks_5m VALUES (1, 1, 1)").run();
+
+    await expect(finalizeSoftDeletedResources(env, stalePolicy, now)).resolves.toBe(0);
+    await expect(count(env.CONTROL_DB, "machines")).resolves.toBe(1);
+    await expect(count(env.TELEMETRY_DB, "telemetry_blocks_5m")).resolves.toBe(1);
   });
 });

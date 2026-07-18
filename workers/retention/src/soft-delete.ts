@@ -15,12 +15,18 @@ export interface SoftDeletePolicy {
   workspace_id: string;
   workspace_pk: number;
   workspace_deleted_at: number | null;
+  workspace_purge_started_at: number | null;
   soft_delete_grace_days: number;
 }
 
 interface ResourceRow {
   id: string;
   telemetry_pk: number;
+  deleted_at: number | null;
+}
+
+interface PurgeClaimRow {
+  purge_started_at: number;
 }
 
 interface AgentRow {
@@ -47,6 +53,59 @@ function effectiveDeletionBindings(
   return [policy.workspace_deleted_at, cutoff];
 }
 
+async function claimWorkspaceFinalization(
+  db: D1Database,
+  policy: SoftDeletePolicy,
+  cutoff: number,
+  now: number,
+): Promise<boolean> {
+  if (policy.workspace_deleted_at === null || policy.workspace_deleted_at > cutoff) return true;
+  const claim = await db
+    .prepare(
+      `UPDATE workspaces SET purge_started_at = COALESCE(purge_started_at, ?)
+       WHERE id = ? AND deleted_at = ? AND deleted_at <= ?
+       RETURNING purge_started_at`,
+    )
+    .bind(now, policy.workspace_id, policy.workspace_deleted_at, cutoff)
+    .first<PurgeClaimRow>();
+  return claim !== null;
+}
+
+async function claimResourceFinalization(
+  db: D1Database,
+  table: "machines" | "services",
+  policy: SoftDeletePolicy,
+  resource: ResourceRow,
+  cutoff: number,
+  now: number,
+): Promise<boolean> {
+  const base = `UPDATE ${table} SET purge_started_at = COALESCE(purge_started_at, ?)
+                WHERE id = ? AND workspace_id = ?`;
+  const statement =
+    resource.deleted_at === null
+      ? db
+          .prepare(
+            `${base} AND deleted_at IS NULL AND EXISTS (
+               SELECT 1 FROM workspaces
+               WHERE id = ? AND deleted_at = ? AND purge_started_at IS NOT NULL
+             ) RETURNING purge_started_at`,
+          )
+          .bind(
+            now,
+            resource.id,
+            policy.workspace_id,
+            policy.workspace_id,
+            policy.workspace_deleted_at,
+          )
+      : db
+          .prepare(
+            `${base} AND deleted_at = ? AND deleted_at <= ?
+             RETURNING purge_started_at`,
+          )
+          .bind(now, resource.id, policy.workspace_id, resource.deleted_at, cutoff);
+  return (await statement.first<PurgeClaimRow>()) !== null;
+}
+
 async function deletedResources(
   db: D1Database,
   table: "machines" | "services",
@@ -55,7 +114,7 @@ async function deletedResources(
 ): Promise<readonly ResourceRow[]> {
   const rows = await db
     .prepare(
-      `SELECT id, telemetry_pk FROM ${table}
+      `SELECT id, telemetry_pk, deleted_at FROM ${table}
        WHERE workspace_id = ? AND COALESCE(deleted_at, ?) <= ?
        ORDER BY telemetry_pk LIMIT ?`,
     )
@@ -112,7 +171,7 @@ async function finalizeMachineControl(
     db
       .prepare(
         `DELETE FROM machines WHERE id = ? AND workspace_id = ?
-         AND COALESCE(deleted_at, ?) <= ?`,
+         AND purge_started_at IS NOT NULL AND COALESCE(deleted_at, ?) <= ?`,
       )
       .bind(machine.id, policy.workspace_id, policy.workspace_deleted_at, cutoff),
   ]);
@@ -123,9 +182,15 @@ async function finalizeMachines(
   env: Env,
   policy: SoftDeletePolicy,
   cutoff: number,
+  now: number,
 ): Promise<number> {
   let deleted = 0;
   for (const machine of await deletedResources(env.CONTROL_DB, "machines", policy, cutoff)) {
+    if (
+      !(await claimResourceFinalization(env.CONTROL_DB, "machines", policy, machine, cutoff, now))
+    ) {
+      continue;
+    }
     const agents = await env.CONTROL_DB.prepare(
       "SELECT id FROM agents WHERE machine_id = ? ORDER BY created_at LIMIT ?",
     )
@@ -217,7 +282,7 @@ async function finalizeServiceControl(
     db
       .prepare(
         `DELETE FROM services WHERE id = ? AND workspace_id = ?
-         AND COALESCE(deleted_at, ?) <= ?`,
+         AND purge_started_at IS NOT NULL AND COALESCE(deleted_at, ?) <= ?`,
       )
       .bind(service.id, policy.workspace_id, policy.workspace_deleted_at, cutoff),
   ]);
@@ -229,9 +294,15 @@ async function finalizeServices(
   env: Env,
   policy: SoftDeletePolicy,
   cutoff: number,
+  now: number,
 ): Promise<number> {
   let deleted = 0;
   for (const service of await deletedResources(env.CONTROL_DB, "services", policy, cutoff)) {
+    if (
+      !(await claimResourceFinalization(env.CONTROL_DB, "services", policy, service, cutoff, now))
+    ) {
+      continue;
+    }
     const checks = await env.CONTROL_DB.prepare(
       `SELECT telemetry_pk, secret_refs_json FROM check_configs
        WHERE service_id = ? ORDER BY telemetry_pk LIMIT ?`,
@@ -315,8 +386,9 @@ export async function finalizeSoftDeletedResources(
   now: number,
 ): Promise<number> {
   const cutoff = now - policy.soft_delete_grace_days * DAY_MS;
-  let deleted = await finalizeMachines(env, policy, cutoff);
-  deleted += await finalizeServices(env, policy, cutoff);
+  if (!(await claimWorkspaceFinalization(env.CONTROL_DB, policy, cutoff, now))) return 0;
+  let deleted = await finalizeMachines(env, policy, cutoff, now);
+  deleted += await finalizeServices(env, policy, cutoff, now);
   deleted += await finalizeControlOnlyTable(
     env.CONTROL_DB,
     policy,
@@ -353,6 +425,8 @@ export async function finalizeDeletedWorkspace(
   ) {
     return 0;
   }
+  const cutoff = now - policy.soft_delete_grace_days * DAY_MS;
+  if (!(await claimWorkspaceFinalization(env.CONTROL_DB, policy, cutoff, now))) return 0;
   const controlRows = await env.CONTROL_DB.prepare(
     `SELECT CASE WHEN
        EXISTS(SELECT 1 FROM machines WHERE workspace_id = ?) OR
@@ -373,7 +447,7 @@ export async function finalizeDeletedWorkspace(
   }
   let deleted = await deleteWorkspaceTelemetryState(env.TELEMETRY_DB, policy.workspace_pk);
   const result = await env.CONTROL_DB.prepare(
-    "DELETE FROM workspaces WHERE id = ? AND deleted_at = ?",
+    "DELETE FROM workspaces WHERE id = ? AND deleted_at = ? AND purge_started_at IS NOT NULL",
   )
     .bind(policy.workspace_id, policy.workspace_deleted_at)
     .run();

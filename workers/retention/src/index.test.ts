@@ -11,7 +11,8 @@ beforeEach(async () => {
       `CREATE TABLE workspaces (
         id TEXT PRIMARY KEY NOT NULL,
         telemetry_pk INTEGER NOT NULL,
-        deleted_at INTEGER
+        deleted_at INTEGER,
+        purge_started_at INTEGER
       )`,
     ),
     env.CONTROL_DB.prepare(
