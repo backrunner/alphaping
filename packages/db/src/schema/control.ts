@@ -341,10 +341,17 @@ export const serviceStateSyncJobs = sqliteTable(
       enum: ["check_configuration", "maintenance_window", "maintenance_window_ended"],
     }).notNull(),
     protectUntil: integer("protect_until").notNull(),
+    nextAttemptAt: integer("next_attempt_at").notNull().default(0),
     lastAttemptedAt: integer("last_attempted_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
   },
-  (table) => [index("service_state_sync_jobs_scan_idx").on(table.lastAttemptedAt, table.jobKey)],
+  (table) => [
+    index("service_state_sync_jobs_scan_idx").on(
+      table.nextAttemptAt,
+      table.lastAttemptedAt,
+      table.jobKey,
+    ),
+  ],
 );
 
 export const services = sqliteTable(

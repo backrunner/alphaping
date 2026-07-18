@@ -167,7 +167,7 @@ Ingest 暴露不访问 D1 的 `GET|HEAD /healthz` liveness。数据库读写健�
 6. Checks Worker 或 Agent 产生统一 `CheckResult`，通过共享 domain repository 写入 TELEMETRY_DB。
 7. 同一写入流程更新 check latest、time bucket、服务状态和 incident 事件。
 8. 同一 Cron 以有界主键批次比较机器 `received_at` 和离线阈值；只在状态转换时条件更新 latest 并写确定性离线事件，不新增调度请求。
-9. Web 的 check target/policy/delete/maintenance mutation 在同一 CONTROL_DB 事务写 `service_state_sync_jobs`。Web 立即尝试同步，Checks Worker 在检查执行结束后每分钟重放最多 50 个 job，并在 15 分钟在途保护窗内重复校正；job 按中央检查 `config_revision` 删除迟到旧 latest，TELEMETRY_DB 短时失败不能丢失配置 mutation 或永久留下旧 service state。
+9. Web 的 check target/policy/delete/maintenance mutation 在同一 CONTROL_DB 事务写 `service_state_sync_jobs`。Web 立即尝试同步，Checks Worker 在检查执行结束后每分钟按 `next_attempt_at` 重放最多 50 个 due job，并在 15 分钟在途保护窗内重复校正；job 按中央检查 `config_revision` 删除迟到旧 latest。长维护窗口在保护窗结束后休眠到 `maintenance_until`，到期即使没有新检查结果也会重算服务状态；TELEMETRY_DB 短时失败不能丢失配置 mutation 或永久留下旧 service state。
 
 ### 6.7 Retention
 

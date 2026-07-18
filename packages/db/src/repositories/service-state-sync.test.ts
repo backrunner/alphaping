@@ -40,7 +40,8 @@ beforeEach(async () => {
       `CREATE TABLE service_state_sync_jobs (
         job_key TEXT PRIMARY KEY, sync_token TEXT, workspace_id TEXT, workspace_pk INTEGER,
         service_id TEXT, service_pk INTEGER, check_id TEXT, check_pk INTEGER,
-        reason_code TEXT, protect_until INTEGER, last_attempted_at INTEGER, updated_at INTEGER
+        reason_code TEXT, protect_until INTEGER, next_attempt_at INTEGER,
+        last_attempted_at INTEGER, updated_at INTEGER
       )`,
     ),
     controlDb.prepare("INSERT INTO workspaces VALUES ('workspace-1', 1, NULL)"),
@@ -192,10 +193,16 @@ describe("service state synchronization", () => {
     await expect(
       controlDb
         .prepare(
-          "SELECT COUNT(*) AS count, MAX(last_attempted_at) AS last_attempted_at FROM service_state_sync_jobs",
+          `SELECT COUNT(*) AS count, MAX(last_attempted_at) AS last_attempted_at,
+                  MAX(next_attempt_at) AS next_attempt_at
+           FROM service_state_sync_jobs`,
         )
         .first(),
-    ).resolves.toEqual({ count: 1, last_attempted_at: job.protectUntil });
+    ).resolves.toEqual({
+      count: 1,
+      last_attempted_at: job.protectUntil,
+      next_attempt_at: job.protectUntil,
+    });
   });
 
   it("does not restore an expired maintenance window during delayed replay", async () => {
@@ -223,6 +230,55 @@ describe("service state synchronization", () => {
     await expect(
       telemetryDb.prepare("SELECT state FROM service_latest WHERE service_pk = 10").first(),
     ).resolves.toEqual({ state: "healthy" });
+  });
+
+  it("sleeps a settled maintenance job until the window expires", async () => {
+    const maintenanceUntil = 4_000_000;
+    await controlDb
+      .prepare("UPDATE services SET maintenance_until = ? WHERE id = 'service-1'")
+      .bind(maintenanceUntil)
+      .run();
+    await telemetryDb.prepare("DELETE FROM check_latest WHERE check_pk = 101").run();
+    const job = createServiceStateSyncJob({
+      workspaceId: "workspace-1",
+      workspacePk: 1,
+      serviceId: "service-1",
+      servicePk: 10,
+      checkId: null,
+      checkPk: null,
+      reasonCode: "maintenance_window",
+      updatedAt: 1_000,
+    });
+    await prepareServiceStateSyncJob(controlDb, job).run();
+
+    const guardUntil = job.updatedAt + 15 * 60_000;
+    await expect(
+      reconcileServiceStateSyncJobs(controlDb, telemetryDb, guardUntil),
+    ).resolves.toEqual({ processed: 1, completed: 0, failed: 0 });
+    await expect(
+      controlDb
+        .prepare(
+          `SELECT protect_until, next_attempt_at
+           FROM service_state_sync_jobs WHERE job_key = ?`,
+        )
+        .bind(job.jobKey)
+        .first(),
+    ).resolves.toEqual({ protect_until: maintenanceUntil, next_attempt_at: maintenanceUntil });
+    await expect(
+      telemetryDb.prepare("SELECT state FROM service_latest WHERE service_pk = 10").first(),
+    ).resolves.toEqual({ state: "maintenance" });
+
+    await expect(
+      reconcileServiceStateSyncJobs(controlDb, telemetryDb, guardUntil + 1),
+    ).resolves.toEqual({ processed: 0, completed: 0, failed: 0 });
+    await expect(
+      reconcileServiceStateSyncJobs(controlDb, telemetryDb, maintenanceUntil),
+    ).resolves.toEqual({ processed: 1, completed: 1, failed: 0 });
+    await expect(
+      telemetryDb
+        .prepare("SELECT state, reason_code FROM service_latest WHERE service_pk = 10")
+        .first(),
+    ).resolves.toEqual({ state: "healthy", reason_code: "maintenance_window_ended" });
   });
 
   it("rotates attempted jobs so a protected backlog cannot starve newer work", async () => {

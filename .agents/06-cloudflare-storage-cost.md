@@ -155,7 +155,7 @@ Paid included                        25,000.000m/month
 
 机器离线收敛复用 Checks Worker 现有每分钟 Cron，不增加 Worker request。每台每分钟最多读取一条 CONTROL_DB 配置和一条 TELEMETRY_DB latest；100 台增加 8.64m rows read/月。按 100+100 的 dashboard、scheduler、中央 revision fence、Agent path、liveness 和 5m reserve 合计约 72.68m rows read/月，只占 Paid included reads 的 0.291%。离线/恢复只在状态转换时写 latest/event，低频写入由 25% margin 覆盖。
 
-`service_state_sync_jobs` 复用 Checks Worker 的既有每分钟 Cron，不增加 Worker request。每次 check target/policy/delete/maintenance mutation 写一个按 check 或 service 合并的 CONTROL_DB job，并在 15 分钟保护窗内重复重放；扫描和处理每轮上限 50，每次尝试额外写一次有条件 `last_attempted_at` 以轮转积压。该负载只随人工配置 mutation 产生，不随 report/check 周期增长，因此不进入稳态账本，由 25% 配置/重试 margin 覆盖。
+`service_state_sync_jobs` 复用 Checks Worker 的既有每分钟 Cron，不增加 Worker request。每次 check target/policy/delete/maintenance mutation 写一个按 check 或 service 合并的 CONTROL_DB job，并在 15 分钟保护窗内重复重放；扫描和处理每轮上限 50，每次尝试在同一行更新 `next_attempt_at,last_attempted_at` 以轮转积压。长维护窗口在保护窗成功收敛后休眠到结束时间，不产生窗口全程的每分钟写入。该负载只随人工配置 mutation 产生，不随 report/check 周期增长，因此不进入稳态账本，由 25% 配置/重试 margin 覆盖。
 
 Retention 每个 workspace 每小时最多写 7 个 resource cursor、1 次 workspace lease claim 和 1 次 lease release，即 `9 * 720 = 6,480` cursor rows written/月。一个常见单 workspace 部署只占 30 台模型 2.484m margin 的 0.261%。Agent command expiry/completion partial indexes 只随低频管理命令变化，不进入稳态遥测账本。
 

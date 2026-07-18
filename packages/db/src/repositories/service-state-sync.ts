@@ -17,6 +17,7 @@ export interface ServiceStateSyncJob {
   checkPk: number | null;
   reasonCode: ServiceStateSyncReason;
   protectUntil: number;
+  nextAttemptAt: number;
   lastAttemptedAt: number;
   updatedAt: number;
 }
@@ -32,6 +33,7 @@ interface ServiceStateSyncJobRow {
   check_pk: number | null;
   reason_code: ServiceStateSyncReason;
   protect_until: number;
+  next_attempt_at: number;
   last_attempted_at: number;
   updated_at: number;
 }
@@ -52,6 +54,10 @@ interface CheckStateRow {
   critical: number;
 }
 
+interface AppliedServiceState {
+  maintenanceUntil: number | null;
+}
+
 export interface ServiceStateSyncProgress {
   processed: number;
   completed: number;
@@ -59,14 +65,20 @@ export interface ServiceStateSyncProgress {
 }
 
 export function createServiceStateSyncJob(
-  input: Omit<ServiceStateSyncJob, "jobKey" | "syncToken" | "protectUntil" | "lastAttemptedAt">,
+  input: Omit<
+    ServiceStateSyncJob,
+    "jobKey" | "syncToken" | "protectUntil" | "nextAttemptAt" | "lastAttemptedAt"
+  >,
+  retainUntil?: number,
 ): ServiceStateSyncJob {
   const jobKey = input.checkId === null ? `service:${input.serviceId}` : `check:${input.checkId}`;
+  const guardUntil = input.updatedAt + SERVICE_STATE_SYNC_GUARD_MS;
   return {
     ...input,
     jobKey,
     syncToken: crypto.randomUUID(),
-    protectUntil: input.updatedAt + SERVICE_STATE_SYNC_GUARD_MS,
+    protectUntil: Math.max(guardUntil, retainUntil ?? guardUntil),
+    nextAttemptAt: input.updatedAt,
     lastAttemptedAt: input.updatedAt,
   };
 }
@@ -77,13 +89,14 @@ export function prepareServiceStateSyncJob(
   onlyIfPreviousStatementChanged = false,
 ): D1PreparedStatement {
   const values = onlyIfPreviousStatementChanged
-    ? "SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE changes() = 1"
-    : "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+    ? "SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE changes() = 1"
+    : "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
   return db
     .prepare(
       `INSERT INTO service_state_sync_jobs
         (job_key, sync_token, workspace_id, workspace_pk, service_id, service_pk,
-         check_id, check_pk, reason_code, protect_until, last_attempted_at, updated_at)
+         check_id, check_pk, reason_code, protect_until, next_attempt_at,
+         last_attempted_at, updated_at)
        ${values}
        ON CONFLICT(job_key) DO UPDATE SET
          sync_token = excluded.sync_token,
@@ -95,6 +108,7 @@ export function prepareServiceStateSyncJob(
          check_pk = excluded.check_pk,
          reason_code = excluded.reason_code,
          protect_until = excluded.protect_until,
+         next_attempt_at = excluded.next_attempt_at,
          last_attempted_at = excluded.last_attempted_at,
          updated_at = excluded.updated_at`,
     )
@@ -109,6 +123,7 @@ export function prepareServiceStateSyncJob(
       job.checkPk,
       job.reasonCode,
       job.protectUntil,
+      job.nextAttemptAt,
       job.lastAttemptedAt,
       job.updatedAt,
     );
@@ -163,7 +178,7 @@ export async function applyServiceStateSyncJob(
   telemetryDb: D1Database,
   job: ServiceStateSyncJob,
   now = Date.now(),
-): Promise<void> {
+): Promise<AppliedServiceState> {
   const desired = await desiredServiceState(controlDb, job);
   if (desired === null) {
     if (job.checkPk !== null) {
@@ -172,7 +187,7 @@ export async function applyServiceStateSyncJob(
         .bind(job.checkPk)
         .run();
     }
-    return;
+    return { maintenanceUntil: null };
   }
   if (desired.workspace_pk !== job.workspacePk || desired.service_pk !== job.servicePk) {
     throw new Error("service_state_sync_identity_changed");
@@ -215,9 +230,16 @@ export async function applyServiceStateSyncJob(
       .first<{ state: string }>(),
   ]);
   const nextState = serviceState(checks.results, desired.maintenance_until, now);
-  if (previous?.state === nextState) return;
+  if (previous?.state === nextState) {
+    return { maintenanceUntil: desired.maintenance_until };
+  }
   const previousState = previous?.state ?? "unknown";
-  const reasonCode = nextState === "maintenance" ? "maintenance_window" : job.reasonCode;
+  const reasonCode =
+    nextState === "maintenance"
+      ? "maintenance_window"
+      : job.reasonCode === "maintenance_window"
+        ? "maintenance_window_ended"
+        : job.reasonCode;
   const id = await eventId(job, previousState, nextState);
   await telemetryDb.batch([
     telemetryDb
@@ -243,6 +265,7 @@ export async function applyServiceStateSyncJob(
       )
       .bind(job.workspacePk, job.servicePk, now, id, previousState, nextState, reasonCode),
   ]);
+  return { maintenanceUntil: desired.maintenance_until };
 }
 
 function rowToJob(row: ServiceStateSyncJobRow): ServiceStateSyncJob {
@@ -257,6 +280,7 @@ function rowToJob(row: ServiceStateSyncJobRow): ServiceStateSyncJob {
     checkPk: row.check_pk,
     reasonCode: row.reason_code,
     protectUntil: row.protect_until,
+    nextAttemptAt: row.next_attempt_at,
     lastAttemptedAt: row.last_attempted_at,
     updatedAt: row.updated_at,
   };
@@ -266,14 +290,29 @@ async function markServiceStateSyncAttempt(
   controlDb: D1Database,
   job: ServiceStateSyncJob,
   now: number,
+  protectUntil: number,
+  nextAttemptAt: number,
 ): Promise<void> {
   await controlDb
     .prepare(
-      `UPDATE service_state_sync_jobs SET last_attempted_at = ?
+      `UPDATE service_state_sync_jobs
+       SET protect_until = ?, last_attempted_at = ?, next_attempt_at = ?
        WHERE job_key = ? AND sync_token = ?`,
     )
-    .bind(now, job.jobKey, job.syncToken)
+    .bind(protectUntil, now, nextAttemptAt, job.jobKey, job.syncToken)
     .run();
+}
+
+function nextAttemptAfterSuccess(
+  job: ServiceStateSyncJob,
+  now: number,
+  protectUntil: number,
+): number {
+  const guardUntil = job.updatedAt + SERVICE_STATE_SYNC_GUARD_MS;
+  if (job.reasonCode === "maintenance_window" && now >= guardUntil && protectUntil > now) {
+    return protectUntil;
+  }
+  return now;
 }
 
 export async function reconcileServiceStateSyncJobs(
@@ -288,30 +327,42 @@ export async function reconcileServiceStateSyncJobs(
   const rows = await controlDb
     .prepare(
       `SELECT job_key, sync_token, workspace_id, workspace_pk, service_id, service_pk,
-              check_id, check_pk, reason_code, protect_until, last_attempted_at, updated_at
-       FROM service_state_sync_jobs ORDER BY last_attempted_at, job_key LIMIT ?`,
+              check_id, check_pk, reason_code, protect_until, next_attempt_at,
+              last_attempted_at, updated_at
+       FROM service_state_sync_jobs WHERE next_attempt_at <= ?
+       ORDER BY next_attempt_at, last_attempted_at, job_key LIMIT ?`,
     )
-    .bind(batch)
+    .bind(now, batch)
     .all<ServiceStateSyncJobRow>();
   let completed = 0;
   let failed = 0;
   for (const row of rows.results) {
     const job = rowToJob(row);
     try {
-      await applyServiceStateSyncJob(controlDb, telemetryDb, job, now);
-      if (job.protectUntil <= now) {
+      const applied = await applyServiceStateSyncJob(controlDb, telemetryDb, job, now);
+      const protectUntil =
+        job.reasonCode === "maintenance_window" && applied.maintenanceUntil !== null
+          ? Math.max(job.protectUntil, applied.maintenanceUntil)
+          : job.protectUntil;
+      if (protectUntil <= now) {
         const result = await controlDb
           .prepare("DELETE FROM service_state_sync_jobs WHERE job_key = ? AND sync_token = ?")
           .bind(job.jobKey, job.syncToken)
           .run();
         completed += result.meta.changes ?? 0;
       } else {
-        await markServiceStateSyncAttempt(controlDb, job, now);
+        await markServiceStateSyncAttempt(
+          controlDb,
+          job,
+          now,
+          protectUntil,
+          nextAttemptAfterSuccess(job, now, protectUntil),
+        );
       }
     } catch {
       failed += 1;
       try {
-        await markServiceStateSyncAttempt(controlDb, job, now);
+        await markServiceStateSyncAttempt(controlDb, job, now, job.protectUntil, now);
       } catch {
         // The job remains eligible when queue bookkeeping is temporarily unavailable.
       }

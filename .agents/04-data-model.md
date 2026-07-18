@@ -310,9 +310,9 @@ CONTROL migration 使用窄 compatibility trigger 为滚动部署中的旧 Web w
 - `job_key`, `sync_token`
 - `workspace_id`, `workspace_pk`, `service_id`, `service_pk`
 - `check_id`, `check_pk`，maintenance job 两列都为空
-- `reason_code`, `protect_until`, `last_attempted_at`, `updated_at`
+- `reason_code`, `protect_until`, `next_attempt_at`, `last_attempted_at`, `updated_at`
 
-Web 在 check target/policy/delete/maintenance 的 CONTROL_DB mutation transaction 内 upsert job。外部 ID 和 telemetry PK 固定在 job 中，Checks Worker 仍重新读取 CONTROL_DB 当前 enabled/critical/config revision/maintenance 状态后才修改 TELEMETRY_DB。每分钟按 `last_attempted_at,job_key` 最多处理 50 行，并在每次成功或失败尝试后用 `job_key,sync_token` 条件轮转；job 在 15 分钟在途保护窗内重复校正，越过保护窗的最后一次同步成功后用同一条件删除，较新的 mutation 不会被旧执行清除。
+Web 在 check target/policy/delete/maintenance 的 CONTROL_DB mutation transaction 内 upsert job。外部 ID 和 telemetry PK 固定在 job 中，Checks Worker 仍重新读取 CONTROL_DB 当前 enabled/critical/config revision/maintenance 状态后才修改 TELEMETRY_DB。每分钟按 `next_attempt_at,last_attempted_at,job_key` 最多处理 50 个 due job，并在每次成功或失败尝试后用 `job_key,sync_token` 条件轮转；job 在 15 分钟在途保护窗内重复校正，越过保护窗的最后一次同步成功后用同一条件删除，较新的 mutation 不会被旧执行清除。未来结束的 maintenance job 至少保留到 `maintenance_until`，保护窗成功收敛后不再每分钟执行，而是在到期时重算服务状态。
 
 ### `check_assertions`
 

@@ -78,6 +78,10 @@
         {
           "file": "0019_check_config_revision.sql",
           "sha256": "5d575c5f32f71e663678f34f6b3718ee4a60a6295c07fd175333f92b430da4d4"
+        },
+        {
+          "file": "0020_service_state_sync_schedule.sql",
+          "sha256": "9f85581680ebebf919041b5a320726dc5fee5dc77d9e68249e4d154fc62f6ec9"
         }
       ],
       "objects": [
@@ -211,7 +215,7 @@
           "type": "index",
           "name": "service_state_sync_jobs_scan_idx",
           "table": "service_state_sync_jobs",
-          "sql": "CREATE INDEX service_state_sync_jobs_scan_idx\n  ON service_state_sync_jobs (last_attempted_at, job_key)"
+          "sql": "CREATE INDEX service_state_sync_jobs_scan_idx\n  ON service_state_sync_jobs (next_attempt_at, last_attempted_at, job_key)"
         },
         {
           "type": "index",
@@ -403,7 +407,7 @@
           "type": "table",
           "name": "service_state_sync_jobs",
           "table": "service_state_sync_jobs",
-          "sql": "CREATE TABLE service_state_sync_jobs (\n  job_key TEXT PRIMARY KEY NOT NULL,\n  sync_token TEXT NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  workspace_pk INTEGER NOT NULL CHECK (workspace_pk > 0),\n  service_id TEXT NOT NULL,\n  service_pk INTEGER NOT NULL CHECK (service_pk > 0),\n  check_id TEXT,\n  check_pk INTEGER,\n  reason_code TEXT NOT NULL CHECK (reason_code IN (\n    'check_configuration', 'maintenance_window', 'maintenance_window_ended'\n  )),\n  protect_until INTEGER NOT NULL,\n  last_attempted_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  CHECK ((check_id IS NULL AND check_pk IS NULL) OR\n         (check_id IS NOT NULL AND check_pk IS NOT NULL AND check_pk > 0))\n) STRICT"
+          "sql": "CREATE TABLE service_state_sync_jobs (\n  job_key TEXT PRIMARY KEY NOT NULL,\n  sync_token TEXT NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  workspace_pk INTEGER NOT NULL CHECK (workspace_pk > 0),\n  service_id TEXT NOT NULL,\n  service_pk INTEGER NOT NULL CHECK (service_pk > 0),\n  check_id TEXT,\n  check_pk INTEGER,\n  reason_code TEXT NOT NULL CHECK (reason_code IN (\n    'check_configuration', 'maintenance_window', 'maintenance_window_ended'\n  )),\n  protect_until INTEGER NOT NULL,\n  last_attempted_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL, next_attempt_at INTEGER NOT NULL DEFAULT 0\n  CHECK (next_attempt_at >= 0),\n  CHECK ((check_id IS NULL AND check_pk IS NULL) OR\n         (check_id IS NOT NULL AND check_pk IS NOT NULL AND check_pk > 0))\n) STRICT"
         },
         {
           "type": "table",
@@ -657,7 +661,7 @@
           "type": "index",
           "name": "service_state_sync_jobs_scan_idx",
           "table": "service_state_sync_jobs",
-          "sql": "CREATE INDEX service_state_sync_jobs_scan_idx\n  ON service_state_sync_jobs (last_attempted_at, job_key)"
+          "sql": "CREATE INDEX service_state_sync_jobs_scan_idx\n  ON service_state_sync_jobs (next_attempt_at, last_attempted_at, job_key)"
         },
         {
           "type": "index",
@@ -921,7 +925,7 @@
           "type": "table",
           "name": "service_state_sync_jobs",
           "table": "service_state_sync_jobs",
-          "sql": "CREATE TABLE service_state_sync_jobs (\n  job_key TEXT PRIMARY KEY NOT NULL,\n  sync_token TEXT NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  workspace_pk INTEGER NOT NULL CHECK (workspace_pk > 0),\n  service_id TEXT NOT NULL,\n  service_pk INTEGER NOT NULL CHECK (service_pk > 0),\n  check_id TEXT,\n  check_pk INTEGER,\n  reason_code TEXT NOT NULL CHECK (reason_code IN (\n    'check_configuration', 'maintenance_window', 'maintenance_window_ended'\n  )),\n  protect_until INTEGER NOT NULL,\n  last_attempted_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  CHECK ((check_id IS NULL AND check_pk IS NULL) OR\n         (check_id IS NOT NULL AND check_pk IS NOT NULL AND check_pk > 0))\n) STRICT"
+          "sql": "CREATE TABLE service_state_sync_jobs (\n  job_key TEXT PRIMARY KEY NOT NULL,\n  sync_token TEXT NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  workspace_pk INTEGER NOT NULL CHECK (workspace_pk > 0),\n  service_id TEXT NOT NULL,\n  service_pk INTEGER NOT NULL CHECK (service_pk > 0),\n  check_id TEXT,\n  check_pk INTEGER,\n  reason_code TEXT NOT NULL CHECK (reason_code IN (\n    'check_configuration', 'maintenance_window', 'maintenance_window_ended'\n  )),\n  protect_until INTEGER NOT NULL,\n  last_attempted_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL, next_attempt_at INTEGER NOT NULL DEFAULT 0\n  CHECK (next_attempt_at >= 0),\n  CHECK ((check_id IS NULL AND check_pk IS NULL) OR\n         (check_id IS NOT NULL AND check_pk IS NOT NULL AND check_pk > 0))\n) STRICT"
         },
         {
           "type": "table",

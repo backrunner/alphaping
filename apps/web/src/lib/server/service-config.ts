@@ -1343,19 +1343,22 @@ export async function setServiceMaintenance(
     throw error(400, "Maintenance end time is invalid");
   }
   const now = Date.now();
-  const syncJob = createServiceStateSyncJob({
-    workspaceId: access.workspaceId,
-    workspacePk: service.workspace_telemetry_pk,
-    serviceId,
-    servicePk: service.telemetry_pk,
-    checkId: null,
-    checkPk: null,
-    reasonCode:
-      maintenanceUntil !== null && maintenanceUntil > now
-        ? "maintenance_window"
-        : "maintenance_window_ended",
-    updatedAt: now,
-  });
+  const syncJob = createServiceStateSyncJob(
+    {
+      workspaceId: access.workspaceId,
+      workspacePk: service.workspace_telemetry_pk,
+      serviceId,
+      servicePk: service.telemetry_pk,
+      checkId: null,
+      checkPk: null,
+      reasonCode:
+        maintenanceUntil !== null && maintenanceUntil > now
+          ? "maintenance_window"
+          : "maintenance_window_ended",
+      updatedAt: now,
+    },
+    maintenanceUntil ?? undefined,
+  );
   const audit = await prepareAuditStatement(controlDb, {
     workspaceId: access.workspaceId,
     actorUserId: userId,

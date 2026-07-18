@@ -173,6 +173,7 @@ beforeEach(async () => {
         check_pk INTEGER,
         reason_code TEXT NOT NULL,
         protect_until INTEGER NOT NULL,
+        next_attempt_at INTEGER NOT NULL,
         last_attempted_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       )`,
@@ -927,7 +928,7 @@ describe("service telemetry synchronization", () => {
     await telemetryDatabase
       .prepare("INSERT INTO check_latest VALUES (101, 10, 'healthy', 1, 1)")
       .run();
-    const maintenanceUntil = Date.now() + 60_000;
+    const maintenanceUntil = Date.now() + 60 * 60_000;
 
     await expect(
       setServiceMaintenance(
@@ -940,8 +941,10 @@ describe("service telemetry synchronization", () => {
       ),
     ).resolves.toBeUndefined();
     await expect(
-      first<{ count: number }>("SELECT COUNT(*) AS count FROM service_state_sync_jobs"),
-    ).resolves.toEqual({ count: 1 });
+      first<{ count: number; protect_until: number }>(
+        "SELECT COUNT(*) AS count, MAX(protect_until) AS protect_until FROM service_state_sync_jobs",
+      ),
+    ).resolves.toEqual({ count: 1, protect_until: maintenanceUntil });
     await expect(
       telemetryDatabase.prepare("SELECT state FROM service_latest WHERE service_pk = 10").first(),
     ).resolves.toEqual({ state: "maintenance" });
