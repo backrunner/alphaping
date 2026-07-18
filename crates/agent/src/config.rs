@@ -28,6 +28,8 @@ pub struct AgentConfig {
     pub nonce_prefix_hex: String,
     pub identity_private_key_hex: String,
     #[serde(default)]
+    pub transport_sequence_checkpoint: u64,
+    #[serde(default)]
     pub credential_storage: CredentialStorage,
     pub spool_path: String,
     #[serde(default = "default_sample_interval")]
@@ -100,6 +102,9 @@ impl AgentConfig {
         }
         if hex::decode(&self.nonce_prefix_hex)?.len() != 4 {
             bail!("nonce prefix must be 4 bytes");
+        }
+        if self.transport_sequence_checkpoint > alphaping_protocol::MAX_SEQUENCE {
+            bail!("transport sequence checkpoint exceeds the protocol limit");
         }
         self.data_key()?;
         self.identity_private_key()?;

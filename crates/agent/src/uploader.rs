@@ -13,7 +13,7 @@ use rustls::{
 };
 use thiserror::Error;
 
-use crate::spool::{PendingDelivery, Spool};
+use crate::spool::PendingDelivery;
 
 #[derive(Debug, Error)]
 pub enum UploadError {
@@ -29,8 +29,6 @@ pub enum UploadError {
     Protocol,
     #[error("response authentication failed")]
     Authentication,
-    #[error("local sequence state failed")]
-    Sequence,
 }
 
 pub struct Uploader {
@@ -86,11 +84,10 @@ impl Uploader {
 
     pub async fn upload(
         &self,
-        spool: &mut Spool,
         delivery: &PendingDelivery,
+        sequence: u64,
         now_ms: i64,
     ) -> Result<DurableAck, UploadError> {
-        let sequence = spool.next_sequence().map_err(|_| UploadError::Sequence)?;
         let envelope =
             self.codec
                 .encode_report(sequence, now_ms, &delivery.report_id, &delivery.payload)?;
@@ -115,7 +112,12 @@ impl Uploader {
             return Err(UploadError::ResponseTooLarge);
         }
         let body = response.bytes().await?;
-        self.codec.decode_ack(&body, sequence, &delivery.report_id)
+        self.codec.decode_ack(
+            &body,
+            sequence,
+            &delivery.report_id,
+            blake3::hash(&delivery.payload).as_bytes(),
+        )
     }
 }
 
@@ -178,6 +180,7 @@ impl EnvelopeCodec {
         body: &[u8],
         expected_sequence: u64,
         expected_report_id: &[u8],
+        expected_payload_hash: &[u8],
     ) -> Result<DurableAck, UploadError> {
         if body.len() > MAX_ENVELOPE_BYTES {
             return Err(UploadError::ResponseTooLarge);
@@ -206,6 +209,7 @@ impl EnvelopeCodec {
         let status =
             AckStatus::try_from(acknowledgement.status).map_err(|_| UploadError::Protocol)?;
         if acknowledgement.report_id != expected_report_id
+            || acknowledgement.payload_hash != expected_payload_hash
             || !matches!(status, AckStatus::Committed | AckStatus::Duplicate)
         {
             return Err(UploadError::Protocol);
@@ -265,6 +269,7 @@ mod tests {
             commands: Vec::new(),
             live_session: None,
             key_rotation: None,
+            payload_hash: blake3::hash(compressed).as_bytes().to_vec(),
         };
         let response_header = EnvelopeHeader {
             protocol_version: PROTOCOL_VERSION,
@@ -288,12 +293,26 @@ mod tests {
         });
         assert_eq!(
             codec
-                .decode_ack(&response, 4, &report_id)
+                .decode_ack(
+                    &response,
+                    4,
+                    &report_id,
+                    blake3::hash(compressed).as_bytes(),
+                )
                 .expect("authenticated ACK"),
             acknowledgement
         );
         assert!(matches!(
-            codec.decode_ack(&response, 5, &report_id),
+            codec.decode_ack(
+                &response,
+                5,
+                &report_id,
+                blake3::hash(compressed).as_bytes(),
+            ),
+            Err(UploadError::Protocol)
+        ));
+        assert!(matches!(
+            codec.decode_ack(&response, 4, &report_id, &[0; 32]),
             Err(UploadError::Protocol)
         ));
     }

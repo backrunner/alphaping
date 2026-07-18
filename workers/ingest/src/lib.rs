@@ -25,6 +25,10 @@ pub const CPU_DOWN_PERMILLE: u32 = 950;
 pub const CAPACITY_DEGRADED_PERMILLE: u64 = 850;
 pub const CAPACITY_DOWN_PERMILLE: u64 = 950;
 
+pub fn is_protobuf_content_type(value: Option<&str>) -> bool {
+    value.is_some_and(|value| value.eq_ignore_ascii_case("application/x-protobuf"))
+}
+
 fn bounded_system_text(value: &str, maximum: usize) -> bool {
     value.len() <= maximum && value.chars().all(|character| !character.is_control())
 }
@@ -346,8 +350,20 @@ mod tests {
 
     use super::{
         EnrollmentValidationError, MachineHealthState, ValidationError, enrollment_token_digest,
-        machine_health_state, validate_enrollment_request, validate_report,
+        is_protobuf_content_type, machine_health_state, validate_enrollment_request,
+        validate_report,
     };
+
+    #[test]
+    fn agent_endpoints_require_the_exact_protobuf_media_type() {
+        assert!(is_protobuf_content_type(Some("application/x-protobuf")));
+        assert!(is_protobuf_content_type(Some("APPLICATION/X-PROTOBUF")));
+        assert!(!is_protobuf_content_type(None));
+        assert!(!is_protobuf_content_type(Some("application/octet-stream")));
+        assert!(!is_protobuf_content_type(Some(
+            "application/x-protobuf; charset=utf-8"
+        )));
+    }
 
     #[test]
     fn enrollment_requires_a_signed_machine_bound_proof() {

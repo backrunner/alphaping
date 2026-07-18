@@ -87,7 +87,7 @@ fn run_self_test(arguments: &[std::ffi::OsString]) -> Result<()> {
         bail!("usage: alphaping-agent self-test --config PATH");
     }
     let config = AgentConfig::load(Path::new(&arguments[1]))?;
-    let _spool = Spool::open(&config.spool_path)?;
+    let _spool = Spool::open_existing(&config.spool_path)?;
     let _client = alphaping_agent::uploader::pq_client()?;
     info!("Agent self-test passed");
     Ok(())
@@ -117,8 +117,15 @@ async fn run_enrollment(arguments: &[std::ffi::OsString]) -> Result<()> {
     let token = token.context("--token is required")?;
     let machine_claim_id = machine_claim_id.context("--machine is required")?;
     let config_path = config_path.context("--config is required")?;
+    let spool_path = default_spool_path();
+    if Path::new(&spool_path).exists() {
+        bail!(
+            "an Agent spool already exists; stop the Agent and remove its prior enrollment state before enrolling again"
+        );
+    }
     let material = enroll(&endpoint, &token, &machine_claim_id).await?;
     let response = material.response;
+    let initial_client_sequence = response.initial_client_sequence;
     let config = AgentConfig {
         endpoint: format!("{}/v1/reports", endpoint.trim_end_matches('/')),
         agent_id: response.agent_id,
@@ -128,8 +135,9 @@ async fn run_enrollment(arguments: &[std::ffi::OsString]) -> Result<()> {
         data_key_hex: hex::encode(response.data_key),
         nonce_prefix_hex: hex::encode(response.nonce_prefix),
         identity_private_key_hex: hex::encode(material.identity_private_key),
+        transport_sequence_checkpoint: initial_client_sequence - 1,
         credential_storage: CredentialStorage::RestrictedFile,
-        spool_path: default_spool_path(),
+        spool_path,
         sample_interval_seconds: u64::from(response.sample_interval_seconds),
         report_interval_seconds: u64::from(response.report_interval_seconds),
         max_spool_bytes: 512 * 1024 * 1024,
@@ -139,6 +147,7 @@ async fn run_enrollment(arguments: &[std::ffi::OsString]) -> Result<()> {
         pinned_version: None,
     };
     let config = preferred_credential_storage(config);
+    let _spool = Spool::create(&config.spool_path, initial_client_sequence)?;
     config.save(&config_path)?;
     info!(path = %config_path.display(), "agent enrollment completed");
     Ok(())

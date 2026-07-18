@@ -47,7 +47,13 @@ pub async fn run(
             "macOS System Keychain capability is unavailable; Agent credentials use the restricted config file"
         );
     }
-    let mut spool = Spool::open(&config.spool_path)?;
+    let mut spool = Spool::open_existing(&config.spool_path)?;
+    let persisted_sequence =
+        spool.verify_sequence_checkpoint(config.transport_sequence_checkpoint)?;
+    if persisted_sequence > config.transport_sequence_checkpoint {
+        config.transport_sequence_checkpoint = persisted_sequence;
+        config.save(config_path)?;
+    }
     let mut sampler = Sampler::new();
     let initial_probe_config = spool.load_probe_config()?;
     let (probe_monitor, mut probe_results) =
@@ -211,7 +217,10 @@ async fn upload_due_report(
         return Ok(false);
     };
     let mut schedule_changed = false;
-    match uploader.upload(spool, &delivery, now_ms).await {
+    let sequence = spool.next_sequence()?;
+    control.config.transport_sequence_checkpoint = sequence;
+    control.config.save(control.config_path)?;
+    match uploader.upload(&delivery, sequence, now_ms).await {
         Ok(acknowledgement) => {
             match apply_ack(
                 spool,
@@ -442,6 +451,5 @@ fn upload_error_code(error: &UploadError) -> &'static str {
         UploadError::ResponseTooLarge => "response_too_large",
         UploadError::Protocol => "protocol",
         UploadError::Authentication => "authentication",
-        UploadError::Sequence => "sequence",
     }
 }

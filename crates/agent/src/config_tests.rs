@@ -10,6 +10,7 @@ fn config() -> AgentConfig {
         data_key_hex: hex::encode([1; 32]),
         nonce_prefix_hex: hex::encode([2; 4]),
         identity_private_key_hex: hex::encode([3; 32]),
+        transport_sequence_checkpoint: 0,
         credential_storage: CredentialStorage::RestrictedFile,
         spool_path: "/tmp/alphaping-config-test.db".to_owned(),
         sample_interval_seconds: 10,
@@ -31,6 +32,17 @@ fn legacy_config_defaults_to_the_restricted_file() {
         .remove("credential_storage");
     let parsed: AgentConfig = value.try_into().expect("legacy Agent config");
     assert_eq!(parsed.credential_storage, CredentialStorage::RestrictedFile);
+}
+
+#[test]
+fn legacy_config_defaults_to_an_unset_sequence_checkpoint() {
+    let mut value = toml::Value::try_from(config()).expect("config TOML value");
+    value
+        .as_table_mut()
+        .expect("config table")
+        .remove("transport_sequence_checkpoint");
+    let parsed: AgentConfig = value.try_into().expect("legacy Agent config");
+    assert_eq!(parsed.transport_sequence_checkpoint, 0);
 }
 
 #[test]

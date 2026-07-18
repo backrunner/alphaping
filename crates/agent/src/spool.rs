@@ -8,7 +8,7 @@ use alphaping_protocol::{
     v1::{AgentCommandResult, ContainerInventory, MachineReport, MetricSample, ProbeResult},
 };
 use anyhow::{Context, Result, bail};
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 use uuid::Uuid;
 
 mod capacity;
@@ -30,12 +30,60 @@ pub struct Spool {
 }
 
 impl Spool {
+    #[cfg(test)]
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref().to_path_buf();
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
         let connection = Connection::open(&path)?;
+        Self::from_connection(connection, path)
+    }
+
+    pub fn create(path: impl AsRef<Path>, initial_client_sequence: u64) -> Result<Self> {
+        if initial_client_sequence == 0
+            || initial_client_sequence > alphaping_protocol::MAX_SEQUENCE
+        {
+            bail!("initial client sequence is outside the protocol range");
+        }
+        let path = path.as_ref().to_path_buf();
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .with_context(|| {
+                format!(
+                    "spool already exists or cannot be created at {}",
+                    path.display()
+                )
+            })?;
+        let mut spool = match Self::open_existing(&path) {
+            Ok(spool) => spool,
+            Err(error) => {
+                let _ = fs::remove_file(&path);
+                return Err(error);
+            }
+        };
+        spool.set_transport_sequence(initial_client_sequence - 1)?;
+        Ok(spool)
+    }
+
+    pub fn open_existing(path: impl AsRef<Path>) -> Result<Self> {
+        let path = path.as_ref().to_path_buf();
+        let connection = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_WRITE)
+            .with_context(|| {
+                format!(
+                    "registered Agent spool is missing or unreadable at {}; re-enrollment is required",
+                    path.display()
+                )
+            })?;
+        Self::from_connection(connection, path)
+    }
+
+    fn from_connection(connection: Connection, path: PathBuf) -> Result<Self> {
         connection.execute_batch(
             "PRAGMA journal_mode = WAL;
              PRAGMA synchronous = FULL;
@@ -137,6 +185,38 @@ impl Spool {
             [],
         )?;
         Ok(Self { connection, path })
+    }
+
+    fn set_transport_sequence(&mut self, sequence: u64) -> Result<()> {
+        let sequence =
+            i64::try_from(sequence).context("transport sequence is outside SQLite range")?;
+        self.connection.execute(
+            "UPDATE meta SET value = ? WHERE key = 'transport_sequence'",
+            [sequence],
+        )?;
+        Ok(())
+    }
+
+    pub fn transport_sequence(&self) -> Result<u64> {
+        let sequence: i64 = self.connection.query_row(
+            "SELECT value FROM meta WHERE key = 'transport_sequence'",
+            [],
+            |row| row.get(0),
+        )?;
+        u64::try_from(sequence).context("transport sequence is invalid")
+    }
+
+    pub fn verify_sequence_checkpoint(&self, checkpoint: u64) -> Result<u64> {
+        let sequence = self.transport_sequence()?;
+        if sequence < checkpoint {
+            bail!(
+                "transport sequence state rolled back from checkpoint {checkpoint} to {sequence}; re-enrollment is required"
+            );
+        }
+        if sequence > alphaping_protocol::MAX_SEQUENCE {
+            bail!("transport sequence exceeds the protocol limit");
+        }
+        Ok(sequence)
     }
 
     pub fn append_sample(&mut self, sample: &MetricSample, now_ms: i64) -> Result<bool> {
@@ -380,12 +460,16 @@ impl Spool {
         let next = current
             .checked_add(1)
             .context("transport sequence exhausted")?;
+        let next_sequence = u64::try_from(next).context("transport sequence rolled back")?;
+        if next_sequence > alphaping_protocol::MAX_SEQUENCE {
+            bail!("transport sequence reached the protocol limit; key rotation is required");
+        }
         transaction.execute(
             "UPDATE meta SET value = ? WHERE key = 'transport_sequence'",
             [next],
         )?;
         transaction.commit()?;
-        u64::try_from(next).context("transport sequence rolled back")
+        Ok(next_sequence)
     }
 
     pub fn next_live_sequence(&mut self, session_id: &[u8]) -> Result<u64> {

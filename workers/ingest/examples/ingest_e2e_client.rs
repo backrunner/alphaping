@@ -200,7 +200,12 @@ async fn verify_command_delivery(
     if response.status() != StatusCode::OK {
         return Err(invalid_data("command delivery report was rejected").into());
     }
-    let acknowledgement = codec.decode_ack(&response.bytes().await?, 6, &report_id)?;
+    let acknowledgement = codec.decode_ack(
+        &response.bytes().await?,
+        6,
+        &report_id,
+        blake3::hash(&compressed_payload).as_bytes(),
+    )?;
     if AckStatus::try_from(acknowledgement.status)? != AckStatus::Duplicate
         || acknowledgement.commands.len() != 1
     {
@@ -239,8 +244,12 @@ async fn verify_command_delivery(
     if response.status() != StatusCode::OK {
         return Err(invalid_data("command result report was rejected").into());
     }
-    let acknowledgement =
-        codec.decode_ack(&response.bytes().await?, 7, &result_report.report_id)?;
+    let acknowledgement = codec.decode_ack(
+        &response.bytes().await?,
+        7,
+        &result_report.report_id,
+        blake3::hash(&result_payload).as_bytes(),
+    )?;
     if AckStatus::try_from(acknowledgement.status)? != AckStatus::Committed {
         return Err(invalid_data("command result report was not committed").into());
     }
@@ -288,7 +297,12 @@ async fn verify_config_delivery(
         ))
         .into());
     }
-    let acknowledgement = codec.decode_ack(&response.bytes().await?, 5, &report.report_id)?;
+    let acknowledgement = codec.decode_ack(
+        &response.bytes().await?,
+        5,
+        &report.report_id,
+        blake3::hash(&payload).as_bytes(),
+    )?;
     let config = acknowledgement
         .config
         .as_ref()
@@ -341,7 +355,12 @@ async fn verify_rotation_proposal(
         if response.status() != StatusCode::OK {
             return Err(invalid_data("rotation proposal report was rejected").into());
         }
-        let acknowledgement = codec.decode_ack(&response.bytes().await?, sequence, &report_id)?;
+        let acknowledgement = codec.decode_ack(
+            &response.bytes().await?,
+            sequence,
+            &report_id,
+            blake3::hash(&compressed_payload).as_bytes(),
+        )?;
         if AckStatus::try_from(acknowledgement.status)? != AckStatus::Duplicate {
             return Err(invalid_data("rotation proposal retry was not a duplicate ACK").into());
         }
@@ -404,7 +423,12 @@ async fn verify_rotation_activation(
     if response.status() != StatusCode::OK {
         return Err(invalid_data("rotated key report was rejected").into());
     }
-    let acknowledgement = codec.decode_ack(&response.bytes().await?, 10, &report.report_id)?;
+    let acknowledgement = codec.decode_ack(
+        &response.bytes().await?,
+        10,
+        &report.report_id,
+        blake3::hash(&payload).as_bytes(),
+    )?;
     if AckStatus::try_from(acknowledgement.status)? != AckStatus::Committed
         || acknowledgement.key_rotation.is_some()
     {
@@ -608,7 +632,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         ))
         .into());
     }
-    let acknowledgement = codec.decode_ack(&response.bytes().await?, 1, &report_id)?;
+    let acknowledgement = codec.decode_ack(
+        &response.bytes().await?,
+        1,
+        &report_id,
+        blake3::hash(&compressed).as_bytes(),
+    )?;
     if AckStatus::try_from(acknowledgement.status)? != AckStatus::Committed {
         return Err(invalid_data("first durable report was not committed").into());
     }
@@ -617,7 +646,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     if response.status() != StatusCode::OK {
         return Err(invalid_data("idempotent report retry was rejected").into());
     }
-    let acknowledgement = codec.decode_ack(&response.bytes().await?, 2, &report_id)?;
+    let acknowledgement = codec.decode_ack(
+        &response.bytes().await?,
+        2,
+        &report_id,
+        blake3::hash(&compressed).as_bytes(),
+    )?;
     if AckStatus::try_from(acknowledgement.status)? != AckStatus::Duplicate {
         return Err(invalid_data("idempotent report retry was not classified as duplicate").into());
     }
@@ -646,7 +680,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         ))
         .into());
     }
-    let acknowledgement = codec.decode_ack(&response.bytes().await?, 3, &threshold_report_id)?;
+    let acknowledgement = codec.decode_ack(
+        &response.bytes().await?,
+        3,
+        &threshold_report_id,
+        blake3::hash(&threshold_payload).as_bytes(),
+    )?;
     if AckStatus::try_from(acknowledgement.status)? != AckStatus::Committed {
         return Err(invalid_data("threshold report was not committed").into());
     }

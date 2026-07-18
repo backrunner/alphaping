@@ -328,6 +328,7 @@ message DurableAck {
   repeated AgentCommand commands = 6;
   LiveSessionCredential live_session = 7;
   KeyRotationProposal key_rotation = 8;
+  bytes payload_hash = 9;
 }
 
 message LiveSessionCredential {

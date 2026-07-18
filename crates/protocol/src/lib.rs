@@ -12,6 +12,7 @@ pub mod v1 {
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const MAX_ENVELOPE_BYTES: usize = 64 * 1024;
 pub const MAX_DECOMPRESSED_BYTES: usize = 256 * 1024;
+pub const MAX_SEQUENCE: u64 = 9_007_199_254_740_991;
 
 #[derive(Debug, Error)]
 pub enum ProtocolError {

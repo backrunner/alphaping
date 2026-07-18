@@ -151,6 +151,51 @@ fn sequence_is_persisted_before_use() {
 }
 
 #[test]
+fn registered_agent_refuses_a_missing_spool() {
+    let directory = tempdir().expect("temp directory");
+    let path = directory.path().join("missing.db");
+    assert!(Spool::open_existing(&path).is_err());
+    assert!(!path.exists());
+}
+
+#[test]
+fn enrollment_initializes_the_server_sequence_and_refuses_overwrite() {
+    let directory = tempdir().expect("temp directory");
+    let path = directory.path().join("spool.db");
+    let mut spool = Spool::create(&path, 17).expect("create enrollment spool");
+    assert_eq!(spool.transport_sequence().expect("stored sequence"), 16);
+    assert_eq!(spool.next_sequence().expect("initial sequence"), 17);
+    drop(spool);
+    assert!(Spool::create(&path, 1).is_err());
+}
+
+#[test]
+fn sequence_rollback_below_the_config_checkpoint_fails_closed() {
+    let directory = tempdir().expect("temp directory");
+    let path = directory.path().join("spool.db");
+    let mut spool = Spool::create(&path, 1).expect("create enrollment spool");
+    assert_eq!(spool.next_sequence().expect("first sequence"), 1);
+    assert_eq!(spool.next_sequence().expect("second sequence"), 2);
+    spool
+        .set_transport_sequence(1)
+        .expect("simulate restored database");
+    assert!(spool.verify_sequence_checkpoint(2).is_err());
+}
+
+#[test]
+fn transport_sequence_stops_at_the_protocol_limit() {
+    let directory = tempdir().expect("temp directory");
+    let path = directory.path().join("spool.db");
+    let mut spool =
+        Spool::create(&path, alphaping_protocol::MAX_SEQUENCE).expect("create near-limit spool");
+    assert_eq!(
+        spool.next_sequence().expect("last safe sequence"),
+        alphaping_protocol::MAX_SEQUENCE
+    );
+    assert!(spool.next_sequence().is_err());
+}
+
+#[test]
 fn live_sequence_is_persisted_per_session_and_rotates_with_the_key() {
     let directory = tempfile::tempdir().expect("tempdir");
     let path = directory.path().join("spool.db");

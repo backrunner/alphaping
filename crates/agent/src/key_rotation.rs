@@ -130,6 +130,7 @@ mod tests {
             data_key_hex: hex::encode([1; 32]),
             nonce_prefix_hex: hex::encode([2; 4]),
             identity_private_key_hex: hex::encode([3; 32]),
+            transport_sequence_checkpoint: 41,
             credential_storage: CredentialStorage::RestrictedFile,
             spool_path: "/tmp/alphaping-key-rotation-test.db".to_owned(),
             sample_interval_seconds: 10,
@@ -150,5 +151,6 @@ mod tests {
             current.identity_private_key_hex
         );
         assert_eq!(updated.spool_path, current.spool_path);
+        assert_eq!(updated.transport_sequence_checkpoint, 41);
     }
 }

@@ -18,7 +18,7 @@ use crate::{
     agent_commands::{load_commands, persist_command_results},
     agent_config::build_config_snapshot,
     check_results::{ProbePersistenceError, persist_probe_results},
-    enrollment_token_digest,
+    enrollment_token_digest, is_protobuf_content_type,
     live_session::issue_live_session,
     machine_health_state, validate_enrollment_request, validate_report,
 };
@@ -101,6 +101,7 @@ struct EnrollmentTokenRow {
 #[derive(Debug)]
 enum IngestError {
     BadRequest,
+    UnsupportedMediaType,
     Unauthorized,
     Conflict,
     Internal(worker::Error),
@@ -453,6 +454,9 @@ async fn handle_enrollment(mut request: Request, env: Env) -> Result<Response, I
     if request.method() != Method::Post {
         return Err(IngestError::BadRequest);
     }
+    if !is_protobuf_content_type(request.headers().get("content-type")?.as_deref()) {
+        return Err(IngestError::UnsupportedMediaType);
+    }
     if request
         .headers()
         .get("content-length")?
@@ -764,6 +768,7 @@ fn block_statement(
     report: &MachineReport,
     payload_hash: &[u8],
     compressed_payload: &[u8],
+    payload_hash: &[u8],
 ) -> Result<worker::D1PreparedStatement, IngestError> {
     let slot = report_slot(report.nominal_minute_ms);
     let report_column = format!("report_{slot}");
@@ -1070,11 +1075,10 @@ async fn durable_ack(
         now,
     )?];
     if !duplicate {
-        let hash = blake3::hash(compressed_payload);
         statements.push(block_statement(
             telemetry_db,
             report,
-            hash.as_bytes(),
+            payload_hash,
             compressed_payload,
         )?);
         statements.push(state_transition_statement(
@@ -1150,6 +1154,7 @@ async fn durable_ack(
         commands,
         live_session,
         key_rotation,
+        payload_hash: payload_hash.to_vec(),
     };
     let response_header = EnvelopeHeader {
         protocol_version: PROTOCOL_VERSION,
@@ -1182,6 +1187,9 @@ async fn durable_ack(
 async fn handle_report(mut request: Request, env: Env) -> Result<Response, IngestError> {
     if request.method() != Method::Post {
         return Err(IngestError::BadRequest);
+    }
+    if !is_protobuf_content_type(request.headers().get("content-type")?.as_deref()) {
+        return Err(IngestError::UnsupportedMediaType);
     }
     if request
         .headers()
@@ -1305,6 +1313,7 @@ async fn handle_report(mut request: Request, env: Env) -> Result<Response, Inges
         &keys,
         nonce_prefix,
         &compressed_payload,
+        payload_hash.as_bytes(),
         duplicate,
         config,
         commands,
@@ -1317,6 +1326,7 @@ async fn handle_report(mut request: Request, env: Env) -> Result<Response, Inges
 fn error_response(error: IngestError) -> WorkerResult<Response> {
     match error {
         IngestError::BadRequest => Response::error("Bad request", 400),
+        IngestError::UnsupportedMediaType => Response::error("Unsupported media type", 415),
         IngestError::Unauthorized => Response::error("Not found", 404),
         IngestError::Conflict => Response::error("Conflict", 409),
         IngestError::Internal(error) => Err(error),
