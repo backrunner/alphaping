@@ -204,6 +204,7 @@ src/
 - Rust Ingest 仅在 desired 高于 Agent 回报的 applied revision 时构建最多 32 个任务的完整 protobuf snapshot，展开 secret 后放入已认证的 s2c ACK。Agent 验证 revision、created time、完整内容 digest 和字段上限，SQLite commit 后才切换 scheduler。
 - Cloudflare HTTP/TCP 任务在同一 Cron invocation 内以最多 5 并发有界执行，30 台目标规模不使用 Queue。
 - 结果以 D1 batch 写入 `check_result_blocks_5m` slot、`check_latest`、已闭合 rollup 和状态事件。
+- Web 的 check policy/delete/maintenance mutation 通过 `packages/db` 共享 repository 写入 `service_state_sync_jobs` 并立即尝试同步；Checks Worker 在本轮检查落库后处理最多 50 个 job。job 至少保留 15 分钟并按当前 CONTROL_DB 状态重复校正，每次尝试后以 sync token 条件轮转 `last_attempted_at`，避免保护窗内的旧 job 饿死后续 mutation；成功越过保护窗后使用 sync token 条件删除。
 - 每分钟复用同一 Cron 对最多 1,000 台 active machine 做有界 latest 主键读取；达到 `offline_after_seconds` 后使用 `received_at + state` 条件更新并写确定性离线事件。新 durable report 在 Ingest 同一 batch 中写恢复事件。
 - 以固定 epoch、interval 和 phase 计算 nominal slot，避免执行延迟累积漂移。
 - 限制每次扫描和执行数量，通过游标继续。

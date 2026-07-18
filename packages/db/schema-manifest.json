@@ -70,6 +70,10 @@
         {
           "file": "0017_soft_delete_related_cursors.sql",
           "sha256": "10ef2549c4c0c4c0778c5e07f61951cac5ad2732e025a620dd3a2035f34b65d7"
+        },
+        {
+          "file": "0018_service_state_sync_jobs.sql",
+          "sha256": "9a58e57e9208fcd19642019e99914504d8f82e2541c1da578a54175d2ffc841a"
         }
       ],
       "objects": [
@@ -198,6 +202,12 @@
           "name": "resource_grants_subject_idx",
           "table": "resource_grants",
           "sql": "CREATE INDEX resource_grants_subject_idx\n  ON resource_grants (workspace_id, subject_user_id, resource_type)"
+        },
+        {
+          "type": "index",
+          "name": "service_state_sync_jobs_scan_idx",
+          "table": "service_state_sync_jobs",
+          "sql": "CREATE INDEX service_state_sync_jobs_scan_idx\n  ON service_state_sync_jobs (last_attempted_at, job_key)"
         },
         {
           "type": "index",
@@ -384,6 +394,12 @@
           "name": "retention_policies",
           "table": "retention_policies",
           "sql": "CREATE TABLE retention_policies (\n  workspace_id TEXT PRIMARY KEY NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  raw_days INTEGER NOT NULL DEFAULT 7 CHECK (raw_days BETWEEN 1 AND 90),\n  rollup_5m_days INTEGER NOT NULL DEFAULT 30 CHECK (rollup_5m_days BETWEEN 7 AND 365),\n  rollup_1h_days INTEGER NOT NULL DEFAULT 365 CHECK (rollup_1h_days BETWEEN 30 AND 3650),\n  event_days INTEGER NOT NULL DEFAULT 365 CHECK (event_days BETWEEN 30 AND 3650),\n  updated_at INTEGER NOT NULL\n, audit_log_days INTEGER NOT NULL DEFAULT 365\n  CHECK (audit_log_days BETWEEN 30 AND 3650), expired_announcement_grace_days INTEGER NOT NULL DEFAULT 7\n  CHECK (expired_announcement_grace_days BETWEEN 1 AND 90), soft_delete_grace_days INTEGER NOT NULL DEFAULT 7\n  CHECK (soft_delete_grace_days BETWEEN 1 AND 90)) WITHOUT ROWID, STRICT"
+        },
+        {
+          "type": "table",
+          "name": "service_state_sync_jobs",
+          "table": "service_state_sync_jobs",
+          "sql": "CREATE TABLE service_state_sync_jobs (\n  job_key TEXT PRIMARY KEY NOT NULL,\n  sync_token TEXT NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  workspace_pk INTEGER NOT NULL CHECK (workspace_pk > 0),\n  service_id TEXT NOT NULL,\n  service_pk INTEGER NOT NULL CHECK (service_pk > 0),\n  check_id TEXT,\n  check_pk INTEGER,\n  reason_code TEXT NOT NULL CHECK (reason_code IN (\n    'check_configuration', 'maintenance_window', 'maintenance_window_ended'\n  )),\n  protect_until INTEGER NOT NULL,\n  last_attempted_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  CHECK ((check_id IS NULL AND check_pk IS NULL) OR\n         (check_id IS NOT NULL AND check_pk IS NOT NULL AND check_pk > 0))\n) STRICT"
         },
         {
           "type": "table",
@@ -616,6 +632,12 @@
           "name": "retention_runs_started_at_idx",
           "table": "retention_runs",
           "sql": "CREATE INDEX retention_runs_started_at_idx\n  ON retention_runs (started_at, run_id)"
+        },
+        {
+          "type": "index",
+          "name": "service_state_sync_jobs_scan_idx",
+          "table": "service_state_sync_jobs",
+          "sql": "CREATE INDEX service_state_sync_jobs_scan_idx\n  ON service_state_sync_jobs (last_attempted_at, job_key)"
         },
         {
           "type": "index",
@@ -874,6 +896,12 @@
           "name": "service_latest",
           "table": "service_latest",
           "sql": "CREATE TABLE service_latest (\n  service_pk INTEGER PRIMARY KEY NOT NULL,\n  workspace_pk INTEGER NOT NULL,\n  state TEXT NOT NULL CHECK (state IN (\n    'healthy', 'degraded', 'down', 'maintenance', 'unknown'\n  )),\n  status_since INTEGER NOT NULL,\n  reason_code TEXT NOT NULL,\n  last_transition_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL\n) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "service_state_sync_jobs",
+          "table": "service_state_sync_jobs",
+          "sql": "CREATE TABLE service_state_sync_jobs (\n  job_key TEXT PRIMARY KEY NOT NULL,\n  sync_token TEXT NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  workspace_pk INTEGER NOT NULL CHECK (workspace_pk > 0),\n  service_id TEXT NOT NULL,\n  service_pk INTEGER NOT NULL CHECK (service_pk > 0),\n  check_id TEXT,\n  check_pk INTEGER,\n  reason_code TEXT NOT NULL CHECK (reason_code IN (\n    'check_configuration', 'maintenance_window', 'maintenance_window_ended'\n  )),\n  protect_until INTEGER NOT NULL,\n  last_attempted_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  CHECK ((check_id IS NULL AND check_pk IS NULL) OR\n         (check_id IS NOT NULL AND check_pk IS NOT NULL AND check_pk > 0))\n) STRICT"
         },
         {
           "type": "table",

@@ -1,4 +1,10 @@
 import { canAccessResource } from "@alphaping/authz";
+import {
+  applyServiceStateSyncJob,
+  createServiceStateSyncJob,
+  prepareServiceStateSyncJob,
+  type ServiceStateSyncJob,
+} from "@alphaping/db";
 import { error } from "@sveltejs/kit";
 
 import {
@@ -119,6 +125,18 @@ const AGENT_CAPACITY_CONDITION = `
          AND (? IS NULL OR capacity.id != ?)) + ? <= ${MAX_AGENT_CONFIG_BYTES}
     )
   )`;
+
+async function applyServiceStateSyncOrDefer(
+  controlDb: D1Database,
+  telemetryDb: D1Database,
+  job: ServiceStateSyncJob,
+): Promise<void> {
+  try {
+    await applyServiceStateSyncJob(controlDb, telemetryDb, job);
+  } catch {
+    console.warn(JSON.stringify({ event: "service_state_sync_deferred" }));
+  }
+}
 
 interface AgentCapacityInput {
   agentId: string;
@@ -901,82 +919,6 @@ export async function replaceServiceCheckConfiguration(
   }
 }
 
-function aggregateServiceState(
-  checks: readonly { state: string; critical: number }[],
-  maintenanceUntil: number | null,
-  now: number,
-): "healthy" | "degraded" | "down" | "maintenance" | "unknown" {
-  if (maintenanceUntil !== null && maintenanceUntil > now) return "maintenance";
-  if (checks.some((check) => check.critical === 1 && check.state === "down")) return "down";
-  if (checks.some((check) => check.state === "down" || check.state === "degraded")) {
-    return "degraded";
-  }
-  if (checks.some((check) => check.state === "healthy")) return "healthy";
-  return "unknown";
-}
-
-async function synchronizeCheckPolicyTelemetry(
-  db: D1Database,
-  row: CheckPolicyRow,
-  input: UpdateServiceCheckPolicyInput,
-  now: number,
-): Promise<void> {
-  if (input.enabled) {
-    await db
-      .prepare(`UPDATE check_latest SET critical = ? WHERE check_pk = ?`)
-      .bind(input.critical ? 1 : 0, row.telemetry_pk)
-      .run();
-  } else {
-    await db.prepare(`DELETE FROM check_latest WHERE check_pk = ?`).bind(row.telemetry_pk).run();
-  }
-  const [checks, previous] = await Promise.all([
-    db
-      .prepare(`SELECT state, critical FROM check_latest WHERE service_pk = ?`)
-      .bind(row.service_telemetry_pk)
-      .all<{ state: string; critical: number }>(),
-    db
-      .prepare(`SELECT state FROM service_latest WHERE service_pk = ?`)
-      .bind(row.service_telemetry_pk)
-      .first<{ state: string }>(),
-  ]);
-  const state = aggregateServiceState(checks.results, row.maintenance_until, now);
-  if (previous?.state === state) return;
-  const reason = state === "maintenance" ? "maintenance_window" : "check_configuration";
-  const eventId = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(`${row.id}:${now}:policy`),
-  );
-  await db.batch([
-    db
-      .prepare(
-        `INSERT INTO service_latest
-          (service_pk, workspace_pk, state, status_since, reason_code, last_transition_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(service_pk) DO UPDATE SET
-           workspace_pk = excluded.workspace_pk, state = excluded.state,
-           status_since = excluded.status_since, reason_code = excluded.reason_code,
-           last_transition_at = excluded.last_transition_at, updated_at = excluded.updated_at`,
-      )
-      .bind(row.service_telemetry_pk, row.workspace_telemetry_pk, state, now, reason, now, now),
-    db
-      .prepare(
-        `INSERT OR IGNORE INTO state_events
-          (workspace_pk, resource_type, resource_pk, occurred_at, event_id,
-           previous_state, current_state, reason_code)
-         VALUES (?, 2, ?, ?, ?, ?, ?, ?)`,
-      )
-      .bind(
-        row.workspace_telemetry_pk,
-        row.service_telemetry_pk,
-        now,
-        eventId,
-        previous?.state ?? "unknown",
-        state,
-        reason,
-      ),
-  ]);
-}
-
 export async function updateServiceCheckPolicy(
   controlDb: D1Database,
   telemetryDb: D1Database,
@@ -1052,6 +994,16 @@ export async function updateServiceCheckPolicy(
   };
   const after = input;
   const mutationIndex = agentMachineId ? 1 : 0;
+  const syncJob = createServiceStateSyncJob({
+    workspaceId: access.workspaceId,
+    workspacePk: row.workspace_telemetry_pk,
+    serviceId,
+    servicePk: row.service_telemetry_pk,
+    checkId,
+    checkPk: row.telemetry_pk,
+    reasonCode: "check_configuration",
+    updatedAt: now,
+  });
   const statements: D1PreparedStatement[] = [
     ...(agentMachineId
       ? [
@@ -1122,6 +1074,7 @@ export async function updateServiceCheckPolicy(
       now,
       onlyIfPreviousStatementChanged: true,
     }),
+    prepareServiceStateSyncJob(controlDb, syncJob, true),
   ];
   let results: D1Result[];
   try {
@@ -1133,7 +1086,7 @@ export async function updateServiceCheckPolicy(
   if (results[mutationIndex]?.meta.changes !== 1) {
     throw error(409, "Check policy changed; reload and try again");
   }
-  await synchronizeCheckPolicyTelemetry(telemetryDb, row, input, now);
+  await applyServiceStateSyncOrDefer(controlDb, telemetryDb, syncJob);
 }
 
 function referencedSecretIds(value: string): readonly string[] {
@@ -1195,6 +1148,16 @@ export async function deleteServiceCheck(
   const agentMachineId = row.executor_kind === "agent" ? row.machine_id : null;
   const secretIds = referencedSecretIds(row.secret_refs_json);
   const mutationIndex = agentMachineId ? 1 : 0;
+  const syncJob = createServiceStateSyncJob({
+    workspaceId: access.workspaceId,
+    workspacePk: row.workspace_telemetry_pk,
+    serviceId,
+    servicePk: row.service_telemetry_pk,
+    checkId,
+    checkPk: row.telemetry_pk,
+    reasonCode: "check_configuration",
+    updatedAt: now,
+  });
   const audit = await prepareAuditStatement(controlDb, {
     workspaceId: access.workspaceId,
     actorUserId: userId,
@@ -1228,6 +1191,7 @@ export async function deleteServiceCheck(
       )
       .bind(checkId, serviceId, access.workspaceId),
     audit,
+    prepareServiceStateSyncJob(controlDb, syncJob, true),
   ];
   if (secretIds.length > 0) {
     statements.push(
@@ -1247,20 +1211,7 @@ export async function deleteServiceCheck(
   if (results[mutationIndex]?.meta.changes !== 1) {
     throw error(409, "A service must keep at least one check");
   }
-  await synchronizeCheckPolicyTelemetry(
-    telemetryDb,
-    row,
-    {
-      enabled: false,
-      intervalSeconds: row.interval_seconds,
-      timeoutMs: row.timeout_ms,
-      retryCount: row.retry_count,
-      failureConfirmations: row.failure_confirmations,
-      recoveryConfirmations: row.recovery_confirmations,
-      critical: row.critical === 1,
-    },
-    now,
-  );
+  await applyServiceStateSyncOrDefer(controlDb, telemetryDb, syncJob);
 }
 
 export async function setServicePublicAccess(
@@ -1373,6 +1324,19 @@ export async function setServiceMaintenance(
     throw error(400, "Maintenance end time is invalid");
   }
   const now = Date.now();
+  const syncJob = createServiceStateSyncJob({
+    workspaceId: access.workspaceId,
+    workspacePk: service.workspace_telemetry_pk,
+    serviceId,
+    servicePk: service.telemetry_pk,
+    checkId: null,
+    checkPk: null,
+    reasonCode:
+      maintenanceUntil !== null && maintenanceUntil > now
+        ? "maintenance_window"
+        : "maintenance_window_ended",
+    updatedAt: now,
+  });
   const audit = await prepareAuditStatement(controlDb, {
     workspaceId: access.workspaceId,
     actorUserId: userId,
@@ -1382,8 +1346,9 @@ export async function setServiceMaintenance(
     before: { maintenanceUntil: service.maintenance_until },
     after: { maintenanceUntil },
     now,
+    onlyIfPreviousStatementChanged: true,
   });
-  await controlDb.batch([
+  const results = await controlDb.batch([
     controlDb
       .prepare(
         `UPDATE services SET maintenance_until = ?, updated_at = ?
@@ -1391,51 +1356,10 @@ export async function setServiceMaintenance(
       )
       .bind(maintenanceUntil, now, serviceId, access.workspaceId),
     audit,
+    prepareServiceStateSyncJob(controlDb, syncJob, true),
   ]);
-  const [checks, previous] = await Promise.all([
-    telemetryDb
-      .prepare(`SELECT state, critical FROM check_latest WHERE service_pk = ?`)
-      .bind(service.telemetry_pk)
-      .all<{ state: string; critical: number }>(),
-    telemetryDb
-      .prepare(`SELECT state FROM service_latest WHERE service_pk = ?`)
-      .bind(service.telemetry_pk)
-      .first<{ state: string }>(),
-  ]);
-  const state = aggregateServiceState(checks.results, maintenanceUntil, now);
-  if (previous?.state === state) return;
-  const reason = state === "maintenance" ? "maintenance_window" : "maintenance_window_ended";
-  const eventId = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(`${serviceId}:${now}:maintenance`),
-  );
-  await telemetryDb.batch([
-    telemetryDb
-      .prepare(
-        `INSERT INTO service_latest
-          (service_pk, workspace_pk, state, status_since, reason_code, last_transition_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(service_pk) DO UPDATE SET
-           workspace_pk = excluded.workspace_pk, state = excluded.state,
-           status_since = excluded.status_since, reason_code = excluded.reason_code,
-           last_transition_at = excluded.last_transition_at, updated_at = excluded.updated_at`,
-      )
-      .bind(service.telemetry_pk, service.workspace_telemetry_pk, state, now, reason, now, now),
-    telemetryDb
-      .prepare(
-        `INSERT OR IGNORE INTO state_events
-          (workspace_pk, resource_type, resource_pk, occurred_at, event_id,
-           previous_state, current_state, reason_code)
-         VALUES (?, 2, ?, ?, ?, ?, ?, ?)`,
-      )
-      .bind(
-        service.workspace_telemetry_pk,
-        service.telemetry_pk,
-        now,
-        eventId,
-        previous?.state ?? "unknown",
-        state,
-        reason,
-      ),
-  ]);
+  if (results[0]?.meta.changes !== 1) {
+    throw error(409, "Service changed; reload and try again");
+  }
+  await applyServiceStateSyncOrDefer(controlDb, telemetryDb, syncJob);
 }

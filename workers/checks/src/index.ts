@@ -1,3 +1,5 @@
+import { reconcileServiceStateSyncJobs } from "@alphaping/db";
+
 import { executeHttp, executeTcp, executeWithRetries } from "./executor.js";
 import { loadMachineLivenessCandidates, reconcileMachineLiveness } from "./machine-liveness.js";
 import { persistCheckResult } from "./persistence.js";
@@ -149,6 +151,9 @@ export async function runScheduled(env: Env, scheduledAt: number): Promise<void>
       reconcileMachineLiveness(env.TELEMETRY_DB, scheduledAt, machines),
       runChecks(env, scheduledAt, checks),
     ]);
+    const [stateSync] = await Promise.allSettled([
+      reconcileServiceStateSyncJobs(env.CONTROL_DB, env.TELEMETRY_DB, Date.now()),
+    ]);
     if (liveness.status === "fulfilled" && liveness.value.transitioned > 0) {
       console.log(
         JSON.stringify({
@@ -158,8 +163,21 @@ export async function runScheduled(env: Env, scheduledAt: number): Promise<void>
         }),
       );
     }
+    if (stateSync.status === "fulfilled" && stateSync.value.processed > 0) {
+      console.log(
+        JSON.stringify({
+          event: "service_state_sync_reconciled",
+          processed: stateSync.value.processed,
+          completed: stateSync.value.completed,
+          failed: stateSync.value.failed,
+        }),
+      );
+    }
     const failedTasks =
-      Number(liveness.status === "rejected") + Number(checkExecution.status === "rejected");
+      Number(liveness.status === "rejected") +
+      Number(checkExecution.status === "rejected") +
+      Number(stateSync.status === "rejected") +
+      Number(stateSync.status === "fulfilled" && stateSync.value.failed > 0);
     if (failedTasks > 0) throw new Error(`scheduled_tasks_failed:${failedTasks}`);
   } finally {
     const released = await releaseSchedulerLease(

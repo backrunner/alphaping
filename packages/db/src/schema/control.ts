@@ -325,6 +325,27 @@ export const checkConfigs = sqliteTable(
   ],
 );
 
+export const serviceStateSyncJobs = sqliteTable(
+  "service_state_sync_jobs",
+  {
+    jobKey: text("job_key").primaryKey(),
+    syncToken: text("sync_token").notNull(),
+    workspaceId: text("workspace_id").notNull(),
+    workspacePk: integer("workspace_pk").notNull(),
+    serviceId: text("service_id").notNull(),
+    servicePk: integer("service_pk").notNull(),
+    checkId: text("check_id"),
+    checkPk: integer("check_pk"),
+    reasonCode: text("reason_code", {
+      enum: ["check_configuration", "maintenance_window", "maintenance_window_ended"],
+    }).notNull(),
+    protectUntil: integer("protect_until").notNull(),
+    lastAttemptedAt: integer("last_attempted_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [index("service_state_sync_jobs_scan_idx").on(table.lastAttemptedAt, table.jobKey)],
+);
+
 export const services = sqliteTable(
   "services",
   {

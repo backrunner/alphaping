@@ -167,6 +167,7 @@ Ingest 暴露不访问 D1 的 `GET|HEAD /healthz` liveness。数据库读写健�
 6. Checks Worker 或 Agent 产生统一 `CheckResult`，通过共享 domain repository 写入 TELEMETRY_DB。
 7. 同一写入流程更新 check latest、time bucket、服务状态和 incident 事件。
 8. 同一 Cron 以有界主键批次比较机器 `received_at` 和离线阈值；只在状态转换时条件更新 latest 并写确定性离线事件，不新增调度请求。
+9. Web 的 check policy/delete/maintenance mutation 在同一 CONTROL_DB 事务写 `service_state_sync_jobs`。Web 立即尝试同步，Checks Worker 在检查执行结束后每分钟重放最多 50 个 job，并在 15 分钟在途保护窗内重复校正；TELEMETRY_DB 短时失败不能丢失配置 mutation 或永久留下旧 service state。
 
 ### 6.7 Retention
 
@@ -184,6 +185,7 @@ Ingest 暴露不访问 D1 的 `GET|HEAD /healthz` liveness。数据库读写健�
 - 原始历史：Agent 至少一次投递，使用 block/slot 主键与 slot 内 report ID/hash 幂等去重。
 - Live snapshot：非权威、可丢失、不持久；必须带 observed time，浏览器不能用它覆盖更新的 D1 数据。
 - 服务状态：由不可变结果事件重算，允许短暂延迟，不允许直接由浏览器推断。
+- 配置驱动的服务状态：CONTROL_DB job 是跨库同步的持久依据；job 只在保护窗结束、最后一次 TELEMETRY_DB 同步成功且 token 未被新 mutation 取代后删除。
 - 公告可见性：查询时检查 `starts_at/expires_at`，不依赖物理清理时间。
 
 ## 8. 表所有权
@@ -194,7 +196,7 @@ Ingest 暴露不访问 D1 的 `GET|HEAD /healthz` liveness。数据库读写健�
 - `ingest`/CONTROL_DB: enrollment consumption、agent key metadata、config acknowledgement。
 - `ingest`/TELEMETRY_DB: replay cursor、machine telemetry block/latest/rollup，以及新报告触发的恢复事件。
 - `live`/DO: WebSocket 连接、非持久 snapshot broadcast 和 demand state；不写权威业务表。
-- `checks`/CONTROL_DB: stable schedule config 和 `last_claimed_slot` execution claim。
+- `checks`/CONTROL_DB: stable schedule config、`last_claimed_slot` execution claim 和通过共享 repository 消费 `service_state_sync_jobs`。
 - `checks`/TELEMETRY_DB: centralized check result/latest/rollup/event，以及由缺少报告触发的机器离线转换。
 - `retention`/TELEMETRY_DB: workspace lease、retention cursor、raw/rollup/event cleanup。
 - `retention`/CONTROL_DB: 过期公告和 Agent command 状态/审计期清理。
@@ -216,6 +218,7 @@ Ingest 暴露不访问 D1 的 `GET|HEAD /healthz` liveness。数据库读写健�
 - ACK 丢失：TELEMETRY_DB duplicate detection 后安全重放 ACK，不产生重复 telemetry。
 - Live Hub 故障：Agent 保持 SQLite 采集和 durable report，Dashboard 降级到 D1 latest/polling，界面标记 live 已中断而不误报 machine offline。
 - Scheduler 重复执行：确定性 nominal slot 和条件 claim update 阻止重复逻辑副作用。
+- Web 配置已提交但 TELEMETRY_DB 同步失败：返回已成功的配置 mutation，保留同步 job 并记录 deferred 告警；Checks Worker 每分钟有界重试并覆盖 mutation 前已领取的迟到中央检查结果。
 - Web 读取失败：公开状态页可以返回带时间戳的最近快照，管理操作不得假成功。
 
 ## 11. 架构禁止项

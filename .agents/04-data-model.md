@@ -302,6 +302,15 @@ V1 默认不生成每容器长保留 rollup。七天内原始容器数据由 mac
 
 对 30 台目标规模不建 `enabled/next_run_at` 索引。Checks Worker 读取 enabled rows 并在应用层计算 nominal slot，用 `last_claimed_slot` 条件 update 幂等领取。`workspace_id,service_id` 索引仅服务配置页查询，高频 claim 不修改其列。
 
+### `service_state_sync_jobs`
+
+- `job_key`, `sync_token`
+- `workspace_id`, `workspace_pk`, `service_id`, `service_pk`
+- `check_id`, `check_pk`，maintenance job 两列都为空
+- `reason_code`, `protect_until`, `last_attempted_at`, `updated_at`
+
+Web 在 check policy/delete/maintenance 的 CONTROL_DB mutation transaction 内 upsert job。外部 ID 和 telemetry PK 固定在 job 中，Checks Worker 仍重新读取 CONTROL_DB 当前 enabled/critical/maintenance 状态后才修改 TELEMETRY_DB。每分钟按 `last_attempted_at,job_key` 最多处理 50 行，并在每次成功或失败尝试后用 `job_key,sync_token` 条件轮转；job 在 15 分钟在途保护窗内重复校正，越过保护窗的最后一次同步成功后用同一条件删除，较新的 mutation 不会被旧执行清除。
+
 ### `check_assertions`
 
 - `id`, `check_id`, `sort_order`

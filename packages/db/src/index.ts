@@ -7,6 +7,7 @@ export * from "./repositories/machine-probes.js";
 export * from "./repositories/machines.js";
 export * from "./repositories/public-status.js";
 export * from "./repositories/service-history.js";
+export * from "./repositories/service-state-sync.js";
 export * from "./repositories/services.js";
 export * from "./repositories/telemetry-blocks.js";
 export * from "./repositories/workspace-shell.js";

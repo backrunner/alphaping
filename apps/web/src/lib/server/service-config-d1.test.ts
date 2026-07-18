@@ -1,5 +1,6 @@
 import { Miniflare } from "miniflare";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { reconcileServiceStateSyncJobs } from "@alphaping/db";
 
 vi.mock("./monitoring-access.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./monitoring-access.js")>();
@@ -24,6 +25,7 @@ import {
   deleteServiceCheck,
   listServiceCheckAgents,
   replaceServiceCheckConfiguration,
+  setServiceMaintenance,
   setServicePublicAccess,
   updateServiceCheckPolicy,
 } from "./service-config.js";
@@ -155,6 +157,22 @@ beforeEach(async () => {
         config_bytes INTEGER NOT NULL,
         last_claimed_slot INTEGER NOT NULL,
         created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )`,
+    ),
+    database.prepare(
+      `CREATE TABLE service_state_sync_jobs (
+        job_key TEXT PRIMARY KEY,
+        sync_token TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        workspace_pk INTEGER NOT NULL,
+        service_id TEXT NOT NULL,
+        service_pk INTEGER NOT NULL,
+        check_id TEXT,
+        check_pk INTEGER,
+        reason_code TEXT NOT NULL,
+        protect_until INTEGER NOT NULL,
+        last_attempted_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       )`,
     ),
@@ -737,6 +755,9 @@ describe("service check invariants", () => {
     await expect(
       first<{ count: number }>("SELECT COUNT(*) AS count FROM audit_logs"),
     ).resolves.toEqual({ count: 1 });
+    await expect(
+      first<{ count: number }>("SELECT COUNT(*) AS count FROM service_state_sync_jobs"),
+    ).resolves.toEqual({ count: 1 });
   });
 
   it("prevents concurrent deletes from removing every check", async () => {
@@ -771,6 +792,96 @@ describe("service check invariants", () => {
     await expect(
       first<{ count: number }>("SELECT COUNT(*) AS count FROM audit_logs"),
     ).resolves.toEqual({ count: 1 });
+    await expect(
+      first<{ count: number }>("SELECT COUNT(*) AS count FROM service_state_sync_jobs"),
+    ).resolves.toEqual({ count: 1 });
+  });
+});
+
+describe("service telemetry synchronization", () => {
+  it("commits policy changes and retains a retry job when TELEMETRY_DB is unavailable", async () => {
+    await seedServiceChecks();
+    await telemetryDatabase.batch([
+      telemetryDatabase.prepare("INSERT INTO check_latest VALUES (101, 10, 'down', 1)"),
+      telemetryDatabase.prepare("INSERT INTO check_latest VALUES (102, 10, 'healthy', 1)"),
+      telemetryDatabase.prepare(
+        "INSERT INTO service_latest VALUES (10, 1, 'down', 1, 'check_down', 1, 1)",
+      ),
+    ]);
+    const failingTelemetry = new Proxy(telemetryDatabase, {
+      get(target, property) {
+        if (property === "prepare") {
+          return () => {
+            throw new Error("telemetry unavailable");
+          };
+        }
+        const value = Reflect.get(target, property);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    await expect(
+      updateServiceCheckPolicy(
+        database,
+        failingTelemetry,
+        "operations",
+        "user-1",
+        "service-1",
+        "check-a",
+        {
+          enabled: false,
+          intervalSeconds: 60,
+          timeoutMs: 5_000,
+          retryCount: 0,
+          failureConfirmations: 2,
+          recoveryConfirmations: 2,
+          critical: true,
+        },
+      ),
+    ).resolves.toBeUndefined();
+    expect(warning).toHaveBeenCalledWith(JSON.stringify({ event: "service_state_sync_deferred" }));
+    await expect(
+      first<{ enabled: number }>("SELECT enabled FROM check_configs WHERE id = 'check-a'"),
+    ).resolves.toEqual({ enabled: 0 });
+    await expect(
+      first<{ count: number }>("SELECT COUNT(*) AS count FROM service_state_sync_jobs"),
+    ).resolves.toEqual({ count: 1 });
+
+    await expect(
+      reconcileServiceStateSyncJobs(database, telemetryDatabase, Number.MAX_SAFE_INTEGER),
+    ).resolves.toEqual({ processed: 1, completed: 1, failed: 0 });
+    await expect(
+      telemetryDatabase.prepare("SELECT check_pk FROM check_latest ORDER BY check_pk").all(),
+    ).resolves.toMatchObject({ results: [{ check_pk: 102 }] });
+    await expect(
+      telemetryDatabase.prepare("SELECT state FROM service_latest WHERE service_pk = 10").first(),
+    ).resolves.toEqual({ state: "healthy" });
+  });
+
+  it("persists maintenance synchronization with the control mutation", async () => {
+    await seedServiceChecks();
+    await telemetryDatabase
+      .prepare("INSERT INTO check_latest VALUES (101, 10, 'healthy', 1)")
+      .run();
+    const maintenanceUntil = Date.now() + 60_000;
+
+    await expect(
+      setServiceMaintenance(
+        database,
+        telemetryDatabase,
+        "operations",
+        "user-1",
+        "service-1",
+        maintenanceUntil,
+      ),
+    ).resolves.toBeUndefined();
+    await expect(
+      first<{ count: number }>("SELECT COUNT(*) AS count FROM service_state_sync_jobs"),
+    ).resolves.toEqual({ count: 1 });
+    await expect(
+      telemetryDatabase.prepare("SELECT state FROM service_latest WHERE service_pk = 10").first(),
+    ).resolves.toEqual({ state: "maintenance" });
   });
 });
 
