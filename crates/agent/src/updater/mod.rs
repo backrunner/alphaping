@@ -127,9 +127,12 @@ impl Updater {
     }
 
     fn save_versions(&self, versions: MetadataVersions) -> Result<()> {
-        if let Some(parent) = self.state_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
+        let parent = self
+            .state_path
+            .parent()
+            .filter(|path| !path.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        fs::create_dir_all(parent)?;
         let temporary = self
             .state_path
             .with_extension(format!("tmp-{}", uuid::Uuid::now_v7()));
@@ -145,8 +148,20 @@ impl Updater {
         file.write_all(&serde_json::to_vec(&versions)?)?;
         file.sync_all()?;
         fs::rename(&temporary, &self.state_path)?;
+        sync_directory(parent)?;
         Ok(())
     }
+}
+
+#[cfg(unix)]
+fn sync_directory(path: &Path) -> Result<()> {
+    fs::File::open(path)?.sync_all()?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn sync_directory(_path: &Path) -> Result<()> {
+    Ok(())
 }
 
 #[cfg(test)]
