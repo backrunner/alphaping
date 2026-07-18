@@ -3,6 +3,7 @@ import { redirect, type Handle } from "@sveltejs/kit";
 import { svelteKitHandler } from "better-auth/svelte-kit";
 
 import { createAuth } from "$lib/server/auth";
+import { requestBodyLimit, withBoundedRequestBody } from "$lib/server/request-body";
 
 const SECURITY_HEADERS: Readonly<Record<string, string>> = {
   "cross-origin-opener-policy": "same-origin",
@@ -29,12 +30,13 @@ export function isPublicStatusPath(pathname: string): boolean {
 }
 
 export const handle: Handle = async ({ event, resolve }) => {
+  const pathname = event.url.pathname;
+  event.request = await withBoundedRequestBody(event.request, requestBodyLimit(pathname));
   event.locals.auth = null;
   event.locals.session = null;
   const platform = event.platform;
   if (!platform) return resolve(event);
 
-  const pathname = event.url.pathname;
   const setupRoute = pathname.startsWith("/setup");
   if (setupRoute) {
     const response = await resolve(event);
