@@ -28,6 +28,7 @@
     "@sveltejs/kit": "2.69.3",
     "@sveltejs/vite-plugin-svelte": "6.2.4",
     "@types/node": "26.1.1",
+    "miniflare": "4.20260710.0",
     "svelte": "5.56.5",
     "svelte-check": "4.7.2",
     "typescript": "catalog:",

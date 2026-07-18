@@ -43,18 +43,22 @@ export async function prepareAuditStatement(
     before: unknown;
     after: unknown;
     now: number;
+    onlyIfPreviousStatementChanged?: boolean;
   },
 ): Promise<D1PreparedStatement> {
   const [beforeDigest, afterDigest] = await Promise.all([
     input.before === null ? null : auditDigest(input.before),
     input.after === null ? null : auditDigest(input.after),
   ]);
+  const values = input.onlyIfPreviousStatementChanged
+    ? "SELECT ?, ?, ?, ?, ?, ?, ?, ?, '{}', ? WHERE changes() = 1"
+    : "VALUES (?, ?, ?, ?, ?, ?, ?, ?, '{}', ?)";
   return db
     .prepare(
       `INSERT INTO audit_logs
         (id, workspace_id, actor_user_id, action, resource_type, resource_id,
          before_digest, after_digest, metadata_json, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, '{}', ?)`,
+       ${values}`,
     )
     .bind(
       crypto.randomUUID(),

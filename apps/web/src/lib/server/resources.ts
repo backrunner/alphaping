@@ -342,15 +342,17 @@ export async function updateMachineConfiguration(
     before: auditConfiguration(rowConfiguration(existing), existing.desired_config_revision),
     after: auditConfiguration(configuration, revision),
     now,
+    onlyIfPreviousStatementChanged: true,
   });
-  await db.batch([
+  const [updateResult] = await db.batch([
     db
       .prepare(
         `UPDATE machines SET name = ?, description = ?, expected_host = ?, labels_json = ?,
             sampling_interval_seconds = ?, report_interval_seconds = ?, offline_after_seconds = ?,
             container_monitoring_enabled = ?, maintenance_until = ?,
             desired_config_revision = desired_config_revision + 1, updated_at = ?
-         WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL`,
+         WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL
+           AND desired_config_revision = ?`,
       )
       .bind(
         configuration.name,
@@ -365,9 +367,13 @@ export async function updateMachineConfiguration(
         now,
         machineId,
         access.workspaceId,
+        existing.desired_config_revision,
       ),
     audit,
   ]);
+  if (updateResult?.meta.changes !== 1) {
+    throw error(409, "Machine configuration changed; reload and try again");
+  }
   return { revision };
 }
 
