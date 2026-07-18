@@ -718,9 +718,14 @@ async fn sync_container_catalog(
     statements.push(
         db.prepare(
             "UPDATE containers SET deleted_at = ?, last_seen_at = ?
-             WHERE machine_id = ? AND deleted_at IS NULL",
+             WHERE workspace_id = ? AND machine_id = ? AND deleted_at IS NULL",
         )
-        .bind(&[number(now), number(now), text(&agent.machine_id)])?,
+        .bind(&[
+            number(now),
+            number(now),
+            text(&agent.workspace_id),
+            text(&agent.machine_id),
+        ])?,
     );
     for entry in &inventory.catalog {
         let container_id = hex::encode(&entry.container_key);
@@ -737,7 +742,9 @@ async fn sync_container_catalog(
                    name = excluded.name,
                    image = excluded.image,
                    last_seen_at = excluded.last_seen_at,
-                   deleted_at = NULL",
+                   deleted_at = NULL
+                 WHERE containers.workspace_id = excluded.workspace_id
+                   AND containers.machine_id = excluded.machine_id",
             )
             .bind(&[
                 text(&container_id),
@@ -754,12 +761,16 @@ async fn sync_container_catalog(
         );
     }
     statements.push(
-        db.prepare("UPDATE machines SET container_catalog_digest = ?, updated_at = ? WHERE id = ?")
-            .bind(&[
-                blob(&inventory.catalog_digest),
-                number(now),
-                text(&agent.machine_id),
-            ])?,
+        db.prepare(
+            "UPDATE machines SET container_catalog_digest = ?, updated_at = ?
+             WHERE id = ? AND workspace_id = ?",
+        )
+        .bind(&[
+            blob(&inventory.catalog_digest),
+            number(now),
+            text(&agent.machine_id),
+            text(&agent.workspace_id),
+        ])?,
     );
     db.batch(statements).await?;
     Ok(())

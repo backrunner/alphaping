@@ -83,14 +83,24 @@ fn container_inventory(observed_at_ms: i64) -> ContainerInventory {
                 detail_code: String::new(),
             },
         ],
-        catalog: vec![ContainerCatalogEntry {
-            container_key: container_key.clone(),
-            runtime: 1,
-            runtime_instance: "default".to_owned(),
-            runtime_container_id: "0123456789abcdef".to_owned(),
-            name: "api".to_owned(),
-            image: "example/api:1".to_owned(),
-        }],
+        catalog: vec![
+            ContainerCatalogEntry {
+                container_key: container_key.clone(),
+                runtime: 1,
+                runtime_instance: "default".to_owned(),
+                runtime_container_id: "0123456789abcdef".to_owned(),
+                name: "api".to_owned(),
+                image: "example/api:1".to_owned(),
+            },
+            ContainerCatalogEntry {
+                container_key: vec![0x43; 16],
+                runtime: 1,
+                runtime_instance: "default".to_owned(),
+                runtime_container_id: "fedcba9876543210".to_owned(),
+                name: "worker".to_owned(),
+                image: "example/worker:1".to_owned(),
+            },
+        ],
         metrics: vec![ContainerMetric {
             container_key,
             state: 2,

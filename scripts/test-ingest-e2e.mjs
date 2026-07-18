@@ -87,6 +87,8 @@ const revokedToken = enrollmentToken(0x2c);
 const userId = "018f5f7e-7d28-7e12-a521-000000000001";
 const workspaceId = "018f5f7e-7d28-7e12-a521-000000000002";
 const machineId = "018f5f7e-7d28-7e12-a521-000000000003";
+const victimWorkspaceId = "018f5f7e-7d28-7e12-a521-000000000008";
+const victimMachineId = "018f5f7e-7d28-7e12-a521-000000000009";
 const enrollmentId = "018f5f7e-7d28-7e12-a521-000000000004";
 const expiredEnrollmentId = "018f5f7e-7d28-7e12-a521-000000000005";
 const revokedEnrollmentId = "018f5f7e-7d28-7e12-a521-000000000006";
@@ -196,6 +198,20 @@ try {
        desired_config_revision, created_at, updated_at)
       VALUES ('${machineId}', 1, '${workspaceId}', 'Ingest E2E machine', 10, 60, 150, 1, 1,
         ${now}, ${now});
+    INSERT INTO workspaces (id, telemetry_pk, slug, name, created_at, updated_at)
+      VALUES ('${victimWorkspaceId}', 2, 'ingest-victim', 'Ingest victim', ${now}, ${now});
+    INSERT INTO machines
+      (id, telemetry_pk, workspace_id, name, sampling_interval_seconds,
+       report_interval_seconds, offline_after_seconds, container_monitoring_enabled,
+       desired_config_revision, created_at, updated_at)
+      VALUES ('${victimMachineId}', 2, '${victimWorkspaceId}', 'Victim machine',
+        10, 60, 150, 1, 1, ${now}, ${now});
+    INSERT INTO containers
+      (id, workspace_id, machine_id, runtime, runtime_instance, runtime_container_id,
+       name, image, first_seen_at, last_seen_at)
+      VALUES ('${"42".repeat(16)}', '${victimWorkspaceId}', '${victimMachineId}',
+        'docker', 'victim-runtime', 'victim-container', 'victim-name', 'victim/image:1',
+        ${now - 60_000}, ${now - 60_000});
     INSERT INTO agent_enrollment_tokens
       (id, workspace_id, machine_id, token_digest, expires_at, created_by, created_at)
       VALUES ('${enrollmentId}', '${workspaceId}', '${machineId}', X'${token.digest}',
@@ -659,6 +675,10 @@ try {
         LIMIT 1) AS container_runtime
       ,(SELECT LENGTH(container_catalog_digest) FROM machines WHERE id = '${machineId}')
         AS catalog_digest_bytes
+      ,(SELECT name FROM containers WHERE machine_id = '${victimMachineId}') AS victim_name
+      ,(SELECT image FROM containers WHERE machine_id = '${victimMachineId}') AS victim_image
+      ,(SELECT last_seen_at FROM containers WHERE machine_id = '${victimMachineId}')
+        AS victim_last_seen_at
      FROM agents a JOIN agent_keys k ON k.agent_id = a.id
      JOIN agent_enrollment_tokens t ON t.used_by_agent_id = a.id`,
   );
@@ -681,6 +701,13 @@ try {
     agent.catalog_digest_bytes !== 32
   ) {
     throw new Error("enrollment key wrapping or Agent latest state was not persisted");
+  }
+  if (
+    agent.victim_name !== "victim-name" ||
+    agent.victim_image !== "victim/image:1" ||
+    agent.victim_last_seen_at !== now - 60_000
+  ) {
+    throw new Error("container catalog synchronization crossed machine or workspace scope");
   }
   const [telemetry] = query(
     "TELEMETRY_DB",
