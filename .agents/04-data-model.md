@@ -366,6 +366,8 @@ Web 在 check target/policy/delete/maintenance 的 CONTROL_DB mutation transacti
 
 属于 `TELEMETRY_DB`，只在服务聚合状态转换时写入，不因每次成功检查重写。
 
+中央和 Agent check persistence 不在 D1 batch 外预计算服务状态。每个结果先条件更新自己的 `check_latest`，再在同一 batch 对该服务当前 latest 做一次 severity-rank 聚合；若状态转换，先写以 result ID 幂等的 `state_events`，随后只有本批实际插入的 event 才能按复合主键更新 `service_latest`。因此同服务多 check 并发提交时，最后一个 batch 必然基于已提交 latest 集合重算，结果重试也不能重放已经被后续转换取代的旧 event。
+
 ### `status_buckets`
 
 状态页预计算桶：

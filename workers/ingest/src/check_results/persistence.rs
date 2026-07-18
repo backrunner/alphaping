@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use worker::{D1Database, D1PreparedStatement};
+use worker::{D1Database, D1PreparedStatement, wasm_bindgen::JsValue};
 
 use super::{
     ProbePersistenceError, blob, number, optional_text, optional_unsigned, text, unsigned,
@@ -20,18 +20,6 @@ struct PreviousCheckRow {
     failure_summary: Option<String>,
     consecutive_failures: f64,
     consecutive_successes: f64,
-}
-
-#[derive(Debug, Deserialize)]
-struct ServiceCheckRow {
-    check_pk: f64,
-    state: String,
-    critical: f64,
-}
-
-#[derive(Debug, Deserialize)]
-struct PreviousServiceRow {
-    state: String,
 }
 
 pub async fn persist_batch(
@@ -57,7 +45,7 @@ pub async fn persist_batch(
     let mut statements = vec![block_statement(db, batch, &payload_hash)?];
     statements.extend(super::rollups::closed_rollup_statements(db, batch).await?);
     if !historical {
-        statements.extend(current_state_statements(db, batch, previous.as_ref()).await?);
+        statements.extend(current_state_statements(db, batch, previous.as_ref())?);
     }
     db.batch(statements).await?;
     Ok(())
@@ -118,7 +106,7 @@ fn block_statement(
     ])
 }
 
-async fn current_state_statements(
+fn current_state_statements(
     db: &D1Database,
     batch: &ResultBatch,
     previous: Option<&PreviousCheckRow>,
@@ -163,68 +151,113 @@ async fn current_state_statements(
             blob(&batch.result_id),
         ])?,
     ];
-    let checks = db
-        .prepare("SELECT check_pk, state, critical FROM check_latest WHERE service_pk = ?")
-        .bind(&[unsigned(batch.config.service_pk)])?
-        .all()
-        .await?
-        .results::<ServiceCheckRow>()?;
-    let mut states = checks
-        .into_iter()
-        .filter(|check| check.check_pk as u64 != batch.config.check_pk)
-        .map(|check| (parse_state(&check.state), check.critical == 1.0))
-        .collect::<Vec<_>>();
-    states.push((confirmed.state, batch.config.critical));
-    let next_service = service_state(&states, batch.config.maintenance_until, batch.observed_at);
-    let previous_service = db
-        .prepare("SELECT state FROM service_latest WHERE service_pk = ?")
-        .bind(&[unsigned(batch.config.service_pk)])?
-        .first::<PreviousServiceRow>(None)
-        .await?;
-    if previous_service.as_ref().map(|row| row.state.as_str()) != Some(next_service) {
-        let previous_state = previous_service
-            .as_ref()
-            .map_or("unknown", |row| row.state.as_str());
-        let reason = service_reason(next_service);
-        statements.push(db
-            .prepare(
-                "INSERT INTO service_latest
-                  (service_pk, workspace_pk, state, status_since, reason_code,
-                   last_transition_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)
-                 ON CONFLICT(service_pk) DO UPDATE SET
-                   workspace_pk = excluded.workspace_pk, state = excluded.state,
-                   status_since = excluded.status_since, reason_code = excluded.reason_code,
-                   last_transition_at = excluded.last_transition_at, updated_at = excluded.updated_at",
-            )
-            .bind(&[
-                unsigned(batch.config.service_pk),
-                unsigned(batch.config.workspace_pk),
-                text(next_service),
-                number(batch.observed_at),
-                text(reason),
-                number(batch.observed_at),
-                number(batch.observed_at),
-            ])?);
-        statements.push(
-            db.prepare(
-                "INSERT OR IGNORE INTO state_events
-                  (workspace_pk, resource_type, resource_pk, occurred_at, event_id,
-                   previous_state, current_state, reason_code)
-                 VALUES (?, 2, ?, ?, ?, ?, ?, ?)",
-            )
-            .bind(&[
-                unsigned(batch.config.workspace_pk),
-                unsigned(batch.config.service_pk),
-                number(batch.observed_at),
-                blob(&batch.result_id),
-                text(previous_state),
-                text(next_service),
-                text(reason),
-            ])?,
-        );
-    }
+    statements.extend(service_state_statements(db, batch)?);
     Ok(statements)
+}
+
+const SERVICE_STATE_CTE: &str = "WITH service_aggregate(rank) AS (
+       SELECT COALESCE(MAX(CASE
+         WHEN critical = 1 AND state = 'down' THEN 3
+         WHEN state IN ('down', 'degraded') THEN 2
+         WHEN state = 'healthy' THEN 1
+         ELSE 0 END), 0)
+       FROM check_latest WHERE service_pk = ?
+     ), next_service(state) AS (
+       SELECT CASE
+         WHEN ? > ? THEN 'maintenance'
+         WHEN service_aggregate.rank = 3 THEN 'down'
+         WHEN service_aggregate.rank = 2 THEN 'degraded'
+         WHEN service_aggregate.rank = 1 THEN 'healthy'
+         ELSE 'unknown'
+       END FROM service_aggregate
+     )";
+
+const SERVICE_REASON_SQL: &str = "CASE next_service.state
+       WHEN 'maintenance' THEN 'maintenance_window'
+       WHEN 'down' THEN 'check_down'
+       WHEN 'degraded' THEN 'check_degraded'
+       WHEN 'healthy' THEN 'check_healthy'
+       ELSE 'check_unknown' END";
+
+fn service_state_statements(
+    db: &D1Database,
+    batch: &ResultBatch,
+) -> Result<Vec<D1PreparedStatement>, worker::Error> {
+    let maintenance_until = batch.config.maintenance_until.map_or(JsValue::NULL, number);
+    let event = format!(
+        "{SERVICE_STATE_CTE}
+         INSERT OR IGNORE INTO state_events
+          (workspace_pk, resource_type, resource_pk, occurred_at, event_id,
+           previous_state, current_state, reason_code)
+         SELECT ?, 2, ?, ?, ?, COALESCE(previous.state, 'unknown'), next_service.state,
+                {SERVICE_REASON_SQL}
+         FROM next_service
+         LEFT JOIN service_latest previous ON previous.service_pk = ?
+         WHERE EXISTS (
+           SELECT 1 FROM check_latest WHERE check_pk = ? AND result_id = ?
+         )
+           AND COALESCE(previous.state, 'unknown') != next_service.state"
+    );
+    let latest = "INSERT INTO service_latest
+          (service_pk, workspace_pk, state, status_since, reason_code,
+           last_transition_at, updated_at)
+         SELECT ?, ?, event.current_state, ?, event.reason_code, ?, ?
+         FROM state_events event
+         WHERE event.resource_type = 2 AND event.resource_pk = ?
+           AND event.occurred_at = ? AND event.event_id = ?
+           AND changes() = 1
+         ON CONFLICT(service_pk) DO UPDATE SET
+           workspace_pk = excluded.workspace_pk, state = excluded.state,
+           status_since = excluded.status_since, reason_code = excluded.reason_code,
+           last_transition_at = excluded.last_transition_at, updated_at = excluded.updated_at";
+    let initial = "INSERT OR IGNORE INTO service_latest
+          (service_pk, workspace_pk, state, status_since, reason_code,
+           last_transition_at, updated_at)
+         SELECT ?, ?, 'unknown', ?, 'check_unknown', ?, ?
+         WHERE EXISTS (
+           SELECT 1 FROM check_latest WHERE check_pk = ? AND result_id = ?
+         )
+           AND NOT EXISTS (
+             SELECT 1 FROM state_events event
+             WHERE event.resource_type = 2 AND event.resource_pk = ?
+               AND event.occurred_at = ? AND event.event_id = ?
+           )";
+    Ok(vec![
+        db.prepare(event).bind(&[
+            unsigned(batch.config.service_pk),
+            maintenance_until.clone(),
+            number(batch.observed_at),
+            unsigned(batch.config.workspace_pk),
+            unsigned(batch.config.service_pk),
+            number(batch.observed_at),
+            blob(&batch.result_id),
+            unsigned(batch.config.service_pk),
+            unsigned(batch.config.check_pk),
+            blob(&batch.result_id),
+        ])?,
+        db.prepare(latest).bind(&[
+            unsigned(batch.config.service_pk),
+            unsigned(batch.config.workspace_pk),
+            number(batch.observed_at),
+            number(batch.observed_at),
+            number(batch.observed_at),
+            unsigned(batch.config.service_pk),
+            number(batch.observed_at),
+            blob(&batch.result_id),
+        ])?,
+        db.prepare(initial).bind(&[
+            unsigned(batch.config.service_pk),
+            unsigned(batch.config.workspace_pk),
+            number(batch.observed_at),
+            number(batch.observed_at),
+            number(batch.observed_at),
+            unsigned(batch.config.check_pk),
+            blob(&batch.result_id),
+            unsigned(batch.config.service_pk),
+            number(batch.observed_at),
+            blob(&batch.result_id),
+        ])?,
+    ])
 }
 
 fn parse_state(value: &str) -> ResultState {
@@ -233,43 +266,6 @@ fn parse_state(value: &str) -> ResultState {
         "degraded" => ResultState::Degraded,
         "down" => ResultState::Down,
         _ => ResultState::Unknown,
-    }
-}
-
-fn service_state(
-    states: &[(ResultState, bool)],
-    maintenance_until: Option<i64>,
-    now: i64,
-) -> &'static str {
-    if maintenance_until.is_some_and(|until| until > now) {
-        "maintenance"
-    } else if states
-        .iter()
-        .any(|(state, critical)| *critical && *state == ResultState::Down)
-    {
-        "down"
-    } else if states
-        .iter()
-        .any(|(state, _)| matches!(state, ResultState::Down | ResultState::Degraded))
-    {
-        "degraded"
-    } else if states
-        .iter()
-        .any(|(state, _)| *state == ResultState::Healthy)
-    {
-        "healthy"
-    } else {
-        "unknown"
-    }
-}
-
-fn service_reason(state: &str) -> &'static str {
-    match state {
-        "maintenance" => "maintenance_window",
-        "down" => "check_down",
-        "degraded" => "check_degraded",
-        "healthy" => "check_healthy",
-        _ => "check_unknown",
     }
 }
 

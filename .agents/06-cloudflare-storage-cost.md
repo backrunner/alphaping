@@ -153,6 +153,8 @@ Paid included                        25,000.000m/month
 
 中央检查执行结束后按 check 主键验证 `config_revision,last_claimed_slot`，防止配置替换期间的在途旧结果覆盖 latest；30/100 个每分钟检查分别增加 1.296m/4.32m rows read/月，不增加 Worker request 或稳态 rows written。Agent command delivery 在每个 report 增加一次 `(agent_id,state,not_before)` 有界索引读取，空队列不产生写入。100 台 Agent 按每分钟一个 report 约增加 4.32m rows read/月，仍只占 Paid 25bn included reads 的 0.0173%。Agent 版本合并进既有 `last_seen_at` 更新，不增加稳态 D1 write；只有创建、实际投递和完成命令时才新增低频 writes。
 
+服务状态并发收敛把原有事务外 `check_latest WHERE service_pk` 读取移动到 check latest 条件写之后的同一 D1 batch，并使用单次 `MAX(severity rank)` 扫描；event/service 后续只按现有复合主键点查。它不新增服务集合扫描、Worker request、稳态 service latest/event write 或热表二级索引，因此上述 rows-read/write 基线不变。
+
 机器离线收敛复用 Checks Worker 现有每分钟 Cron，不增加 Worker request。每台每分钟最多读取一条 CONTROL_DB 配置和一条 TELEMETRY_DB latest；100 台增加 8.64m rows read/月。按 100+100 的 dashboard、scheduler、中央 revision fence、Agent path、liveness 和 5m reserve 合计约 72.68m rows read/月，只占 Paid included reads 的 0.291%。离线/恢复只在状态转换时写 latest/event，低频写入由 25% margin 覆盖。
 
 `service_state_sync_jobs` 复用 Checks Worker 的既有每分钟 Cron，不增加 Worker request。每次 check target/policy/delete/maintenance mutation 写一个按 check 或 service 合并的 CONTROL_DB job，并在 15 分钟保护窗内重复重放；扫描和处理每轮上限 50，每次尝试在同一行更新 `next_attempt_at,last_attempted_at` 以轮转积压。长维护窗口在保护窗成功收敛后休眠到结束时间，不产生窗口全程的每分钟写入。该负载只随人工配置 mutation 产生，不随 report/check 周期增长，因此不进入稳态账本，由 25% 配置/重试 margin 覆盖。

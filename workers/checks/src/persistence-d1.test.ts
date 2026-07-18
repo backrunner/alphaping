@@ -81,7 +81,56 @@ afterEach(async () => {
   await miniflare.dispose();
 });
 
+function synchronizeBatches(db: D1Database, expected: number): D1Database {
+  let waiting = 0;
+  let release: (() => void) | undefined;
+  const ready = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return new Proxy(db, {
+    get(target, property) {
+      if (property !== "batch") {
+        const value = Reflect.get(target, property);
+        return typeof value === "function" ? value.bind(target) : value;
+      }
+      return async (statements: D1PreparedStatement[]) => {
+        waiting += 1;
+        if (waiting === expected) release?.();
+        await ready;
+        return target.batch(statements);
+      };
+    },
+  });
+}
+
 describe("central check revision fencing", () => {
+  it("creates service latest and an event from the first committed result", async () => {
+    await persistCheckResult(database, staleConfig, 60_000, 1_000, {
+      state: "healthy",
+      latencyMs: 10,
+      failureCode: null,
+      failureSummary: null,
+    });
+
+    await expect(
+      database
+        .prepare("SELECT state, reason_code FROM service_latest WHERE service_pk = 10")
+        .first(),
+    ).resolves.toEqual({ state: "healthy", reason_code: "check_healthy" });
+    await expect(
+      database
+        .prepare(
+          `SELECT previous_state, current_state, reason_code FROM state_events
+           WHERE resource_type = 2 AND resource_pk = 10`,
+        )
+        .first(),
+    ).resolves.toEqual({
+      previous_state: "unknown",
+      current_state: "healthy",
+      reason_code: "check_healthy",
+    });
+  });
+
   it("does not let an old result overwrite a newer latest or service state", async () => {
     let injected = false;
     const racingDatabase = new Proxy(database, {
@@ -142,5 +191,121 @@ describe("central check revision fencing", () => {
     expect([...new Uint8Array(d1BlobToArrayBuffer(raw.result_id_1))]).toEqual([
       ...new Uint8Array(legacyId),
     ]);
+  });
+
+  it("recomputes a service from committed latest rows after concurrent check changes", async () => {
+    await database.batch([
+      database
+        .prepare(
+          `INSERT INTO check_latest
+            (check_pk, workspace_pk, service_pk, observed_at, state, latency_ms,
+             failure_code, failure_summary, consecutive_failures,
+             consecutive_successes, critical, config_revision, result_id)
+           VALUES (1, 1, 10, 1000, 'down', NULL, 'timeout', NULL, 1, 0, 1, 1, ?),
+                  (2, 1, 10, 1000, 'healthy', 10, NULL, NULL, 0, 1, 1, 1, ?)`,
+        )
+        .bind(new Uint8Array([1]).buffer, new Uint8Array([2]).buffer),
+      database.prepare(
+        `INSERT INTO service_latest
+          (service_pk, workspace_pk, state, status_since, reason_code,
+           last_transition_at, updated_at)
+         VALUES (10, 1, 'down', 1000, 'check_down', 1000, 1000)`,
+      ),
+    ]);
+    const synchronized = synchronizeBatches(database, 2);
+
+    await Promise.all([
+      persistCheckResult(synchronized, staleConfig, 60_000, 2_000, {
+        state: "healthy",
+        latencyMs: 10,
+        failureCode: null,
+        failureSummary: null,
+      }),
+      persistCheckResult(
+        synchronized,
+        { ...staleConfig, id: "check-2", telemetry_pk: 2 },
+        60_000,
+        2_000,
+        {
+          state: "down",
+          latencyMs: null,
+          failureCode: "timeout",
+          failureSummary: null,
+        },
+      ),
+    ]);
+
+    await expect(
+      database.prepare("SELECT check_pk, state FROM check_latest ORDER BY check_pk").all(),
+    ).resolves.toMatchObject({
+      results: [
+        { check_pk: 1, state: "healthy" },
+        { check_pk: 2, state: "down" },
+      ],
+    });
+    await expect(
+      database.prepare("SELECT state FROM service_latest WHERE service_pk = 10").first(),
+    ).resolves.toEqual({ state: "down" });
+  });
+
+  it("does not replay an ignored event over a later service transition", async () => {
+    await database.batch([
+      database
+        .prepare(
+          `INSERT INTO check_latest
+            (check_pk, workspace_pk, service_pk, observed_at, state, latency_ms,
+             failure_code, failure_summary, consecutive_failures,
+             consecutive_successes, critical, config_revision, result_id)
+           VALUES (1, 1, 10, 1000, 'down', NULL, 'timeout', NULL, 1, 0, 1, 1, ?),
+                  (2, 1, 10, 1000, 'healthy', 10, NULL, NULL, 0, 1, 1, 1, ?)`,
+        )
+        .bind(new Uint8Array([1]).buffer, new Uint8Array([2]).buffer),
+      database.prepare(
+        `INSERT INTO service_latest
+          (service_pk, workspace_pk, state, status_since, reason_code,
+           last_transition_at, updated_at)
+         VALUES (10, 1, 'down', 1000, 'check_down', 1000, 1000)`,
+      ),
+    ]);
+    let replayed = false;
+    const replayingDatabase = new Proxy(database, {
+      get(target, property) {
+        if (property !== "batch") {
+          const value = Reflect.get(target, property);
+          return typeof value === "function" ? value.bind(target) : value;
+        }
+        return async (statements: D1PreparedStatement[]) => {
+          const result = await target.batch(statements);
+          if (!replayed) {
+            replayed = true;
+            await persistCheckResult(
+              target,
+              { ...staleConfig, id: "check-2", telemetry_pk: 2 },
+              60_000,
+              2_000,
+              {
+                state: "down",
+                latencyMs: null,
+                failureCode: "timeout",
+                failureSummary: null,
+              },
+            );
+            await target.batch(statements);
+          }
+          return result;
+        };
+      },
+    });
+
+    await persistCheckResult(replayingDatabase, staleConfig, 60_000, 2_000, {
+      state: "healthy",
+      latencyMs: 10,
+      failureCode: null,
+      failureSummary: null,
+    });
+
+    await expect(
+      database.prepare("SELECT state FROM service_latest WHERE service_pk = 10").first(),
+    ).resolves.toEqual({ state: "down" });
   });
 });

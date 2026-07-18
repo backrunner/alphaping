@@ -165,7 +165,7 @@ Ingest 暴露不访问 D1 的 `GET|HEAD /healthz` liveness。数据库读写健�
 4. V1 以最多 5 个并发直接执行 Cloudflare HTTP/TCP 任务；不为 30 台规模引入 Queue。
 5. Agent 任务写入对应 machine 的 config revision，由 Agent 下次 report 拉取。
 6. Checks Worker 或 Agent 产生统一 `CheckResult`，通过共享 domain repository 写入 TELEMETRY_DB。
-7. 同一写入流程更新 check latest、time bucket、服务状态和 incident 事件。
+7. 同一 D1 batch 先条件更新 check latest，再从已提交 latest 集合做一次服务聚合扫描；只有本批新插入的状态事件才通过其复合主键驱动 service latest 转换，避免同服务多个中央/Agent check 并发时用事务外旧快照覆盖聚合结果，或由结果重试重放旧转换。time bucket 在同一流程更新。
 8. 同一 Cron 以有界主键批次比较机器 `received_at` 和离线阈值；只在状态转换时条件更新 latest 并写确定性离线事件，不新增调度请求。
 9. Web 的 check target/policy/delete/maintenance mutation 在同一 CONTROL_DB 事务写 `service_state_sync_jobs`。Web 立即尝试同步，Checks Worker 在检查执行结束后每分钟按 `next_attempt_at` 重放最多 50 个 due job，并在 15 分钟在途保护窗内重复校正；job 按中央检查 `config_revision` 删除迟到旧 latest。长维护窗口在保护窗结束后休眠到 `maintenance_until`，到期即使没有新检查结果也会重算服务状态；TELEMETRY_DB 短时失败不能丢失配置 mutation 或永久留下旧 service state。
 

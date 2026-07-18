@@ -38,16 +38,6 @@ interface PreviousCheckLatest extends ConfirmationState {
   result_id: unknown;
 }
 
-interface ServiceCheckLatest {
-  check_pk: number;
-  state: CheckState;
-  critical: number;
-}
-
-interface PreviousServiceLatest {
-  state: ServiceState;
-}
-
 interface ConfirmedResult extends Omit<ExecutedCheck, "state"> {
   state: CheckState;
   consecutiveFailures: number;
@@ -272,6 +262,123 @@ function serviceReason(state: ServiceState): string {
   return state === "maintenance" ? "maintenance_window" : `check_${state}`;
 }
 
+const SERVICE_STATE_CTE = `WITH service_aggregate(rank) AS (
+  SELECT COALESCE(MAX(CASE
+    WHEN critical = 1 AND state = 'down' THEN 3
+    WHEN state IN ('down', 'degraded') THEN 2
+    WHEN state = 'healthy' THEN 1
+    ELSE 0 END), 0)
+  FROM check_latest WHERE service_pk = ?
+), next_service(state) AS (
+  SELECT CASE
+    WHEN ? > ? THEN 'maintenance'
+    WHEN service_aggregate.rank = 3 THEN 'down'
+    WHEN service_aggregate.rank = 2 THEN 'degraded'
+    WHEN service_aggregate.rank = 1 THEN 'healthy'
+    ELSE 'unknown'
+  END FROM service_aggregate
+)`;
+
+function serviceReasonSql(state: string): string {
+  return `CASE ${state}
+    WHEN 'maintenance' THEN 'maintenance_window'
+    WHEN 'down' THEN 'check_down'
+    WHEN 'degraded' THEN 'check_degraded'
+    WHEN 'healthy' THEN 'check_healthy'
+    ELSE 'check_unknown' END`;
+}
+
+function prepareServiceStateStatements(
+  db: D1Database,
+  config: CheckConfigRow,
+  observedAt: number,
+  resultId: ArrayBuffer,
+): readonly D1PreparedStatement[] {
+  const inputBindings = [config.service_telemetry_pk, config.service_maintenance_until, observedAt];
+  const currentResult = `SELECT 1 FROM check_latest
+                         WHERE check_pk = ? AND config_revision = ? AND result_id = ?`;
+  return [
+    db
+      .prepare(
+        `${SERVICE_STATE_CTE}
+         INSERT OR IGNORE INTO state_events
+          (workspace_pk, resource_type, resource_pk, occurred_at, event_id,
+           previous_state, current_state, reason_code)
+         SELECT ?, 2, ?, ?, ?, COALESCE(previous.state, 'unknown'), next_service.state,
+                ${serviceReasonSql("next_service.state")}
+         FROM next_service
+         LEFT JOIN service_latest previous ON previous.service_pk = ?
+         WHERE EXISTS (${currentResult})
+           AND COALESCE(previous.state, 'unknown') != next_service.state`,
+      )
+      .bind(
+        ...inputBindings,
+        config.workspace_telemetry_pk,
+        config.service_telemetry_pk,
+        observedAt,
+        resultId,
+        config.service_telemetry_pk,
+        config.telemetry_pk,
+        config.config_revision,
+        resultId,
+      ),
+    db
+      .prepare(
+        `INSERT INTO service_latest
+          (service_pk, workspace_pk, state, status_since, reason_code,
+           last_transition_at, updated_at)
+         SELECT ?, ?, event.current_state, ?, event.reason_code, ?, ?
+         FROM state_events event
+         WHERE event.resource_type = 2 AND event.resource_pk = ?
+           AND event.occurred_at = ? AND event.event_id = ?
+           AND changes() = 1
+         ON CONFLICT(service_pk) DO UPDATE SET
+           workspace_pk = excluded.workspace_pk,
+           state = excluded.state,
+           status_since = excluded.status_since,
+           reason_code = excluded.reason_code,
+           last_transition_at = excluded.last_transition_at,
+           updated_at = excluded.updated_at`,
+      )
+      .bind(
+        config.service_telemetry_pk,
+        config.workspace_telemetry_pk,
+        observedAt,
+        observedAt,
+        observedAt,
+        config.service_telemetry_pk,
+        observedAt,
+        resultId,
+      ),
+    db
+      .prepare(
+        `INSERT OR IGNORE INTO service_latest
+          (service_pk, workspace_pk, state, status_since, reason_code,
+           last_transition_at, updated_at)
+         SELECT ?, ?, 'unknown', ?, 'check_unknown', ?, ?
+         WHERE EXISTS (${currentResult})
+           AND NOT EXISTS (
+             SELECT 1 FROM state_events event
+             WHERE event.resource_type = 2 AND event.resource_pk = ?
+               AND event.occurred_at = ? AND event.event_id = ?
+           )`,
+      )
+      .bind(
+        config.service_telemetry_pk,
+        config.workspace_telemetry_pk,
+        observedAt,
+        observedAt,
+        observedAt,
+        config.telemetry_pk,
+        config.config_revision,
+        resultId,
+        config.service_telemetry_pk,
+        observedAt,
+        resultId,
+      ),
+  ];
+}
+
 function prepareStatusBucket(
   db: D1Database,
   config: CheckConfigRow,
@@ -367,7 +474,7 @@ export async function persistCheckResult(
   observedAt: number,
   result: ExecutedCheck,
 ): Promise<void> {
-  const [resultId, previousCheck, serviceChecks, previousService] = await Promise.all([
+  const [resultId, previousCheck] = await Promise.all([
     executionId(config.id, config.config_revision, nominalMinute),
     db
       .prepare(
@@ -377,14 +484,6 @@ export async function persistCheckResult(
       )
       .bind(config.telemetry_pk)
       .first<PreviousCheckLatest>(),
-    db
-      .prepare(`SELECT check_pk, state, critical FROM check_latest WHERE service_pk = ?`)
-      .bind(config.service_telemetry_pk)
-      .all<ServiceCheckLatest>(),
-    db
-      .prepare(`SELECT state FROM service_latest WHERE service_pk = ?`)
-      .bind(config.service_telemetry_pk)
-      .first<PreviousServiceLatest>(),
   ]);
   if (previousCheck !== null && previousCheck.config_revision > config.config_revision) return;
   if (
@@ -456,77 +555,7 @@ export async function persistCheckResult(
       resultId,
     );
 
-  const currentChecks = serviceChecks.results
-    .filter((check) => check.check_pk !== config.telemetry_pk)
-    .map((check) => ({ state: check.state, critical: check.critical }));
-  currentChecks.push({ state: confirmed.state, critical: config.critical });
-  const nextServiceState = serviceState(
-    currentChecks,
-    config.service_maintenance_until,
-    observedAt,
-  );
-  const serviceStatements: D1PreparedStatement[] = [];
-  if (previousService?.state !== nextServiceState) {
-    const previousState = previousService?.state ?? "unknown";
-    serviceStatements.push(
-      db
-        .prepare(
-          `INSERT INTO service_latest
-          (service_pk, workspace_pk, state, status_since, reason_code, last_transition_at, updated_at)
-         SELECT ?, ?, ?, ?, ?, ?, ?
-         WHERE EXISTS (
-           SELECT 1 FROM check_latest
-           WHERE check_pk = ? AND config_revision = ? AND result_id = ?
-         )
-         ON CONFLICT(service_pk) DO UPDATE SET
-           workspace_pk = excluded.workspace_pk,
-           state = excluded.state,
-           status_since = excluded.status_since,
-           reason_code = excluded.reason_code,
-           last_transition_at = excluded.last_transition_at,
-           updated_at = excluded.updated_at`,
-        )
-        .bind(
-          config.service_telemetry_pk,
-          config.workspace_telemetry_pk,
-          nextServiceState,
-          observedAt,
-          serviceReason(nextServiceState),
-          observedAt,
-          observedAt,
-          config.telemetry_pk,
-          config.config_revision,
-          resultId,
-        ),
-    );
-    if (previousState !== nextServiceState) {
-      serviceStatements.push(
-        db
-          .prepare(
-            `INSERT OR IGNORE INTO state_events
-          (workspace_pk, resource_type, resource_pk, occurred_at, event_id,
-           previous_state, current_state, reason_code)
-         SELECT ?, 2, ?, ?, ?, ?, ?, ?
-         WHERE EXISTS (
-           SELECT 1 FROM check_latest
-           WHERE check_pk = ? AND config_revision = ? AND result_id = ?
-         )`,
-          )
-          .bind(
-            config.workspace_telemetry_pk,
-            config.service_telemetry_pk,
-            observedAt,
-            resultId,
-            previousState,
-            nextServiceState,
-            serviceReason(nextServiceState),
-            config.telemetry_pk,
-            config.config_revision,
-            resultId,
-          ),
-      );
-    }
-  }
+  const serviceStatements = prepareServiceStateStatements(db, config, observedAt, resultId);
 
   const closedRollups = await prepareClosedRollups(db, config, nominalMinute, result);
   const statusStatements =
