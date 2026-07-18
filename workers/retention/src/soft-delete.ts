@@ -434,15 +434,19 @@ async function finalizeControlOnlyTable(
     .all<IdRow>();
   const ids = rows.results.map((row) => row.id);
   if (ids.length === 0) return 0;
+  const eligibleIds = `SELECT id FROM ${table}
+                       WHERE workspace_id = ? AND COALESCE(deleted_at, ?) <= ?
+                         AND id IN (${placeholders(ids.length)})`;
+  const eligibleBindings = [policy.workspace_id, policy.workspace_deleted_at, cutoff, ...ids];
   const statements: D1PreparedStatement[] = [];
   if (resourceType !== null) {
     statements.push(
       db
         .prepare(
           `DELETE FROM resource_grants WHERE workspace_id = ? AND resource_type = ?
-           AND resource_id IN (${placeholders(ids.length)})`,
+           AND resource_id IN (${eligibleIds})`,
         )
-        .bind(policy.workspace_id, resourceType, ...ids),
+        .bind(policy.workspace_id, resourceType, ...eligibleBindings),
     );
   }
   if (resourceType === "container") {
@@ -450,9 +454,9 @@ async function finalizeControlOnlyTable(
       db
         .prepare(
           `DELETE FROM resource_public_policies WHERE workspace_id = ? AND resource_type = 'container'
-           AND resource_id IN (${placeholders(ids.length)})`,
+           AND resource_id IN (${eligibleIds})`,
         )
-        .bind(policy.workspace_id, ...ids),
+        .bind(policy.workspace_id, ...eligibleBindings),
     );
   }
   statements.push(

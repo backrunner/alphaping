@@ -286,6 +286,80 @@ describe("soft-delete finalization", () => {
     await expect(count(env.TELEMETRY_DB, "telemetry_blocks_5m")).resolves.toBe(1);
   });
 
+  it("preserves authorization when a control-only resource is restored after candidate loading", async () => {
+    const deletedAt = now - 8 * DAY_MS;
+    await env.CONTROL_DB.batch([
+      env.CONTROL_DB.prepare(
+        "INSERT INTO containers VALUES ('container-1', 'workspace-1', 'machine-1', ?)",
+      ).bind(deletedAt),
+      env.CONTROL_DB.prepare(
+        "INSERT INTO resource_grants VALUES ('workspace-1', 'container', 'container-1')",
+      ),
+      env.CONTROL_DB.prepare(
+        "INSERT INTO resource_public_policies VALUES ('workspace-1', 'container', 'container-1')",
+      ),
+    ]);
+
+    let restored = false;
+    const racingControlDb = new Proxy(env.CONTROL_DB, {
+      get(target, property) {
+        if (property !== "prepare") {
+          const value = Reflect.get(target, property);
+          return typeof value === "function" ? value.bind(target) : value;
+        }
+        return (query: string) => {
+          const prepared = target.prepare(query);
+          if (!query.includes("SELECT id FROM containers")) return prepared;
+          return new Proxy(prepared, {
+            get(statement, statementProperty) {
+              if (statementProperty !== "bind") {
+                const value = Reflect.get(statement, statementProperty);
+                return typeof value === "function" ? value.bind(statement) : value;
+              }
+              return (...values: Parameters<D1PreparedStatement["bind"]>) => {
+                const bound = statement.bind(...values);
+                return new Proxy(bound, {
+                  get(current, currentProperty) {
+                    if (currentProperty !== "all") {
+                      const value = Reflect.get(current, currentProperty);
+                      return typeof value === "function" ? value.bind(current) : value;
+                    }
+                    return async <T>() => {
+                      const result = await current.all<T>();
+                      if (!restored) {
+                        restored = true;
+                        await target
+                          .prepare(
+                            "UPDATE containers SET deleted_at = NULL WHERE id = 'container-1'",
+                          )
+                          .run();
+                      }
+                      return result;
+                    };
+                  },
+                });
+              };
+            },
+          });
+        };
+      },
+    });
+    const racingEnv = new Proxy(env, {
+      get(target, property) {
+        return property === "CONTROL_DB" ? racingControlDb : Reflect.get(target, property);
+      },
+    });
+
+    await expect(finalizeSoftDeletedResources(racingEnv, policy, now)).resolves.toBe(0);
+    await expect(
+      env.CONTROL_DB.prepare("SELECT deleted_at FROM containers WHERE id = 'container-1'").first<{
+        deleted_at: number | null;
+      }>(),
+    ).resolves.toEqual({ deleted_at: null });
+    await expect(count(env.CONTROL_DB, "resource_grants")).resolves.toBe(1);
+    await expect(count(env.CONTROL_DB, "resource_public_policies")).resolves.toBe(1);
+  });
+
   it("resumes machine replay cleanup across more than one related-resource page", async () => {
     const deletedAt = now - 8 * DAY_MS;
     await env.CONTROL_DB.prepare(
