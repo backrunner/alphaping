@@ -62,7 +62,7 @@ pub fn pq_tls_config() -> Result<Arc<ClientConfig>, UploadError> {
 
 pub fn pq_client() -> Result<Client, UploadError> {
     Ok(Client::builder()
-        .use_preconfigured_tls(pq_tls_config()?)
+        .use_preconfigured_tls(pq_tls_config()?.as_ref().clone())
         .connect_timeout(Duration::from_secs(5))
         .timeout(Duration::from_secs(8))
         .build()?)
@@ -222,7 +222,12 @@ mod tests {
         v1::{AckStatus, DurableAck, EncryptedEnvelope, EnvelopeHeader},
     };
 
-    use super::{EnvelopeCodec, UploadError};
+    use super::{EnvelopeCodec, UploadError, pq_client};
+
+    #[test]
+    fn pq_http_client_accepts_the_preconfigured_rustls_backend() {
+        pq_client().expect("PQ HTTP client should initialize");
+    }
 
     #[test]
     fn envelope_codec_round_trips_authenticated_report_and_ack() {
