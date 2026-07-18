@@ -460,6 +460,10 @@
         {
           "file": "0008_replay_window.sql",
           "sha256": "e4b85b6968a8a237ff4c36493e843eb562692d0d9f3f91a59bc91539eafadf17"
+        },
+        {
+          "file": "0009_retention_workspace_cursor.sql",
+          "sha256": "66efc761eb2105c98984da4171c5936c537bf758079f20a596786359dcd35197"
         }
       ],
       "objects": [
@@ -833,7 +837,7 @@
           "type": "table",
           "name": "retention_runs",
           "table": "retention_runs",
-          "sql": "CREATE TABLE retention_runs (\n  run_id TEXT PRIMARY KEY NOT NULL,\n  started_at INTEGER NOT NULL,\n  completed_at INTEGER,\n  deleted_rows INTEGER NOT NULL DEFAULT 0,\n  error_code TEXT\n) STRICT"
+          "sql": "CREATE TABLE retention_runs (\n  run_id TEXT PRIMARY KEY NOT NULL,\n  started_at INTEGER NOT NULL,\n  completed_at INTEGER,\n  deleted_rows INTEGER NOT NULL DEFAULT 0,\n  error_code TEXT\n, workspace_cursor INTEGER NOT NULL DEFAULT 0\n  CHECK (workspace_cursor >= 0)) STRICT"
         },
         {
           "type": "table",

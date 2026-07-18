@@ -418,10 +418,11 @@ Checks Worker 只在五分钟 block 闭合时写一次 service bucket。同一�
 
 ### `retention_runs`
 
-- `id`, `workspace_id`, `kind`
-- `cursor_json`, `lease_until`
-- `deleted_rows`, `deleted_artifacts`, `deleted_bytes`
-- `state`, `started_at`, `finished_at`, `error_code`
+- `run_id`, `started_at`, `completed_at`
+- `deleted_rows`, `error_code`
+- `workspace_cursor`，成功 run 保存下一轮 policy scan 的 workspace telemetry PK；失败 run 不推进
+
+每小时 run 最多处理 100 个 workspace，并读取第 101 个候选判断是否保存 cursor。扫描到末尾后 cursor 归零，避免固定 `LIMIT` 永久饿死较大主键的 workspace。重叠 run 因已有 lease 跳过任何 workspace 时保留原 cursor，下一轮重试该页，不能越过未处理的 workspace。
 
 ### `audit_logs`
 
