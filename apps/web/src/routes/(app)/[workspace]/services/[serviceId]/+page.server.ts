@@ -5,6 +5,7 @@ import {
   addServiceCheck,
   deleteServiceCheck,
   listServiceCheckAgents,
+  replaceServiceCheckConfiguration,
   setServiceMaintenance,
   setServicePublicAccess,
   updateServiceCheckPolicy,
@@ -93,6 +94,37 @@ export const actions: Actions = {
       const message = isHttpError(cause) ? cause.body.message : "Check policy update failed";
       return fail(isHttpError(cause) ? cause.status : 400, {
         kind: "checkPolicy",
+        checkId,
+        message,
+      });
+    }
+  },
+  replaceCheckConfiguration: async ({ request, locals, params, platform }) => {
+    if (!locals.session || !platform)
+      return fail(401, { kind: "checkConfiguration", message: "Unauthorized" });
+    const form = await request.formData();
+    const checkId = String(form.get("checkId") ?? "");
+    try {
+      await replaceServiceCheckConfiguration(
+        platform.env.CONTROL_DB,
+        params.workspace,
+        locals.session.user.id,
+        platform.env.CHECK_SECRET_WRAPPING_KEY,
+        params.serviceId,
+        checkId,
+        {
+          checkName: String(form.get("checkName") ?? "").trim(),
+          ...parseServiceCheckForm(form),
+          replaceSecrets: form.get("replaceSecrets") === "on",
+        },
+      );
+      return { kind: "checkConfiguration", saved: true, checkId };
+    } catch (cause) {
+      const message = isHttpError(cause)
+        ? cause.body.message
+        : "Check configuration replacement failed";
+      return fail(isHttpError(cause) ? cause.status : 400, {
+        kind: "checkConfiguration",
         checkId,
         message,
       });

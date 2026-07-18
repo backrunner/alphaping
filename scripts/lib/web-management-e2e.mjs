@@ -606,6 +606,175 @@ export async function runWebManagementE2e({
   ) {
     throw new Error("service secret wrapping or assertion persistence is incorrect");
   }
+  const originalSecretReferences = JSON.parse(compiledCheck.secret_refs_json);
+  const originalSecretId = originalSecretReferences.headers?.["X-Probe-Key"];
+  if (typeof originalSecretId !== "string") {
+    throw new Error("service check did not retain its original secret header reference");
+  }
+  const replacementConfiguration = {
+    checkId: compiledCheck.id,
+    checkName: "AlphaPing API readiness",
+    kind: "http",
+    executorKind: "cloudflare",
+    executorAgentId: "",
+    intervalSeconds: "60",
+    timeoutMs: "5000",
+    retryCount: "1",
+    critical: "on",
+    failureConfirmations: "2",
+    recoveryConfirmations: "2",
+    url: "https://example.com/v2/ready",
+    method: "PUT",
+    expectedStatuses: "202, 204",
+    maxRedirects: "2",
+    tlsVerify: "on",
+    degradedAfterMs: "800",
+    downAfterMs: "2500",
+    maxResponseBytes: "16384",
+    requestHeaders: "Accept: application/problem+json\nX-Probe-Mode: readiness",
+    secretRequestHeaders: "",
+    requestBody: '{"probe":"ready"}',
+    hostname: "",
+    serverName: "",
+    port: "",
+    tcpPayload: "",
+    tcpResponsePrefix: "",
+    assertionSource: "jsonpath",
+    assertionOperator: "equals",
+    assertionSelector: "$.ready",
+    assertionExpected: "true",
+    assertionSeverity: "down",
+  };
+  await submitAction(
+    baseUrl,
+    `/operations/services/${service.id}?/replaceCheckConfiguration`,
+    adminCookie,
+    replacementConfiguration,
+    "service check target replacement with preserved secrets",
+  );
+  const preservedCheck = onlyRow(
+    queryControlDb(
+      `SELECT name, request_json, secret_refs_json,
+        (SELECT COUNT(*) FROM check_assertions a WHERE a.check_id = c.id) AS assertion_count
+       FROM check_configs c WHERE c.id = ${sqlString(compiledCheck.id)}`,
+    ),
+    "preserved-secret check configuration lookup",
+  );
+  const preservedRequest = JSON.parse(preservedCheck.request_json);
+  const preservedAssertion = onlyRow(
+    queryControlDb(
+      `SELECT source, operator, selector, expected_json, severity
+       FROM check_assertions WHERE check_id = ${sqlString(compiledCheck.id)}`,
+    ),
+    "replaced service assertion lookup",
+  );
+  const preservedSecret = onlyRow(
+    queryControlDb(`SELECT id FROM check_secrets WHERE id = ${sqlString(originalSecretId)}`),
+    "preserved service secret lookup",
+  );
+  if (
+    preservedCheck.name !== "AlphaPing API readiness" ||
+    preservedCheck.secret_refs_json !== compiledCheck.secret_refs_json ||
+    preservedCheck.assertion_count !== 1 ||
+    preservedSecret.id !== originalSecretId ||
+    preservedRequest.url !== "https://example.com/v2/ready" ||
+    preservedRequest.method !== "PUT" ||
+    preservedRequest.expectedStatus.join(",") !== "202,204" ||
+    preservedRequest.headers?.Accept !== "application/problem+json" ||
+    preservedRequest.headers?.["X-Probe-Mode"] !== "readiness" ||
+    preservedRequest.body !== '{"probe":"ready"}' ||
+    preservedAssertion.source !== "jsonpath" ||
+    preservedAssertion.operator !== "equals" ||
+    preservedAssertion.selector !== "$.ready" ||
+    preservedAssertion.expected_json !== "true" ||
+    preservedAssertion.severity !== "down"
+  ) {
+    throw new Error("service target replacement did not preserve secrets or replace configuration");
+  }
+  const replacementSecretValue = "Bearer replacement-private-value";
+  const secretReplacement = await submitAction(
+    baseUrl,
+    `/operations/services/${service.id}?/replaceCheckConfiguration`,
+    adminCookie,
+    {
+      ...replacementConfiguration,
+      secretRequestHeaders: `Authorization: ${replacementSecretValue}`,
+      replaceSecrets: "on",
+    },
+    "service check explicit secret replacement",
+  );
+  if (secretReplacement.serialized.includes(replacementSecretValue)) {
+    throw new Error("service check action response exposed a replacement secret");
+  }
+  const replacedCheck = onlyRow(
+    queryControlDb(
+      `SELECT request_json, secret_refs_json, interval_seconds, timeout_ms, retry_count,
+              failure_confirmations, recovery_confirmations, critical
+       FROM check_configs WHERE id = ${sqlString(compiledCheck.id)}`,
+    ),
+    "secret-replaced check configuration lookup",
+  );
+  const replacementSecretReferences = JSON.parse(replacedCheck.secret_refs_json);
+  const replacementSecretId = replacementSecretReferences.headers?.Authorization;
+  if (typeof replacementSecretId !== "string" || replacementSecretId === originalSecretId) {
+    throw new Error("service check did not rotate its secret reference");
+  }
+  const oldSecretCount = onlyRow(
+    queryControlDb(
+      `SELECT COUNT(*) AS count FROM check_secrets WHERE id = ${sqlString(originalSecretId)}`,
+    ),
+    "replaced old secret lookup",
+  );
+  const replacementSecret = onlyRow(
+    queryControlDb(
+      `SELECT name, wrapping_key_id, length(wrapped_value) AS wrapped_bytes,
+              length(nonce) AS nonce_bytes, hex(wrapped_value) AS wrapped_hex
+       FROM check_secrets WHERE id = ${sqlString(replacementSecretId)}`,
+    ),
+    "replacement secret envelope lookup",
+  );
+  if (
+    oldSecretCount.count !== 0 ||
+    replacementSecret.name !== "header:Authorization" ||
+    replacementSecret.wrapping_key_id !== "v1" ||
+    replacementSecret.nonce_bytes !== 12 ||
+    replacementSecret.wrapped_bytes !== Buffer.byteLength(replacementSecretValue) + 16 ||
+    Buffer.from(replacementSecret.wrapped_hex, "hex").includes(replacementSecretValue) ||
+    replacedCheck.request_json.includes(replacementSecretValue) ||
+    replacedCheck.secret_refs_json.includes(replacementSecretValue) ||
+    replacedCheck.interval_seconds !== 60 ||
+    replacedCheck.timeout_ms !== 5000 ||
+    replacedCheck.retry_count !== 1 ||
+    replacedCheck.failure_confirmations !== 2 ||
+    replacedCheck.recovery_confirmations !== 2 ||
+    replacedCheck.critical !== 1
+  ) {
+    throw new Error("service secret replacement was not atomic, wrapped, or policy preserving");
+  }
+  response = await fetch(`${baseUrl}/operations/services/${service.id}`, {
+    headers: { cookie: adminCookie },
+  });
+  assertResponse(response, 200, "service configuration management view");
+  const serviceConfigurationPage = await response.text();
+  if (
+    !serviceConfigurationPage.includes("AlphaPing API readiness") ||
+    !serviceConfigurationPage.includes("Authorization") ||
+    serviceConfigurationPage.includes("e2e-private-value") ||
+    serviceConfigurationPage.includes(replacementSecretValue)
+  ) {
+    throw new Error("service configuration view omitted the replacement or exposed secret values");
+  }
+  const replacementAudits = queryControlDb(
+    `SELECT before_digest, after_digest FROM audit_logs
+     WHERE resource_id = ${sqlString(service.id)}
+       AND action = 'service.check.configuration.replace' ORDER BY created_at`,
+  );
+  if (
+    replacementAudits.length !== 2 ||
+    replacementAudits.some((entry) => !entry.before_digest || !entry.after_digest)
+  ) {
+    throw new Error("service configuration replacement did not retain immutable audit summaries");
+  }
   const serviceBlockStart = Math.floor(Date.now() / 300_000) * 300_000;
   const checkObservedAt = serviceBlockStart + 10_000;
   queryTelemetryDb(
@@ -873,6 +1042,65 @@ export async function runWebManagementE2e({
   }
   await submitAction(
     baseUrl,
+    `/operations/services/${agentChecks[0].service_id}?/replaceCheckConfiguration`,
+    adminCookie,
+    {
+      checkId: agentChecks[0].id,
+      checkName: "Agent TCP external",
+      kind: "tcp",
+      executorKind: "agent",
+      executorAgentId: agentId,
+      intervalSeconds: "5",
+      timeoutMs: "1000",
+      retryCount: "1",
+      critical: "on",
+      failureConfirmations: "2",
+      recoveryConfirmations: "2",
+      url: "",
+      method: "GET",
+      expectedStatuses: "200",
+      maxRedirects: "3",
+      tlsVerify: "on",
+      degradedAfterMs: "250",
+      downAfterMs: "750",
+      maxResponseBytes: "65536",
+      requestHeaders: "",
+      secretRequestHeaders: "",
+      requestBody: "",
+      hostname: "192.0.2.25",
+      serverName: "tcp-v2.example.test",
+      port: "8443",
+      useTls: "on",
+      tcpPayload: "PING v2",
+      tcpResponsePrefix: "PONG v2",
+    },
+    "Agent TCP target replacement",
+  );
+  const replacedAgentCheck = onlyRow(
+    queryControlDb(
+      `SELECT c.name, c.executor_agent_id, c.assignment_revision, c.request_json,
+              m.desired_config_revision
+       FROM check_configs c JOIN agents a ON a.id = c.executor_agent_id
+       JOIN machines m ON m.id = a.machine_id WHERE c.id = ${sqlString(agentChecks[0].id)}`,
+    ),
+    "replaced Agent target revision lookup",
+  );
+  const replacedAgentRequest = JSON.parse(replacedAgentCheck.request_json);
+  if (
+    replacedAgentCheck.name !== "Agent TCP external" ||
+    replacedAgentCheck.executor_agent_id !== agentId ||
+    replacedAgentCheck.assignment_revision !== agentChecks[1].assignment_revision + 1 ||
+    replacedAgentCheck.desired_config_revision !== replacedAgentCheck.assignment_revision ||
+    replacedAgentRequest.hostname !== "192.0.2.25" ||
+    replacedAgentRequest.port !== 8443 ||
+    replacedAgentRequest.serverName !== "tcp-v2.example.test" ||
+    Buffer.from(replacedAgentRequest.payloadBase64, "base64").toString() !== "PING v2" ||
+    Buffer.from(replacedAgentRequest.responsePrefixBase64, "base64").toString() !== "PONG v2"
+  ) {
+    throw new Error("Agent target replacement did not preserve executor or advance its revision");
+  }
+  await submitAction(
+    baseUrl,
     `/operations/services/${agentChecks[1].service_id}?/updateCheckPolicy`,
     adminCookie,
     {
@@ -1108,6 +1336,14 @@ export async function runWebManagementE2e({
   );
   await submitAction(
     baseUrl,
+    `/operations/services/${service.id}?/replaceCheckConfiguration`,
+    memberCookie,
+    replacementConfiguration,
+    "ungranted member service check replacement",
+    { type: "failure", actionStatus: 404 },
+  );
+  await submitAction(
+    baseUrl,
     "/operations/admin/access?/grant",
     adminCookie,
     {
@@ -1143,6 +1379,13 @@ export async function runWebManagementE2e({
     { headers: { cookie: memberCookie } },
   );
   assertResponse(response, 200, "managed member check history");
+  await submitAction(
+    baseUrl,
+    `/operations/services/${service.id}?/replaceCheckConfiguration`,
+    memberCookie,
+    replacementConfiguration,
+    "managed member service check replacement",
+  );
   await submitAction(
     baseUrl,
     `/operations/machines/${machine.id}?/checkUpdate`,

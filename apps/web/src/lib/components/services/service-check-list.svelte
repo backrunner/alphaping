@@ -1,30 +1,11 @@
 <script lang="ts">
+  import type { ServiceCheckSummary } from "@alphaping/db";
   import { Radio, Save, Settings2, ShieldAlert, TimerReset, Trash2 } from "lucide-svelte";
 
+  import CheckConfigurationEditor from "$components/services/check-configuration-editor.svelte";
   import CheckHistoryPanel from "$components/services/check-history-panel.svelte";
   import StatusLabel from "$components/status/status-label.svelte";
   import { formatRelativeTime } from "$lib/utils/format";
-
-  type Check = {
-    id: string;
-    name: string;
-    kind: "http" | "tcp" | "icmp";
-    executorKind: "cloudflare" | "agent";
-    intervalSeconds: number;
-    timeoutMs: number;
-    retryCount: number;
-    critical: boolean;
-    enabled: boolean;
-    failureConfirmations: number;
-    recoveryConfirmations: number;
-    target: string;
-    assertionCount: number;
-    state: "healthy" | "degraded" | "down" | "unknown";
-    observedAt: number | null;
-    latencyMs: number | null;
-    failureCode: string | null;
-    failureSummary: string | null;
-  };
 
   let {
     checks,
@@ -32,7 +13,7 @@
     result,
     historyBase,
   }: {
-    checks: readonly Check[];
+    checks: readonly ServiceCheckSummary[];
     canManage: boolean;
     historyBase: string;
     result: {
@@ -87,6 +68,9 @@
               >{/if}
           </div>
           <CheckHistoryPanel endpoint={`${historyBase}/${encodeURIComponent(check.id)}/history`} />
+          {#if canManage}
+            <CheckConfigurationEditor {check} {result} />
+          {/if}
           {#if canManage}
             <details class="policy">
               <summary><Settings2 size={12} />Policy</summary>

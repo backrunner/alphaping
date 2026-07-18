@@ -7,6 +7,7 @@ import type {
   GrantRow,
   MonitorState,
   ServiceCollection,
+  ServiceCheckEditConfiguration,
   ServiceDetail,
   ServiceLatestRow,
   ServiceRow,
@@ -19,6 +20,7 @@ import type {
 
 export type {
   MonitorState,
+  ServiceCheckEditConfiguration,
   ServiceCheckSummary,
   ServiceCollection,
   ServiceDetail,
@@ -109,14 +111,117 @@ async function loadCheckRows(db: D1Database, workspaceId: string): Promise<reado
   return (
     await db
       .prepare(
-        `SELECT id, telemetry_pk, service_id, name, kind, executor_kind, enabled,
+        `SELECT id, telemetry_pk, service_id, name, kind, executor_kind, executor_agent_id, enabled,
             interval_seconds, timeout_ms, retry_count, critical, request_json,
-            failure_confirmations, recovery_confirmations
+            secret_refs_json, failure_confirmations, recovery_confirmations
      FROM check_configs WHERE workspace_id = ? ORDER BY service_id, created_at LIMIT 1000`,
       )
       .bind(workspaceId)
       .all<CheckRow>()
   ).results;
+}
+
+interface CheckAssertionRow {
+  check_id: string;
+  source: "header" | "jsonpath" | "body";
+  operator: "exists" | "equals" | "contains" | "matches" | "type" | "greater_than" | "less_than";
+  selector: string | null;
+  expected_json: string;
+  severity: "degraded" | "down";
+}
+
+function objectValue(value: unknown): Readonly<Record<string, unknown>> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Readonly<Record<string, unknown>>)
+    : null;
+}
+
+function stringValue(value: unknown, fallback = ""): string {
+  return typeof value === "string" ? value : fallback;
+}
+
+function numberValue(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isSafeInteger(value) ? value : fallback;
+}
+
+function nullableNumberValue(value: unknown): number | null {
+  return typeof value === "number" && Number.isSafeInteger(value) ? value : null;
+}
+
+function decodeUtf8Base64(value: unknown): string {
+  if (typeof value !== "string" || value.length > 8_192) return "";
+  try {
+    const bytes = Uint8Array.from(atob(value), (character) => character.charCodeAt(0));
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return "";
+  }
+}
+
+function expectedInput(value: string): string {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return typeof parsed === "string" ? parsed : parsed === null ? "" : JSON.stringify(parsed);
+  } catch {
+    return "";
+  }
+}
+
+function editConfiguration(
+  check: CheckRow,
+  assertions: readonly CheckAssertionRow[],
+): ServiceCheckEditConfiguration | null {
+  try {
+    const request = objectValue(JSON.parse(check.request_json) as unknown);
+    const secrets = objectValue(JSON.parse(check.secret_refs_json) as unknown);
+    if (!request || !secrets) return null;
+    const headers = objectValue(request.headers) ?? {};
+    const secretHeaders = objectValue(secrets.headers) ?? {};
+    const expectedStatus = Array.isArray(request.expectedStatus)
+      ? request.expectedStatus.filter(
+          (status): status is number => typeof status === "number" && Number.isInteger(status),
+        )
+      : [];
+    return {
+      executorAgentId: check.executor_agent_id,
+      url: stringValue(request.url),
+      method: stringValue(request.method, "GET"),
+      expectedStatuses: expectedStatus.join(", ") || "200",
+      maxRedirects: numberValue(request.maxRedirects, 3),
+      tlsVerify: request.tlsVerify !== false,
+      degradedAfterMs: nullableNumberValue(request.degradedAfterMs),
+      downAfterMs: nullableNumberValue(request.downAfterMs),
+      maxResponseBytes: numberValue(request.maxResponseBytes, 65_536),
+      requestHeaders: Object.entries(headers)
+        .filter((entry): entry is [string, string] => typeof entry[1] === "string")
+        .map(([name, value]) => `${name}: ${value}`)
+        .join("\n"),
+      requestBody: stringValue(request.body),
+      hostname: stringValue(request.hostname),
+      serverName: stringValue(request.serverName),
+      port: nullableNumberValue(request.port),
+      useTls: request.secureTransport === "on",
+      tcpPayload: decodeUtf8Base64(request.payloadBase64),
+      tcpResponsePrefix: decodeUtf8Base64(request.responsePrefixBase64),
+      assertions: assertions
+        .filter((assertion) => assertion.check_id === check.id)
+        .map((assertion) => ({
+          source: assertion.source,
+          operator: assertion.operator,
+          selector: assertion.selector ?? "",
+          expected: expectedInput(assertion.expected_json),
+          severity: assertion.severity,
+        })),
+      secretHeaderNames: Object.entries(secretHeaders)
+        .filter((entry): entry is [string, string] => typeof entry[1] === "string")
+        .map(([name]) => name)
+        .sort(),
+      hasSecretBody: typeof secrets.body === "string" && secrets.body.length > 0,
+      hasSecretTcpPayload: typeof secrets.tcpPayload === "string" && secrets.tcpPayload.length > 0,
+    };
+  } catch {
+    return null;
+  }
 }
 
 function timelineForService(
@@ -379,6 +484,20 @@ export async function loadServiceDetail(
   const checks = (await loadCheckRows(controlDb, access.workspace.id)).filter(
     (check) => check.service_id === service.id,
   );
+  const assertions =
+    canManage && checks.length > 0
+      ? (
+          await controlDb
+            .prepare(
+              `SELECT check_id, source, operator, selector, expected_json, severity
+               FROM check_assertions
+               WHERE check_id IN (${placeholders(checks.length)})
+               ORDER BY check_id, sort_order LIMIT 400`,
+            )
+            .bind(...checks.map((check) => check.id))
+            .all<CheckAssertionRow>()
+        ).results
+      : [];
   const telemetry = await loadTelemetry(
     telemetryDb,
     access.workspace.telemetry_pk,
@@ -445,6 +564,7 @@ export async function loadServiceDetail(
         failureSummary: latest?.failure_summary ?? null,
         consecutiveFailures: latest?.consecutive_failures ?? 0,
         consecutiveSuccesses: latest?.consecutive_successes ?? 0,
+        editConfiguration: canManage ? editConfiguration(check, assertions) : null,
       };
     }),
     events: events.results.map((event) => ({

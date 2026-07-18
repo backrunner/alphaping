@@ -1,7 +1,11 @@
 import { canAccessResource } from "@alphaping/authz";
 import { error } from "@sveltejs/kit";
 
-import { compileServiceConfig, type CreateServiceMonitorInput } from "./service-config-compiler.js";
+import {
+  compileServiceConfig,
+  type CompiledServiceConfig,
+  type CreateServiceMonitorInput,
+} from "./service-config-compiler.js";
 import {
   loadMonitoringAccess,
   requireAdmin,
@@ -54,6 +58,10 @@ export interface UpdateServiceCheckPolicyInput {
   critical: boolean;
 }
 
+export type ReplaceServiceCheckConfigurationInput = AddServiceCheckInput & {
+  replaceSecrets: boolean;
+};
+
 async function nextSequence(db: D1Database, kind: "service" | "check"): Promise<number> {
   const row = await db
     .prepare(
@@ -91,10 +99,11 @@ async function availableSlug(db: D1Database, workspaceId: string, name: string):
   throw error(409, "A unique service slug could not be generated");
 }
 
-function configurationBytes(compiled: Awaited<ReturnType<typeof compileServiceConfig>>): number {
+function configurationBytes(compiled: CompiledServiceConfig, preservedSecretBytes = 0): number {
   return (
     new TextEncoder().encode(JSON.stringify(compiled.request)).byteLength +
     compiled.secrets.reduce((total, secret) => total + secret.wrappedValue.byteLength, 0) +
+    preservedSecretBytes +
     512
   );
 }
@@ -499,6 +508,272 @@ interface CheckPolicyRow {
   secret_refs_json: string;
   assignment_revision: number;
   maintenance_until: number | null;
+}
+
+interface CheckConfigurationEditRow extends CheckPolicyRow {
+  name: string;
+  kind: "http" | "tcp" | "icmp";
+  request_json: string;
+  service_name: string;
+  service_description: string;
+}
+
+function parseSecretReferences(value: string): CompiledServiceConfig["secretRefs"] | null {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
+    const data = parsed as Readonly<Record<string, unknown>>;
+    const headers =
+      data.headers === undefined
+        ? {}
+        : typeof data.headers === "object" && data.headers !== null && !Array.isArray(data.headers)
+          ? (data.headers as Readonly<Record<string, unknown>>)
+          : null;
+    if (
+      !headers ||
+      Object.values(headers).some((id) => typeof id !== "string" || id.length === 0)
+    ) {
+      return null;
+    }
+    const body = data.body ?? null;
+    const tcpPayload = data.tcpPayload ?? null;
+    if ((typeof body !== "string" || body.length === 0) && body !== null) return null;
+    if ((typeof tcpPayload !== "string" || tcpPayload.length === 0) && tcpPayload !== null) {
+      return null;
+    }
+    return {
+      headers: Object.fromEntries(
+        Object.entries(headers).map(([name, id]) => [name, id as string]),
+      ),
+      body,
+      tcpPayload,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function replaceServiceCheckConfiguration(
+  controlDb: D1Database,
+  workspaceSlug: string,
+  userId: string,
+  wrappingKey: string,
+  serviceId: string,
+  checkId: string,
+  input: ReplaceServiceCheckConfigurationInput,
+): Promise<void> {
+  const access = await loadMonitoringAccess(controlDb, workspaceSlug, userId);
+  requireResourceCapability(access, "service", serviceId, "manage");
+  const row = await controlDb
+    .prepare(
+      `SELECT c.id, c.telemetry_pk, c.name, c.kind, c.executor_kind, c.executor_agent_id,
+              c.enabled, c.interval_seconds, c.timeout_ms, c.retry_count, c.critical,
+              c.failure_confirmations, c.recovery_confirmations, c.request_json,
+              c.secret_refs_json, c.config_bytes, c.assignment_revision,
+              s.telemetry_pk AS service_telemetry_pk, s.name AS service_name,
+              s.description AS service_description, s.maintenance_until,
+              w.telemetry_pk AS workspace_telemetry_pk, a.machine_id
+       FROM check_configs c
+       JOIN services s ON s.id = c.service_id AND s.deleted_at IS NULL
+       JOIN workspaces w ON w.id = c.workspace_id AND w.deleted_at IS NULL
+       LEFT JOIN agents a ON a.id = c.executor_agent_id AND a.status = 'active'
+       WHERE c.id = ? AND c.service_id = ? AND c.workspace_id = ?`,
+    )
+    .bind(checkId, serviceId, access.workspaceId)
+    .first<CheckConfigurationEditRow>();
+  if (!row) throw error(404, "Check not found");
+  const checkName = input.checkName.trim();
+  if (checkName.length < 2 || checkName.length > 80) throw error(400, "Check name is invalid");
+  if (
+    input.kind !== row.kind ||
+    input.executorKind !== row.executor_kind ||
+    (input.executorAgentId || null) !== row.executor_agent_id
+  ) {
+    throw error(400, "Check type and executor cannot be changed during target replacement");
+  }
+  if (
+    input.intervalSeconds !== row.interval_seconds ||
+    input.timeoutMs !== row.timeout_ms ||
+    input.retryCount !== row.retry_count ||
+    input.failureConfirmations !== row.failure_confirmations ||
+    input.recoveryConfirmations !== row.recovery_confirmations ||
+    input.critical !== (row.critical === 1)
+  ) {
+    throw error(400, "Schedule and confirmation changes must use the Policy editor");
+  }
+  const submittedSecrets =
+    input.secretRequestHeaders.trim().length > 0 ||
+    (input.requestBodyIsSecret && input.requestBody.length > 0) ||
+    (input.tcpPayloadIsSecret && input.tcpPayload.length > 0);
+  if (!input.replaceSecrets && submittedSecrets) {
+    throw error(400, "Secret values require explicit replacement confirmation");
+  }
+  const existingReferences = parseSecretReferences(row.secret_refs_json);
+  if (!existingReferences) throw error(409, "The stored secret references are invalid");
+  const compiled = await compileServiceConfig(
+    {
+      ...input,
+      name: row.service_name,
+      description: row.service_description,
+    },
+    access.workspaceId,
+    wrappingKey,
+  );
+  if (!input.replaceSecrets) {
+    const publicHeaders =
+      typeof compiled.request.headers === "object" &&
+      compiled.request.headers !== null &&
+      !Array.isArray(compiled.request.headers)
+        ? Object.keys(compiled.request.headers as Readonly<Record<string, unknown>>).map((name) =>
+            name.toLowerCase(),
+          )
+        : [];
+    const secretNames = Object.keys(existingReferences.headers).map((name) => name.toLowerCase());
+    if (publicHeaders.some((name) => secretNames.includes(name))) {
+      throw error(400, "A stored secret header must be replaced before becoming public");
+    }
+    if (existingReferences.body && compiled.request.body !== null) {
+      throw error(400, "A stored secret body must be replaced before becoming public");
+    }
+    if (existingReferences.tcpPayload && compiled.request.payloadBase64 !== null) {
+      throw error(400, "A stored secret TCP payload must be replaced before becoming public");
+    }
+  }
+  const oldSecretIds = referencedSecretIds(row.secret_refs_json);
+  let preservedSecretBytes = 0;
+  if (!input.replaceSecrets && oldSecretIds.length > 0) {
+    const stored = await controlDb
+      .prepare(
+        `SELECT COUNT(*) AS count, COALESCE(SUM(length(wrapped_value)), 0) AS bytes
+         FROM check_secrets WHERE workspace_id = ?
+           AND id IN (${oldSecretIds.map(() => "?").join(", ")})`,
+      )
+      .bind(access.workspaceId, ...oldSecretIds)
+      .first<{ count: number; bytes: number }>();
+    if (!stored || stored.count !== oldSecretIds.length) {
+      throw error(409, "A stored check secret is unavailable");
+    }
+    preservedSecretBytes = stored.bytes;
+  }
+  const finalCompiled: CompiledServiceConfig = input.replaceSecrets
+    ? compiled
+    : { ...compiled, secretRefs: existingReferences, secrets: [] };
+  const configBytes = configurationBytes(finalCompiled, preservedSecretBytes);
+  if (row.executor_kind === "agent" && row.enabled === 1) {
+    if (!row.executor_agent_id) throw error(409, "The Agent executor is unavailable");
+    const capacity = await controlDb
+      .prepare(
+        `SELECT COALESCE(SUM(config_bytes), 0) AS config_bytes FROM check_configs
+         WHERE executor_agent_id = ? AND enabled = 1 AND id != ?`,
+      )
+      .bind(row.executor_agent_id, checkId)
+      .first<{ config_bytes: number }>();
+    if (!capacity || capacity.config_bytes + configBytes > 44 * 1024) {
+      throw error(409, "The Agent configuration has reached its encrypted snapshot size limit");
+    }
+  }
+  const now = Date.now();
+  let assignmentRevision = row.assignment_revision;
+  if (row.executor_kind === "agent") {
+    if (!row.machine_id) throw error(409, "The Agent executor is unavailable");
+    const revision = await controlDb
+      .prepare(
+        `UPDATE machines SET desired_config_revision = desired_config_revision + 1, updated_at = ?
+         WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL
+         RETURNING desired_config_revision AS revision`,
+      )
+      .bind(now, row.machine_id, access.workspaceId)
+      .first<RevisionRow>();
+    if (!revision) throw error(409, "The Agent machine configuration could not be advanced");
+    assignmentRevision = revision.revision;
+  }
+  const statements: D1PreparedStatement[] = [
+    controlDb
+      .prepare(
+        `UPDATE check_configs SET name = ?, request_json = ?, secret_refs_json = ?,
+           config_bytes = ?, assignment_revision = ?, updated_at = ?
+         WHERE id = ? AND service_id = ? AND workspace_id = ?`,
+      )
+      .bind(
+        checkName,
+        JSON.stringify(finalCompiled.request),
+        JSON.stringify(finalCompiled.secretRefs),
+        configBytes,
+        assignmentRevision,
+        now,
+        checkId,
+        serviceId,
+        access.workspaceId,
+      ),
+    controlDb.prepare(`DELETE FROM check_assertions WHERE check_id = ?`).bind(checkId),
+  ];
+  for (const [index, assertion] of finalCompiled.assertions.entries()) {
+    statements.push(
+      controlDb
+        .prepare(
+          `INSERT INTO check_assertions
+            (id, check_id, sort_order, source, operator, selector, expected_json, severity, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(
+          crypto.randomUUID(),
+          checkId,
+          index,
+          assertion.source,
+          assertion.operator,
+          assertion.selector,
+          JSON.stringify(assertion.expected),
+          assertion.severity,
+          now,
+        ),
+    );
+  }
+  if (input.replaceSecrets && oldSecretIds.length > 0) {
+    statements.push(
+      controlDb
+        .prepare(
+          `DELETE FROM check_secrets WHERE workspace_id = ?
+           AND id IN (${oldSecretIds.map(() => "?").join(", ")})`,
+        )
+        .bind(access.workspaceId, ...oldSecretIds),
+    );
+  }
+  for (const secret of finalCompiled.secrets) {
+    statements.push(
+      controlDb
+        .prepare(
+          `INSERT INTO check_secrets
+            (id, workspace_id, name, wrapped_value, wrapping_key_id, nonce, created_at)
+           VALUES (?, ?, ?, ?, 'v1', ?, ?)`,
+        )
+        .bind(secret.id, access.workspaceId, secret.name, secret.wrappedValue, secret.nonce, now),
+    );
+  }
+  statements.push(
+    await prepareAuditStatement(controlDb, {
+      workspaceId: access.workspaceId,
+      actorUserId: userId,
+      action: "service.check.configuration.replace",
+      resourceType: "service",
+      resourceId: serviceId,
+      before: {
+        checkId,
+        checkName: row.name,
+        request: row.request_json,
+        secretCount: oldSecretIds.length,
+        assignmentRevision: row.assignment_revision,
+      },
+      after: {
+        checkId,
+        checkName,
+        request: JSON.stringify(finalCompiled.request),
+        secretCount: referencedSecretIds(JSON.stringify(finalCompiled.secretRefs)).length,
+        assignmentRevision,
+      },
+      now,
+    }),
+  );
+  await controlDb.batch(statements);
 }
 
 function aggregateServiceState(

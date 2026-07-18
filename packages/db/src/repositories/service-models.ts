@@ -34,14 +34,48 @@ export interface CheckRow {
   name: string;
   kind: "http" | "tcp" | "icmp";
   executor_kind: "cloudflare" | "agent";
+  executor_agent_id: string | null;
   enabled: number;
   interval_seconds: number;
   timeout_ms: number;
   retry_count: number;
   critical: number;
   request_json: string;
+  secret_refs_json: string;
   failure_confirmations: number;
   recovery_confirmations: number;
+}
+
+export interface ServiceCheckAssertionEdit {
+  source: "header" | "jsonpath" | "body";
+  operator: "exists" | "equals" | "contains" | "matches" | "type" | "greater_than" | "less_than";
+  selector: string;
+  expected: string;
+  severity: "degraded" | "down";
+}
+
+export interface ServiceCheckEditConfiguration {
+  executorAgentId: string | null;
+  url: string;
+  method: string;
+  expectedStatuses: string;
+  maxRedirects: number;
+  tlsVerify: boolean;
+  degradedAfterMs: number | null;
+  downAfterMs: number | null;
+  maxResponseBytes: number;
+  requestHeaders: string;
+  requestBody: string;
+  hostname: string;
+  serverName: string;
+  port: number | null;
+  useTls: boolean;
+  tcpPayload: string;
+  tcpResponsePrefix: string;
+  assertions: readonly ServiceCheckAssertionEdit[];
+  secretHeaderNames: readonly string[];
+  hasSecretBody: boolean;
+  hasSecretTcpPayload: boolean;
 }
 
 export interface ServiceLatestRow {
@@ -130,6 +164,7 @@ export interface ServiceCheckSummary {
   failureSummary: string | null;
   consecutiveFailures: number;
   consecutiveSuccesses: number;
+  editConfiguration: ServiceCheckEditConfiguration | null;
 }
 
 export interface ServiceCollection {
