@@ -107,11 +107,11 @@ impl Uploader {
         }
         if response
             .content_length()
-            .is_some_and(|length| length as usize > MAX_ENVELOPE_BYTES)
+            .is_some_and(|length| length > MAX_ENVELOPE_BYTES as u64)
         {
             return Err(UploadError::ResponseTooLarge);
         }
-        let body = response.bytes().await?;
+        let body = read_bounded_response(response).await?;
         self.codec.decode_ack(
             &body,
             sequence,
@@ -119,6 +119,27 @@ impl Uploader {
             blake3::hash(&delivery.payload).as_bytes(),
         )
     }
+}
+
+async fn read_bounded_response(mut response: reqwest::Response) -> Result<Vec<u8>, UploadError> {
+    let capacity = response
+        .content_length()
+        .and_then(|length| usize::try_from(length).ok())
+        .unwrap_or_default()
+        .min(MAX_ENVELOPE_BYTES);
+    let mut body = Vec::with_capacity(capacity);
+    while let Some(chunk) = response.chunk().await? {
+        append_response_chunk(&mut body, &chunk)?;
+    }
+    Ok(body)
+}
+
+fn append_response_chunk(body: &mut Vec<u8>, chunk: &[u8]) -> Result<(), UploadError> {
+    if chunk.len() > MAX_ENVELOPE_BYTES.saturating_sub(body.len()) {
+        return Err(UploadError::ResponseTooLarge);
+    }
+    body.extend_from_slice(chunk);
+    Ok(())
 }
 
 impl EnvelopeCodec {
@@ -222,11 +243,11 @@ impl EnvelopeCodec {
 mod tests {
     use alphaping_crypto::{DirectionalKeys, open, seal};
     use alphaping_protocol::{
-        PROTOCOL_VERSION, decode_message, encode_message,
+        MAX_ENVELOPE_BYTES, PROTOCOL_VERSION, decode_message, encode_message,
         v1::{AckStatus, DurableAck, EncryptedEnvelope, EnvelopeHeader},
     };
 
-    use super::{EnvelopeCodec, UploadError, pq_client};
+    use super::{EnvelopeCodec, UploadError, append_response_chunk, pq_client};
 
     #[test]
     fn pq_http_client_accepts_the_preconfigured_rustls_backend() {
@@ -315,5 +336,19 @@ mod tests {
             codec.decode_ack(&response, 4, &report_id, &[0; 32]),
             Err(UploadError::Protocol)
         ));
+    }
+
+    #[test]
+    fn response_chunks_stop_at_the_protocol_limit() {
+        let mut body = Vec::new();
+        append_response_chunk(&mut body, &vec![1; MAX_ENVELOPE_BYTES - 1])
+            .expect("first response chunk");
+        append_response_chunk(&mut body, &[2]).expect("response at exact limit");
+        assert_eq!(body.len(), MAX_ENVELOPE_BYTES);
+        assert!(matches!(
+            append_response_chunk(&mut body, &[3]),
+            Err(UploadError::ResponseTooLarge)
+        ));
+        assert_eq!(body.len(), MAX_ENVELOPE_BYTES);
     }
 }
