@@ -53,6 +53,8 @@ export interface ServiceCheckAgent {
 
 const AGENT_SELECTOR_PAGE_SIZE = 50;
 const AGENT_SELECTOR_MAX_PAGE = 100;
+const MAX_WORKSPACE_SERVICES = 200;
+const MAX_WORKSPACE_CHECKS = 1_000;
 
 export type AddServiceCheckInput = Omit<CreateServiceMonitorInput, "name" | "description"> & {
   checkName: string;
@@ -132,6 +134,64 @@ const AGENT_CAPACITY_CONDITION = `
          AND (? IS NULL OR capacity.id != ?)) + ? <= ${MAX_AGENT_CONFIG_BYTES}
     )
   )`;
+
+function finalWorkspaceMonitorCapacityCondition(
+  workspaceExpression: string,
+  workspaceBinds: readonly unknown[],
+  includeServiceCapacity: boolean,
+): FinalAuthorizationCondition {
+  const serviceCondition = includeServiceCapacity
+    ? `NOT EXISTS (
+        SELECT 1 FROM services service_capacity
+        WHERE service_capacity.workspace_id = ${workspaceExpression}
+          AND service_capacity.deleted_at IS NULL
+        LIMIT 1 OFFSET ${MAX_WORKSPACE_SERVICES - 1}
+      ) AND `
+    : "";
+  return {
+    sql: `${serviceCondition}NOT EXISTS (
+      SELECT 1 FROM check_configs check_capacity
+      JOIN services check_service
+        ON check_service.id = check_capacity.service_id AND check_service.deleted_at IS NULL
+      WHERE check_capacity.workspace_id = ${workspaceExpression}
+      LIMIT 1 OFFSET ${MAX_WORKSPACE_CHECKS - 1}
+    )`,
+    binds: includeServiceCapacity ? [...workspaceBinds, ...workspaceBinds] : workspaceBinds,
+  };
+}
+
+async function assertWorkspaceMonitorCapacity(
+  db: D1Database,
+  workspaceId: string,
+  includeServiceCapacity: boolean,
+): Promise<void> {
+  const capacity = finalWorkspaceMonitorCapacityCondition(
+    "?",
+    [workspaceId],
+    includeServiceCapacity,
+  );
+  const row = await db
+    .prepare(`SELECT CASE WHEN ${capacity.sql} THEN 1 ELSE 0 END AS available`)
+    .bind(...capacity.binds)
+    .first<{ available: number }>();
+  if (row?.available === 1) return;
+  if (includeServiceCapacity) {
+    const serviceAvailable = await db
+      .prepare(
+        `SELECT 1 AS available WHERE NOT EXISTS (
+           SELECT 1 FROM services
+           WHERE workspace_id = ? AND deleted_at IS NULL
+           LIMIT 1 OFFSET ${MAX_WORKSPACE_SERVICES - 1}
+         )`,
+      )
+      .bind(workspaceId)
+      .first<{ available: number }>();
+    if (!serviceAvailable) {
+      throw error(409, `A workspace can monitor at most ${MAX_WORKSPACE_SERVICES} services`);
+    }
+  }
+  throw error(409, `A workspace can configure at most ${MAX_WORKSPACE_CHECKS} checks`);
+}
 
 async function applyServiceStateSyncOrDefer(
   controlDb: D1Database,
@@ -241,6 +301,7 @@ export async function createServiceMonitor(
 ): Promise<{ serviceId: string }> {
   const access = await loadMonitoringAccess(db, workspaceSlug, userId);
   requireAdmin(access);
+  await assertWorkspaceMonitorCapacity(db, access.workspaceId, true);
   const agent =
     input.executorKind === "agent"
       ? await db
@@ -284,13 +345,17 @@ export async function createServiceMonitor(
   const checkId = crypto.randomUUID();
   const now = Date.now();
   const machineAuthorization = agent
-    ? finalAdminCondition(userId, "machines.workspace_id")
+    ? combineFinalAuthorizationConditions(
+        finalAdminCondition(userId, "machines.workspace_id"),
+        finalWorkspaceMonitorCapacityCondition("machines.workspace_id", [], true),
+      )
     : undefined;
+  const creationCapacity = finalWorkspaceMonitorCapacityCondition("?", [access.workspaceId], true);
   const creationAuthorizationSql = `EXISTS (
-    SELECT 1 FROM memberships actor
-    WHERE actor.workspace_id = ? AND actor.user_id = ?
-      AND actor.role = 'admin' AND actor.status = 'active'
-  )`;
+      SELECT 1 FROM memberships actor
+      WHERE actor.workspace_id = ? AND actor.user_id = ?
+        AND actor.role = 'admin' AND actor.status = 'active'
+    ) AND ${creationCapacity.sql}`;
   const mutationIndex = agent ? 1 : 0;
   const statements: D1PreparedStatement[] = [
     ...(agent
@@ -328,6 +393,7 @@ export async function createServiceMonitor(
         now,
         access.workspaceId,
         userId,
+        ...creationCapacity.binds,
       ),
     await prepareAuditStatement(db, {
       workspaceId: access.workspaceId,
@@ -474,7 +540,7 @@ export async function createServiceMonitor(
     throw cause;
   }
   if (results[mutationIndex]?.meta.changes !== 1) {
-    throw error(409, "Workspace access changed; reload and try again");
+    throw error(409, "Workspace access or monitoring capacity changed; reload and try again");
   }
   return { serviceId };
 }
@@ -570,6 +636,7 @@ export async function addServiceCheck(
   if (!service) throw error(404, "Service not found");
   const checkName = input.checkName.trim();
   if (checkName.length < 2 || checkName.length > 80) throw error(400, "Check name is invalid");
+  await assertWorkspaceMonitorCapacity(db, access.workspaceId, false);
   const agent =
     input.executorKind === "agent"
       ? await db
@@ -625,6 +692,11 @@ export async function addServiceCheck(
     [serviceId],
     [access.workspaceId],
   );
+  const capacityAuthorization = finalWorkspaceMonitorCapacityCondition(
+    "?",
+    [access.workspaceId],
+    false,
+  );
   const checkAuthorization = agent
     ? combineFinalAuthorizationConditions(
         serviceAuthorization,
@@ -638,8 +710,9 @@ export async function addServiceCheck(
           [agent.machine_id],
           [access.workspaceId],
         ),
+        capacityAuthorization,
       )
-    : serviceAuthorization;
+    : combineFinalAuthorizationConditions(serviceAuthorization, capacityAuthorization);
   const machineAuthorization = agent
     ? combineFinalAuthorizationConditions(
         finalResourceCapabilityCondition(
@@ -659,6 +732,7 @@ export async function addServiceCheck(
           "machines.id",
           "manage",
         ),
+        finalWorkspaceMonitorCapacityCondition("machines.workspace_id", [], false),
       )
     : undefined;
   const mutationIndex = agent ? 1 : 0;
@@ -803,7 +877,7 @@ export async function addServiceCheck(
     throw cause;
   }
   if (results[mutationIndex]?.meta.changes !== 1) {
-    throw error(409, "Service access changed; reload and try again");
+    throw error(409, "Service access or check capacity changed; reload and try again");
   }
   return { checkId };
 }

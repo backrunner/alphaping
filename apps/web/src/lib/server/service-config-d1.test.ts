@@ -529,6 +529,45 @@ async function seedAgentChecks(count: number, configBytes: number): Promise<void
   await database.batch(statements);
 }
 
+async function seedWorkspaceServices(count: number): Promise<void> {
+  await database
+    .prepare(
+      `WITH RECURSIVE sequence(value) AS (
+         SELECT 1 UNION ALL SELECT value + 1 FROM sequence WHERE value < ?
+       )
+       INSERT INTO services
+         (id, telemetry_pk, workspace_id, name, slug, description, status_rule_json,
+          maintenance_until, created_at, updated_at, deleted_at)
+       SELECT 'capacity-service-' || value, value, 'workspace-1',
+              'Capacity service ' || value, 'capacity-service-' || value, '', '{}',
+              NULL, 1, 1, NULL
+       FROM sequence`,
+    )
+    .bind(count)
+    .run();
+}
+
+async function seedWorkspaceChecks(count: number): Promise<void> {
+  await database
+    .prepare(
+      `WITH RECURSIVE sequence(value) AS (
+         SELECT 1 UNION ALL SELECT value + 1 FROM sequence WHERE value < ?
+       )
+       INSERT INTO check_configs
+         (id, telemetry_pk, workspace_id, service_id, name, kind, executor_kind,
+          executor_agent_id, config_revision, assignment_revision, enabled, interval_seconds,
+          phase_seconds, timeout_ms, retry_count, critical, request_json, secret_refs_json,
+          failure_confirmations, recovery_confirmations, config_bytes, last_claimed_slot,
+          created_at, updated_at)
+       SELECT 'capacity-check-' || value, 1000 + value, 'workspace-1',
+              'capacity-service-1', 'Capacity check ' || value, 'http', 'cloudflare',
+              NULL, 1, 0, 1, 60, value % 60, 5000, 0, 1, '{}', '{}', 2, 2, 512, 0, 1, 1
+       FROM sequence`,
+    )
+    .bind(count)
+    .run();
+}
+
 async function concurrentAgentServiceCreates(): Promise<
   PromiseSettledResult<{ serviceId: string }>[]
 > {
@@ -818,6 +857,78 @@ describe("Agent executor authorization", () => {
     ).resolves.toBeUndefined();
     await expect(
       first<{ count: number }>("SELECT COUNT(*) AS count FROM check_configs WHERE id = 'check-a'"),
+    ).resolves.toEqual({ count: 0 });
+  });
+});
+
+describe("workspace monitoring capacity", () => {
+  const cloudflareInput = {
+    ...input,
+    executorKind: "cloudflare" as const,
+    executorAgentId: "",
+  };
+
+  it("rejects a service that would be hidden beyond the 200-service collection", async () => {
+    await seedWorkspaceServices(200);
+
+    await expect(
+      createServiceMonitor(database, "operations", "user-1", "unused", cloudflareInput),
+    ).rejects.toMatchObject({ status: 409 });
+    await expect(
+      first<{ count: number }>("SELECT COUNT(*) AS count FROM services"),
+    ).resolves.toEqual({ count: 200 });
+    await expect(
+      first<{ value: number }>(
+        "SELECT value FROM telemetry_resource_sequences WHERE kind = 'service'",
+      ),
+    ).resolves.toEqual({ value: 0 });
+  });
+
+  it("rejects a check that would be hidden beyond the 1000-check collection", async () => {
+    await seedWorkspaceServices(1);
+    await seedWorkspaceChecks(1_000);
+
+    await expect(
+      addServiceCheck(database, "operations", "user-1", "unused", "capacity-service-1", {
+        ...cloudflareInput,
+        checkName: "Overflow check",
+      }),
+    ).rejects.toMatchObject({ status: 409 });
+    await expect(
+      first<{ count: number }>("SELECT COUNT(*) AS count FROM check_configs"),
+    ).resolves.toEqual({ count: 1_000 });
+  });
+
+  it("fences a concurrent service create when the final capacity slot is consumed", async () => {
+    await seedWorkspaceServices(199);
+    const paused = pauseNextBatch(database);
+    const pending = createServiceMonitor(paused.db, "operations", "user-1", "unused", input);
+    await paused.reached;
+    await database
+      .prepare(
+        `INSERT INTO services
+          (id, telemetry_pk, workspace_id, name, slug, description, status_rule_json,
+           maintenance_until, created_at, updated_at, deleted_at)
+         VALUES ('capacity-service-200', 200, 'workspace-1', 'Capacity service 200',
+                 'capacity-service-200', '', '{}', NULL, 1, 1, NULL)`,
+      )
+      .run();
+    paused.release();
+
+    await expect(pending).rejects.toMatchObject({ status: 409 });
+    await expect(
+      first<{ count: number }>("SELECT COUNT(*) AS count FROM services"),
+    ).resolves.toEqual({ count: 200 });
+    await expect(
+      first<{ count: number }>("SELECT COUNT(*) AS count FROM check_configs"),
+    ).resolves.toEqual({ count: 0 });
+    await expect(
+      first<{ revision: number }>(
+        "SELECT desired_config_revision AS revision FROM machines WHERE id = 'machine-1'",
+      ),
+    ).resolves.toEqual({ revision: 1 });
+    await expect(
+      first<{ count: number }>("SELECT COUNT(*) AS count FROM audit_logs"),
     ).resolves.toEqual({ count: 0 });
   });
 });

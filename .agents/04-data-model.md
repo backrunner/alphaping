@@ -284,6 +284,8 @@ V1 默认不生成每容器长保留 rollup。七天内原始容器数据由 mac
 - `purge_started_at`，跨 D1 物理清理开始前的恢复 fencing claim
 - `purge_check_cursor`，Retention 已确认清理完 telemetry 的最后一个 check integer PK
 
+V1 的 active collection 护栏为每个 workspace 最多 200 个未删除 service，以及这些 service 下合计 1,000 个 check。创建 service/check 时先执行有界友好校验，并在同一最终 mutation 中用 `NOT EXISTS ... LIMIT 1 OFFSET <limit-1>` 复核，防止并发创建越过上限。软删除 service 的 check 不计 active collection 上限，但仍由 retention 完成物理清理。
+
 ### `service_checks`
 
 - `id`, `workspace_id`, `service_id`

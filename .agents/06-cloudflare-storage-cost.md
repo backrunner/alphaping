@@ -445,6 +445,7 @@ D1 storage overage at 0.75 USD/GB       4.1048 USD/month
 ## 11. 性能和扩展门槛
 
 - `CONTROL_DB` 与 `TELEMETRY_DB` 分库，避免 retention/补报影响登录和配置管理。
+- V1 每个 workspace 最多保留 200 个 active service 和 1,000 个 active-service check；写入路径分别最多读取 200/1,000 条候选来原子复核容量，避免集合查询静默截断和无预算的调度增长。该读取只发生在低频配置 mutation，不进入稳态账本。
 - Dashboard 只在展开图表时查历史，时间范围与 resource ID 始终走主键。
 - Checks Worker 用一个 Cron invocation 执行一分钟内的 due tasks，不为每个 check 创建 Worker request/Queue message。SQL 在 500 行上限前过滤 due task，并用持久化 stable telemetry PK cursor 轮转 central checks；机器离线收敛也用独立 cursor 轮转每批最多 1000 台机器。singleton lease 防止重叠 Cron 并行放大，acquire/release 的保守上界为每月 86,400 D1 writes。
 - 单库持续出现 D1 overloaded、存储达 8 GB 或预测含 margin 的月写入超 40 million 时，启动按 workspace/resource hash 分片评估。分片提升容量和并发，但不会重置账户级 included usage。
