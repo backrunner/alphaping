@@ -1,6 +1,8 @@
 import { error } from "@sveltejs/kit";
 
 import {
+  finalAdminCondition,
+  finalResourceCapabilityCondition,
   loadMonitoringAccess,
   requireAdmin,
   requireResourceCapability,
@@ -227,6 +229,7 @@ export async function createMachine(
   const now = Date.now();
   const expiresAt = now + 15 * 60_000;
   const machineId = crypto.randomUUID();
+  const authorization = finalAdminCondition(userId, "?15");
   const audit = await prepareAuditStatement(db, {
     workspaceId: access.workspaceId,
     actorUserId: userId,
@@ -236,8 +239,9 @@ export async function createMachine(
     before: null,
     after: auditConfiguration(configuration, 1),
     now,
+    onlyIfPreviousStatementChanged: true,
   });
-  await db.batch([
+  const results = await db.batch([
     db
       .prepare(
         `INSERT INTO machines
@@ -245,7 +249,8 @@ export async function createMachine(
            sampling_interval_seconds, report_interval_seconds, offline_after_seconds,
            container_monitoring_enabled, maintenance_until, desired_config_revision,
            created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+         SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?
+         WHERE ${authorization.sql}`,
       )
       .bind(
         machineId,
@@ -262,12 +267,18 @@ export async function createMachine(
         configuration.maintenanceUntil,
         now,
         now,
+        access.workspaceId,
+        ...authorization.binds,
       ),
+    audit,
     db
       .prepare(
         `INSERT INTO agent_enrollment_tokens
           (id, workspace_id, machine_id, token_digest, expires_at, created_by, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+         SELECT ?, ?, ?, ?, ?, ?, ?
+         WHERE EXISTS (
+           SELECT 1 FROM machines created WHERE created.id = ? AND created.workspace_id = ?
+         )`,
       )
       .bind(
         enrollment.tokenId,
@@ -277,23 +288,33 @@ export async function createMachine(
         expiresAt,
         userId,
         now,
+        machineId,
+        access.workspaceId,
       ),
     db
       .prepare(
         `INSERT INTO dashboard_resources
           (dashboard_id, resource_type, resource_id, sort_order, public_override)
-         VALUES (?, 'machine', ?, ?, 'inherit')`,
+         SELECT ?, 'machine', ?, ?, 'inherit'
+         WHERE EXISTS (
+           SELECT 1 FROM machines created WHERE created.id = ? AND created.workspace_id = ?
+         )`,
       )
-      .bind(access.defaultDashboardId, machineId, telemetryPk),
+      .bind(access.defaultDashboardId, machineId, telemetryPk, machineId, access.workspaceId),
     db
       .prepare(
         `INSERT INTO resource_public_policies
           (workspace_id, resource_type, resource_id, effect, projection_profile, updated_at)
-         VALUES (?, 'machine', ?, 'deny', 'summary', ?)`,
+         SELECT ?, 'machine', ?, 'deny', 'summary', ?
+         WHERE EXISTS (
+           SELECT 1 FROM machines created WHERE created.id = ? AND created.workspace_id = ?
+         )`,
       )
-      .bind(access.workspaceId, machineId, now),
-    audit,
+      .bind(access.workspaceId, machineId, now, machineId, access.workspaceId),
   ]);
+  if (results[0]?.meta.changes !== 1) {
+    throw error(409, "Workspace access changed; reload and try again");
+  }
   return { token: enrollment.token, tokenId: enrollment.tokenId, machineId, expiresAt };
 }
 
@@ -344,6 +365,14 @@ export async function updateMachineConfiguration(
     now,
     onlyIfPreviousStatementChanged: true,
   });
+  const authorization = finalResourceCapabilityCondition(
+    access,
+    userId,
+    "machine",
+    "machines.workspace_id",
+    "machines.id",
+    "manage",
+  );
   const [updateResult] = await db.batch([
     db
       .prepare(
@@ -352,7 +381,7 @@ export async function updateMachineConfiguration(
             container_monitoring_enabled = ?, maintenance_until = ?,
             desired_config_revision = desired_config_revision + 1, updated_at = ?
          WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL
-           AND desired_config_revision = ?`,
+           AND desired_config_revision = ? AND ${authorization.sql}`,
       )
       .bind(
         configuration.name,
@@ -368,6 +397,7 @@ export async function updateMachineConfiguration(
         machineId,
         access.workspaceId,
         existing.desired_config_revision,
+        ...authorization.binds,
       ),
     audit,
   ]);
@@ -463,14 +493,16 @@ export async function revokeMachineEnrollmentToken(
     now,
     onlyIfPreviousStatementChanged: true,
   });
+  const authorization = finalAdminCondition(userId, "agent_enrollment_tokens.workspace_id");
   const [updateResult] = await db.batch([
     db
       .prepare(
         `UPDATE agent_enrollment_tokens SET revoked_at = ?
          WHERE id = ? AND workspace_id = ? AND machine_id = ?
-           AND used_at IS NULL AND revoked_at IS NULL`,
+           AND used_at IS NULL AND revoked_at IS NULL
+           AND ${authorization.sql}`,
       )
-      .bind(now, tokenId, access.workspaceId, machineId),
+      .bind(now, tokenId, access.workspaceId, machineId, ...authorization.binds),
     audit,
   ]);
   if (updateResult?.meta.changes !== 1) {
@@ -498,6 +530,7 @@ export async function regenerateMachineEnrollmentToken(
   const enrollment = await enrollmentMaterial(enrollmentPepper);
   const now = Date.now();
   const expiresAt = now + 15 * 60_000;
+  const authorization = finalAdminCondition(userId, "?8");
   const audit = await prepareAuditStatement(db, {
     workspaceId: access.workspaceId,
     actorUserId: userId,
@@ -507,19 +540,18 @@ export async function regenerateMachineEnrollmentToken(
     before: { replacedTokenIds: previous.results.map((token) => token.id) },
     after: { tokenId: enrollment.tokenId, expiresAt },
     now,
+    onlyIfPreviousStatementChanged: true,
   });
-  await db.batch([
-    db
-      .prepare(
-        `UPDATE agent_enrollment_tokens SET revoked_at = ?
-         WHERE workspace_id = ? AND machine_id = ? AND used_at IS NULL AND revoked_at IS NULL`,
-      )
-      .bind(now, access.workspaceId, machineId),
+  const results = await db.batch([
     db
       .prepare(
         `INSERT INTO agent_enrollment_tokens
           (id, workspace_id, machine_id, token_digest, expires_at, created_by, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+         SELECT ?, ?, ?, ?, ?, ?, ? WHERE ${authorization.sql}
+           AND EXISTS (
+             SELECT 1 FROM machines current
+             WHERE current.id = ? AND current.workspace_id = ? AND current.deleted_at IS NULL
+           )`,
       )
       .bind(
         enrollment.tokenId,
@@ -529,9 +561,34 @@ export async function regenerateMachineEnrollmentToken(
         expiresAt,
         userId,
         now,
+        access.workspaceId,
+        ...authorization.binds,
+        machineId,
+        access.workspaceId,
       ),
     audit,
+    db
+      .prepare(
+        `UPDATE agent_enrollment_tokens SET revoked_at = ?
+         WHERE workspace_id = ? AND machine_id = ? AND id != ?
+           AND used_at IS NULL AND revoked_at IS NULL
+           AND EXISTS (
+             SELECT 1 FROM agent_enrollment_tokens created
+             WHERE created.id = ? AND created.workspace_id = ?
+           )`,
+      )
+      .bind(
+        now,
+        access.workspaceId,
+        machineId,
+        enrollment.tokenId,
+        enrollment.tokenId,
+        access.workspaceId,
+      ),
   ]);
+  if (results[0]?.meta.changes !== 1) {
+    throw error(409, "Workspace access changed; reload and try again");
+  }
   return { token: enrollment.token, tokenId: enrollment.tokenId, machineId, expiresAt };
 }
 
@@ -590,13 +647,22 @@ export async function softDeleteResource(
     now,
     onlyIfPreviousStatementChanged: true,
   });
+  const authorization = finalResourceCapabilityCondition(
+    access,
+    userId,
+    type,
+    `${table}.workspace_id`,
+    `${table}.id`,
+    "manage",
+  );
   const [updateResult] = await db.batch([
     db
       .prepare(
         `UPDATE ${table} SET deleted_at = ?, updated_at = ?
-         WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL`,
+         WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL
+           AND ${authorization.sql}`,
       )
-      .bind(now, now, resourceId, access.workspaceId),
+      .bind(now, now, resourceId, access.workspaceId, ...authorization.binds),
     audit,
     ...(type === "service"
       ? [advanceServiceAgentConfigurationsStatement(db, access.workspaceId, resourceId, now)]
@@ -676,13 +742,15 @@ export async function restoreResource(
     now,
     onlyIfPreviousStatementChanged: true,
   });
+  const authorization = finalAdminCondition(userId, `${table}.workspace_id`);
   const [updateResult] = await db.batch([
     db
       .prepare(
         `UPDATE ${table} SET deleted_at = NULL, updated_at = ?
-         WHERE id = ? AND workspace_id = ? AND deleted_at = ? AND purge_started_at IS NULL`,
+         WHERE id = ? AND workspace_id = ? AND deleted_at = ? AND purge_started_at IS NULL
+           AND ${authorization.sql}`,
       )
-      .bind(now, resourceId, access.workspaceId, resource.deleted_at),
+      .bind(now, resourceId, access.workspaceId, resource.deleted_at, ...authorization.binds),
     audit,
     ...(type === "service"
       ? [advanceServiceAgentConfigurationsStatement(db, access.workspaceId, resourceId, now)]

@@ -1,7 +1,7 @@
 import { Miniflare } from "miniflare";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { updateWorkspaceMembership } from "./workspace-access.js";
+import { setMemberResourcePermission, updateWorkspaceMembership } from "./workspace-access.js";
 
 let miniflare: Miniflare;
 let database: D1Database;
@@ -15,6 +15,14 @@ beforeEach(async () => {
   });
   database = await miniflare.getD1Database("CONTROL_DB");
   await database.batch([
+    database.prepare(
+      `CREATE TABLE machines (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        deleted_at INTEGER
+      )`,
+    ),
     database.prepare(
       `CREATE TABLE workspaces (
         id TEXT PRIMARY KEY,
@@ -38,12 +46,15 @@ beforeEach(async () => {
     ),
     database.prepare(
       `CREATE TABLE resource_grants (
+        id TEXT PRIMARY KEY,
         workspace_id TEXT NOT NULL,
         subject_user_id TEXT NOT NULL,
         resource_type TEXT NOT NULL,
         resource_id TEXT NOT NULL,
         capability TEXT NOT NULL,
-        effect TEXT NOT NULL
+        effect TEXT NOT NULL,
+        created_by TEXT NOT NULL,
+        created_at INTEGER NOT NULL
       )`,
     ),
     database.prepare(
@@ -67,8 +78,10 @@ beforeEach(async () => {
     database.prepare(
       `INSERT INTO memberships VALUES
         ('workspace-1', 'admin-a', 'admin', 'active', 1, 1),
-        ('workspace-1', 'admin-b', 'admin', 'active', 1, 1)`,
+        ('workspace-1', 'admin-b', 'admin', 'active', 1, 1),
+        ('workspace-1', 'member-a', 'member', 'active', 1, 1)`,
     ),
+    database.prepare(`INSERT INTO machines VALUES ('machine-1', 'workspace-1', 'Edge', NULL)`),
   ]);
 });
 
@@ -123,6 +136,21 @@ function synchronizeAdministratorCounts(db: D1Database, expectedReads: number): 
   });
 }
 
+function mutateBeforeBatch(db: D1Database, mutation: string): D1Database {
+  return new Proxy(db, {
+    get(target, property) {
+      if (property !== "batch") {
+        const value = Reflect.get(target, property);
+        return typeof value === "function" ? value.bind(target) : value;
+      }
+      return async <T>(statements: D1PreparedStatement[]) => {
+        await target.prepare(mutation).run();
+        return target.batch<T>(statements);
+      };
+    },
+  });
+}
+
 describe("workspace administrator invariant", () => {
   it("prevents concurrent updates from removing every active administrator", async () => {
     const synchronized = synchronizeAdministratorCounts(database, 2);
@@ -155,5 +183,30 @@ describe("workspace administrator invariant", () => {
     await expect(
       database.prepare("SELECT COUNT(*) AS count FROM audit_logs").first<{ count: number }>(),
     ).resolves.toEqual({ count: 1 });
+  });
+});
+
+describe("resource permission authorization", () => {
+  it("rejects a grant update after the actor loses administrator access", async () => {
+    const stale = mutateBeforeBatch(
+      database,
+      `UPDATE memberships SET role = 'member'
+       WHERE workspace_id = 'workspace-1' AND user_id = 'admin-a'`,
+    );
+
+    await expect(
+      setMemberResourcePermission(stale, "operations", "admin-a", {
+        memberId: "member-a",
+        resourceType: "machine",
+        resourceId: "machine-1",
+        permission: "manage",
+      }),
+    ).rejects.toMatchObject({ status: 409 });
+    await expect(
+      database.prepare("SELECT COUNT(*) AS count FROM resource_grants").first<{ count: number }>(),
+    ).resolves.toEqual({ count: 0 });
+    await expect(
+      database.prepare("SELECT COUNT(*) AS count FROM audit_logs").first<{ count: number }>(),
+    ).resolves.toEqual({ count: 0 });
   });
 });

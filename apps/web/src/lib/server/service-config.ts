@@ -13,9 +13,13 @@ import {
   type CreateServiceMonitorInput,
 } from "./service-config-compiler.js";
 import {
+  combineFinalAuthorizationConditions,
+  finalAdminCondition,
+  finalResourceCapabilityCondition,
   loadMonitoringAccess,
   requireAdmin,
   requireResourceCapability,
+  type FinalAuthorizationCondition,
 } from "./monitoring-access.js";
 import { prepareAuditStatement } from "./workspace-admin.js";
 
@@ -183,6 +187,7 @@ function advanceAgentConfigurationStatement(
   now: number,
   capacity?: AgentCapacityInput,
   expectedCheckRevision?: { checkId: string; configRevision: number },
+  authorization?: FinalAuthorizationCondition,
 ): D1PreparedStatement {
   return db
     .prepare(
@@ -197,7 +202,8 @@ function advanceAgentConfigurationStatement(
               )`
            : ""
        }
-       ${capacity ? AGENT_CAPACITY_CONDITION : ""}`,
+       ${capacity ? AGENT_CAPACITY_CONDITION : ""}
+       ${authorization ? `AND ${authorization.sql}` : ""}`,
     )
     .bind(
       now,
@@ -207,6 +213,7 @@ function advanceAgentConfigurationStatement(
         ? [expectedCheckRevision.checkId, workspaceId, expectedCheckRevision.configRevision]
         : []),
       ...(capacity ? agentCapacityBindings(capacity) : []),
+      ...(authorization?.binds ?? []),
     );
 }
 
@@ -273,6 +280,15 @@ export async function createServiceMonitor(
   const serviceId = crypto.randomUUID();
   const checkId = crypto.randomUUID();
   const now = Date.now();
+  const machineAuthorization = agent
+    ? finalAdminCondition(userId, "machines.workspace_id")
+    : undefined;
+  const creationAuthorizationSql = `EXISTS (
+    SELECT 1 FROM memberships actor
+    WHERE actor.workspace_id = ? AND actor.user_id = ?
+      AND actor.role = 'admin' AND actor.status = 'active'
+  )`;
+  const mutationIndex = agent ? 1 : 0;
   const statements: D1PreparedStatement[] = [
     ...(agent
       ? [
@@ -282,6 +298,8 @@ export async function createServiceMonitor(
             agent.machine_id,
             now,
             capacity ?? undefined,
+            undefined,
+            machineAuthorization,
           ),
         ]
       : []),
@@ -290,7 +308,7 @@ export async function createServiceMonitor(
         `INSERT INTO services
         (id, telemetry_pk, workspace_id, name, slug, description, status_rule_json,
          created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE ${creationAuthorizationSql}`,
       )
       .bind(
         serviceId,
@@ -305,7 +323,26 @@ export async function createServiceMonitor(
         }),
         now,
         now,
+        access.workspaceId,
+        userId,
       ),
+    await prepareAuditStatement(db, {
+      workspaceId: access.workspaceId,
+      actorUserId: userId,
+      action: "service.create",
+      resourceType: "service",
+      resourceId: serviceId,
+      before: null,
+      after: {
+        name: input.name,
+        description: input.description,
+        checkId,
+        kind: input.kind,
+        executorKind: input.executorKind,
+      },
+      now,
+      onlyIfPreviousStatementChanged: true,
+    }),
     db
       .prepare(
         `INSERT INTO check_configs
@@ -314,13 +351,17 @@ export async function createServiceMonitor(
          retry_count, critical, request_json, secret_refs_json,
          failure_confirmations, recovery_confirmations,
          config_bytes, last_claimed_slot, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?,
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?,
          CASE WHEN ? IS NULL THEN 0 ELSE (
            SELECT desired_config_revision FROM machines
            WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL
            ${AGENT_CAPACITY_CONDITION}
          ) END,
-         1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+         1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?
+       WHERE EXISTS (
+         SELECT 1 FROM services created
+         WHERE created.id = ? AND created.workspace_id = ? AND created.deleted_at IS NULL
+       )`,
       )
       .bind(
         checkId,
@@ -349,21 +390,29 @@ export async function createServiceMonitor(
         configBytes,
         now,
         now,
+        serviceId,
+        access.workspaceId,
       ),
     db
       .prepare(
         `INSERT INTO dashboard_resources
         (dashboard_id, resource_type, resource_id, sort_order, public_override)
-       VALUES (?, 'service', ?, ?, 'inherit')`,
+       SELECT ?, 'service', ?, ?, 'inherit'
+       WHERE EXISTS (
+         SELECT 1 FROM services created WHERE created.id = ? AND created.workspace_id = ?
+       )`,
       )
-      .bind(access.defaultDashboardId, serviceId, servicePk),
+      .bind(access.defaultDashboardId, serviceId, servicePk, serviceId, access.workspaceId),
     db
       .prepare(
         `INSERT INTO resource_public_policies
         (workspace_id, resource_type, resource_id, effect, projection_profile, updated_at)
-       VALUES (?, 'service', ?, 'deny', 'summary', ?)`,
+       SELECT ?, 'service', ?, 'deny', 'summary', ?
+       WHERE EXISTS (
+         SELECT 1 FROM services created WHERE created.id = ? AND created.workspace_id = ?
+       )`,
       )
-      .bind(access.workspaceId, serviceId, now),
+      .bind(access.workspaceId, serviceId, now, serviceId, access.workspaceId),
   ];
   for (const [index, assertion] of compiled.assertions.entries()) {
     statements.push(
@@ -371,7 +420,10 @@ export async function createServiceMonitor(
         .prepare(
           `INSERT INTO check_assertions
         (id, check_id, sort_order, source, operator, selector, expected_json, severity, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+       WHERE EXISTS (
+         SELECT 1 FROM check_configs created WHERE created.id = ? AND created.workspace_id = ?
+       )`,
         )
         .bind(
           crypto.randomUUID(),
@@ -383,6 +435,8 @@ export async function createServiceMonitor(
           JSON.stringify(assertion.expected),
           assertion.severity,
           now,
+          checkId,
+          access.workspaceId,
         ),
     );
   }
@@ -392,34 +446,32 @@ export async function createServiceMonitor(
         .prepare(
           `INSERT INTO check_secrets
         (id, workspace_id, name, wrapped_value, wrapping_key_id, nonce, created_at)
-       VALUES (?, ?, ?, ?, 'v1', ?, ?)`,
+       SELECT ?, ?, ?, ?, 'v1', ?, ?
+       WHERE EXISTS (
+         SELECT 1 FROM check_configs created WHERE created.id = ? AND created.workspace_id = ?
+       )`,
         )
-        .bind(secret.id, access.workspaceId, secret.name, secret.wrappedValue, secret.nonce, now),
+        .bind(
+          secret.id,
+          access.workspaceId,
+          secret.name,
+          secret.wrappedValue,
+          secret.nonce,
+          now,
+          checkId,
+          access.workspaceId,
+        ),
     );
   }
-  statements.push(
-    await prepareAuditStatement(db, {
-      workspaceId: access.workspaceId,
-      actorUserId: userId,
-      action: "service.create",
-      resourceType: "service",
-      resourceId: serviceId,
-      before: null,
-      after: {
-        name: input.name,
-        description: input.description,
-        checkId,
-        kind: input.kind,
-        executorKind: input.executorKind,
-      },
-      now,
-    }),
-  );
+  let results: D1Result[];
   try {
-    await db.batch(statements);
+    results = await db.batch(statements);
   } catch (cause) {
     if (capacity) await assertAgentCapacity(db, capacity);
     throw cause;
+  }
+  if (results[mutationIndex]?.meta.changes !== 1) {
+    throw error(409, "Workspace access changed; reload and try again");
   }
   return { serviceId };
 }
@@ -518,6 +570,53 @@ export async function addServiceCheck(
   const checkPk = await nextSequence(db, "check");
   const checkId = crypto.randomUUID();
   const now = Date.now();
+  const serviceAuthorization = finalResourceCapabilityCondition(
+    access,
+    userId,
+    "service",
+    "?",
+    "?",
+    "manage",
+    [serviceId],
+    [access.workspaceId],
+  );
+  const checkAuthorization = agent
+    ? combineFinalAuthorizationConditions(
+        serviceAuthorization,
+        finalResourceCapabilityCondition(
+          access,
+          userId,
+          "machine",
+          "?",
+          "?",
+          "manage",
+          [agent.machine_id],
+          [access.workspaceId],
+        ),
+      )
+    : serviceAuthorization;
+  const machineAuthorization = agent
+    ? combineFinalAuthorizationConditions(
+        finalResourceCapabilityCondition(
+          access,
+          userId,
+          "service",
+          "machines.workspace_id",
+          "?",
+          "manage",
+          [serviceId],
+        ),
+        finalResourceCapabilityCondition(
+          access,
+          userId,
+          "machine",
+          "machines.workspace_id",
+          "machines.id",
+          "manage",
+        ),
+      )
+    : undefined;
+  const mutationIndex = agent ? 1 : 0;
   const statements: D1PreparedStatement[] = [
     ...(agent
       ? [
@@ -527,6 +626,8 @@ export async function addServiceCheck(
             agent.machine_id,
             now,
             capacity ?? undefined,
+            undefined,
+            machineAuthorization,
           ),
         ]
       : []),
@@ -538,13 +639,18 @@ export async function addServiceCheck(
            timeout_ms, retry_count, critical, request_json, secret_refs_json,
            failure_confirmations, recovery_confirmations, config_bytes, last_claimed_slot,
            created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?,
+         SELECT ?, ?, ?, ?, ?, ?, ?, ?,
            CASE WHEN ? IS NULL THEN 0 ELSE (
              SELECT desired_config_revision FROM machines
              WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL
              ${AGENT_CAPACITY_CONDITION}
            ) END,
-           1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+           1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?
+         WHERE ${checkAuthorization.sql}
+           AND EXISTS (
+             SELECT 1 FROM services current
+             WHERE current.id = ? AND current.workspace_id = ? AND current.deleted_at IS NULL
+           )`,
       )
       .bind(
         checkId,
@@ -573,41 +679,10 @@ export async function addServiceCheck(
         configBytes,
         now,
         now,
+        ...checkAuthorization.binds,
+        serviceId,
+        access.workspaceId,
       ),
-  ];
-  for (const [index, assertion] of compiled.assertions.entries()) {
-    statements.push(
-      db
-        .prepare(
-          `INSERT INTO check_assertions
-            (id, check_id, sort_order, source, operator, selector, expected_json, severity, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        )
-        .bind(
-          crypto.randomUUID(),
-          checkId,
-          index,
-          assertion.source,
-          assertion.operator,
-          assertion.selector,
-          JSON.stringify(assertion.expected),
-          assertion.severity,
-          now,
-        ),
-    );
-  }
-  for (const secret of compiled.secrets) {
-    statements.push(
-      db
-        .prepare(
-          `INSERT INTO check_secrets
-            (id, workspace_id, name, wrapped_value, wrapping_key_id, nonce, created_at)
-           VALUES (?, ?, ?, ?, 'v1', ?, ?)`,
-        )
-        .bind(secret.id, access.workspaceId, secret.name, secret.wrappedValue, secret.nonce, now),
-    );
-  }
-  statements.push(
     await prepareAuditStatement(db, {
       workspaceId: access.workspaceId,
       actorUserId: userId,
@@ -623,13 +698,67 @@ export async function addServiceCheck(
         critical: input.critical,
       },
       now,
+      onlyIfPreviousStatementChanged: true,
     }),
-  );
+  ];
+  for (const [index, assertion] of compiled.assertions.entries()) {
+    statements.push(
+      db
+        .prepare(
+          `INSERT INTO check_assertions
+            (id, check_id, sort_order, source, operator, selector, expected_json, severity, created_at)
+           SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+           WHERE EXISTS (
+             SELECT 1 FROM check_configs created WHERE created.id = ? AND created.workspace_id = ?
+           )`,
+        )
+        .bind(
+          crypto.randomUUID(),
+          checkId,
+          index,
+          assertion.source,
+          assertion.operator,
+          assertion.selector,
+          JSON.stringify(assertion.expected),
+          assertion.severity,
+          now,
+          checkId,
+          access.workspaceId,
+        ),
+    );
+  }
+  for (const secret of compiled.secrets) {
+    statements.push(
+      db
+        .prepare(
+          `INSERT INTO check_secrets
+            (id, workspace_id, name, wrapped_value, wrapping_key_id, nonce, created_at)
+           SELECT ?, ?, ?, ?, 'v1', ?, ?
+           WHERE EXISTS (
+             SELECT 1 FROM check_configs created WHERE created.id = ? AND created.workspace_id = ?
+           )`,
+        )
+        .bind(
+          secret.id,
+          access.workspaceId,
+          secret.name,
+          secret.wrappedValue,
+          secret.nonce,
+          now,
+          checkId,
+          access.workspaceId,
+        ),
+    );
+  }
+  let results: D1Result[];
   try {
-    await db.batch(statements);
+    results = await db.batch(statements);
   } catch (cause) {
     if (capacity) await assertAgentCapacity(db, capacity);
     throw cause;
+  }
+  if (results[mutationIndex]?.meta.changes !== 1) {
+    throw error(409, "Service access changed; reload and try again");
   }
   return { checkId };
 }
@@ -858,6 +987,49 @@ export async function replaceServiceCheckConfiguration(
     now,
     onlyIfPreviousStatementChanged: true,
   });
+  const serviceAuthorization = finalResourceCapabilityCondition(
+    access,
+    userId,
+    "service",
+    "check_configs.workspace_id",
+    "check_configs.service_id",
+    "manage",
+  );
+  const checkAuthorization = agentMachineId
+    ? combineFinalAuthorizationConditions(
+        serviceAuthorization,
+        finalResourceCapabilityCondition(
+          access,
+          userId,
+          "machine",
+          "check_configs.workspace_id",
+          "?",
+          "manage",
+          [agentMachineId],
+        ),
+      )
+    : serviceAuthorization;
+  const machineAuthorization = agentMachineId
+    ? combineFinalAuthorizationConditions(
+        finalResourceCapabilityCondition(
+          access,
+          userId,
+          "service",
+          "machines.workspace_id",
+          "?",
+          "manage",
+          [serviceId],
+        ),
+        finalResourceCapabilityCondition(
+          access,
+          userId,
+          "machine",
+          "machines.workspace_id",
+          "machines.id",
+          "manage",
+        ),
+      )
+    : undefined;
   const mutationIndex = agentMachineId ? 1 : 0;
   const statements: D1PreparedStatement[] = [
     ...(agentMachineId
@@ -869,6 +1041,7 @@ export async function replaceServiceCheckConfiguration(
             now,
             capacity ?? undefined,
             { checkId, configRevision: row.config_revision },
+            machineAuthorization,
           ),
         ]
       : []),
@@ -881,7 +1054,8 @@ export async function replaceServiceCheckConfiguration(
              WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL
              ${AGENT_CAPACITY_CONDITION}
            ) END, updated_at = ?
-         WHERE id = ? AND service_id = ? AND workspace_id = ? AND config_revision = ?`,
+         WHERE id = ? AND service_id = ? AND workspace_id = ? AND config_revision = ?
+           AND ${checkAuthorization.sql}`,
       )
       .bind(
         checkName,
@@ -899,6 +1073,7 @@ export async function replaceServiceCheckConfiguration(
         serviceId,
         access.workspaceId,
         row.config_revision,
+        ...checkAuthorization.binds,
       ),
     prepareServiceStateSyncJob(controlDb, syncJob, true),
     audit,
@@ -1064,6 +1239,54 @@ export async function updateServiceCheckPolicy(
     critical: row.critical === 1,
   };
   const after = input;
+  const serviceAuthorization = finalResourceCapabilityCondition(
+    access,
+    userId,
+    "service",
+    "check_configs.workspace_id",
+    "check_configs.service_id",
+    "manage",
+  );
+  const checkAuthorization =
+    agentMachineId && input.enabled
+      ? combineFinalAuthorizationConditions(
+          serviceAuthorization,
+          finalResourceCapabilityCondition(
+            access,
+            userId,
+            "machine",
+            "check_configs.workspace_id",
+            "?",
+            "manage",
+            [agentMachineId],
+          ),
+        )
+      : serviceAuthorization;
+  const machineAuthorization = agentMachineId
+    ? combineFinalAuthorizationConditions(
+        finalResourceCapabilityCondition(
+          access,
+          userId,
+          "service",
+          "machines.workspace_id",
+          "?",
+          "manage",
+          [serviceId],
+        ),
+        ...(input.enabled
+          ? [
+              finalResourceCapabilityCondition(
+                access,
+                userId,
+                "machine",
+                "machines.workspace_id",
+                "machines.id",
+                "manage",
+              ),
+            ]
+          : []),
+      )
+    : undefined;
   const mutationIndex = agentMachineId ? 1 : 0;
   const syncJob = createServiceStateSyncJob({
     workspaceId: access.workspaceId,
@@ -1084,6 +1307,8 @@ export async function updateServiceCheckPolicy(
             agentMachineId,
             now,
             capacity ?? undefined,
+            undefined,
+            machineAuthorization,
           ),
         ]
       : []),
@@ -1098,6 +1323,7 @@ export async function updateServiceCheckPolicy(
              ${AGENT_CAPACITY_CONDITION}
            ) END, updated_at = ?
          WHERE id = ? AND service_id = ? AND workspace_id = ? AND enabled = ?
+           AND ${checkAuthorization.sql}
            AND (
              ? = 1 OR EXISTS (
                SELECT 1 FROM check_configs remaining
@@ -1132,6 +1358,7 @@ export async function updateServiceCheckPolicy(
         serviceId,
         access.workspaceId,
         row.enabled,
+        ...checkAuthorization.binds,
         input.enabled ? 1 : 0,
       ),
     await prepareAuditStatement(controlDb, {
@@ -1245,14 +1472,44 @@ export async function deleteServiceCheck(
     now,
     onlyIfPreviousStatementChanged: true,
   });
+  const serviceAuthorization = finalResourceCapabilityCondition(
+    access,
+    userId,
+    "service",
+    "check_configs.workspace_id",
+    "check_configs.service_id",
+    "manage",
+  );
+  const machineAuthorization = agentMachineId
+    ? finalResourceCapabilityCondition(
+        access,
+        userId,
+        "service",
+        "machines.workspace_id",
+        "?",
+        "manage",
+        [serviceId],
+      )
+    : undefined;
   const statements: D1PreparedStatement[] = [
     ...(agentMachineId
-      ? [advanceAgentConfigurationStatement(controlDb, access.workspaceId, agentMachineId, now)]
+      ? [
+          advanceAgentConfigurationStatement(
+            controlDb,
+            access.workspaceId,
+            agentMachineId,
+            now,
+            undefined,
+            undefined,
+            machineAuthorization,
+          ),
+        ]
       : []),
     controlDb
       .prepare(
         `DELETE FROM check_configs
          WHERE id = ? AND service_id = ? AND workspace_id = ?
+           AND ${serviceAuthorization.sql}
            AND EXISTS (
              SELECT 1 FROM check_configs remaining
              WHERE remaining.service_id = check_configs.service_id
@@ -1260,7 +1517,7 @@ export async function deleteServiceCheck(
                AND remaining.id != check_configs.id
            )`,
       )
-      .bind(checkId, serviceId, access.workspaceId),
+      .bind(checkId, serviceId, access.workspaceId, ...serviceAuthorization.binds),
     audit,
     prepareServiceStateSyncJob(controlDb, syncJob, true),
   ];
@@ -1314,35 +1571,63 @@ export async function setServicePublicAccess(
   if (!service) throw error(404, "Service not found");
   if (!dashboard) throw error(409, "The default dashboard is unavailable");
   const now = Date.now();
+  const authorizationSql = `EXISTS (
+    SELECT 1 FROM services current
+    JOIN memberships actor ON actor.workspace_id = current.workspace_id
+    WHERE current.id = ? AND current.workspace_id = ? AND current.deleted_at IS NULL
+      AND actor.user_id = ? AND actor.role = 'admin' AND actor.status = 'active'
+  )`;
   const statements: D1PreparedStatement[] = [
     db
       .prepare(
         `INSERT INTO resource_public_policies
         (workspace_id, resource_type, resource_id, effect, projection_profile, updated_at)
-       VALUES (?, 'service', ?, ?, 'detailed', ?)
+       SELECT ?, 'service', ?, ?, 'detailed', ?
+       WHERE ${authorizationSql}
        ON CONFLICT(workspace_id, resource_type, resource_id) DO UPDATE SET
          effect = excluded.effect, projection_profile = excluded.projection_profile,
          updated_at = excluded.updated_at`,
       )
-      .bind(access.workspaceId, serviceId, isPublic ? "allow" : "deny", now),
+      .bind(
+        access.workspaceId,
+        serviceId,
+        isPublic ? "allow" : "deny",
+        now,
+        serviceId,
+        access.workspaceId,
+        userId,
+      ),
     db
       .prepare(
         `INSERT INTO dashboard_resources
         (dashboard_id, resource_type, resource_id, sort_order, public_override)
-       VALUES (?, 'service', ?, 0, ?)
+       SELECT ?, 'service', ?, 0, ?
+       WHERE ${authorizationSql}
        ON CONFLICT(dashboard_id, resource_type, resource_id) DO UPDATE SET
          public_override = excluded.public_override`,
       )
-      .bind(access.defaultDashboardId, serviceId, isPublic ? "allow" : "deny"),
+      .bind(
+        access.defaultDashboardId,
+        serviceId,
+        isPublic ? "allow" : "deny",
+        serviceId,
+        access.workspaceId,
+        userId,
+      ),
   ];
   if (isPublic) {
     statements.push(
       db
         .prepare(
           `UPDATE dashboards SET visibility = 'public', updated_at = ?
-       WHERE id = ? AND workspace_id = ?`,
+       WHERE id = ? AND workspace_id = ? AND ${finalAdminCondition(userId, "dashboards.workspace_id").sql}`,
         )
-        .bind(now, access.defaultDashboardId, access.workspaceId),
+        .bind(
+          now,
+          access.defaultDashboardId,
+          access.workspaceId,
+          ...finalAdminCondition(userId, "dashboards.workspace_id").binds,
+        ),
     );
   }
   statements.push(
@@ -1363,9 +1648,12 @@ export async function setServicePublicAccess(
         dashboardVisibility: isPublic ? "public" : dashboard.visibility,
       },
       now,
+      onlyIfPreviousStatementChanged: true,
     }),
   );
-  await db.batch(statements);
+  const results = await db.batch(statements);
+  if (results[0]?.meta.changes !== 1)
+    throw error(409, "Public access changed; reload and try again");
 }
 
 export async function setServiceMaintenance(
@@ -1395,6 +1683,14 @@ export async function setServiceMaintenance(
     throw error(400, "Maintenance end time is invalid");
   }
   const now = Date.now();
+  const authorization = finalResourceCapabilityCondition(
+    access,
+    userId,
+    "service",
+    "services.workspace_id",
+    "services.id",
+    "manage",
+  );
   const syncJob = createServiceStateSyncJob(
     {
       workspaceId: access.workspaceId,
@@ -1426,9 +1722,10 @@ export async function setServiceMaintenance(
     controlDb
       .prepare(
         `UPDATE services SET maintenance_until = ?, updated_at = ?
-         WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL`,
+         WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL
+           AND ${authorization.sql}`,
       )
-      .bind(maintenanceUntil, now, serviceId, access.workspaceId),
+      .bind(maintenanceUntil, now, serviceId, access.workspaceId, ...authorization.binds),
     audit,
     prepareServiceStateSyncJob(controlDb, syncJob, true),
   ]);

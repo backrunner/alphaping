@@ -2,6 +2,7 @@ import { hashPassword } from "better-auth/crypto";
 import { error } from "@sveltejs/kit";
 
 import { maskEmail, prepareAuditStatement, requireWorkspaceAdmin } from "./workspace-admin.js";
+import { finalAdminCondition } from "./monitoring-access.js";
 
 interface InvitationRecord {
   id: string;
@@ -128,6 +129,7 @@ export async function createWorkspaceInvitation(
   const id = crypto.randomUUID();
   const now = Date.now();
   const expiresAt = now + 7 * 24 * 60 * 60_000;
+  const authorization = finalAdminCondition(actorUserId, "memberships.workspace_id");
   const audit = await prepareAuditStatement(db, {
     workspaceId: access.workspaceId,
     actorUserId,
@@ -137,23 +139,56 @@ export async function createWorkspaceInvitation(
     before: null,
     after: { role: input.role, expiresAt },
     now,
+    onlyIfPreviousStatementChanged: true,
   });
-  await db.batch([
+  const results = await db.batch([
+    db
+      .prepare(
+        `UPDATE memberships SET updated_at = updated_at
+         WHERE workspace_id = ? AND user_id = ?
+           AND role = 'admin' AND status = 'active' AND ${authorization.sql}`,
+      )
+      .bind(access.workspaceId, actorUserId, ...authorization.binds),
+    audit,
     db
       .prepare(
         `UPDATE workspace_invitations SET revoked_at = ?
-         WHERE workspace_id = ? AND email = ? AND accepted_at IS NULL AND revoked_at IS NULL`,
+         WHERE workspace_id = ? AND email = ?
+           AND accepted_at IS NULL AND revoked_at IS NULL
+           AND EXISTS (
+             SELECT 1 FROM memberships actor
+             WHERE actor.workspace_id = workspace_invitations.workspace_id
+               AND actor.user_id = ? AND actor.role = 'admin' AND actor.status = 'active'
+           )`,
       )
-      .bind(now, access.workspaceId, email),
+      .bind(now, access.workspaceId, email, actorUserId),
     db
       .prepare(
         `INSERT INTO workspace_invitations
           (id, workspace_id, email, role, token_digest, expires_at, created_by, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+         SELECT ?, ?, ?, ?, ?, ?, ?, ?
+         WHERE EXISTS (
+           SELECT 1 FROM memberships actor
+           WHERE actor.workspace_id = ? AND actor.user_id = ?
+             AND actor.role = 'admin' AND actor.status = 'active'
+         )`,
       )
-      .bind(id, access.workspaceId, email, input.role, tokenDigest, expiresAt, actorUserId, now),
-    audit,
+      .bind(
+        id,
+        access.workspaceId,
+        email,
+        input.role,
+        tokenDigest,
+        expiresAt,
+        actorUserId,
+        now,
+        access.workspaceId,
+        actorUserId,
+      ),
   ]);
+  if (results[0]?.meta.changes !== 1) {
+    throw error(409, "Workspace access changed; reload and try again");
+  }
   return { id, token, expiresAt };
 }
 
@@ -173,13 +208,15 @@ export async function revokeWorkspaceInvitation(
     .first<{ id: string; role: "admin" | "member"; expires_at: number }>();
   if (!invitation) throw error(404, "Invitation not found");
   const now = Date.now();
+  const authorization = finalAdminCondition(actorUserId, "workspace_invitations.workspace_id");
   const [updateResult] = await db.batch([
     db
       .prepare(
         `UPDATE workspace_invitations SET revoked_at = ?
-         WHERE id = ? AND workspace_id = ? AND accepted_at IS NULL AND revoked_at IS NULL`,
+         WHERE id = ? AND workspace_id = ? AND accepted_at IS NULL AND revoked_at IS NULL
+           AND ${authorization.sql}`,
       )
-      .bind(now, invitationId, access.workspaceId),
+      .bind(now, invitationId, access.workspaceId, ...authorization.binds),
     await prepareAuditStatement(db, {
       workspaceId: access.workspaceId,
       actorUserId,

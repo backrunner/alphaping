@@ -1,7 +1,14 @@
 import { canAccessIncident, canAccessResource } from "@alphaping/authz";
 import { error } from "@sveltejs/kit";
 
-import { loadMonitoringAccess, requireAdmin } from "./monitoring-access.js";
+import {
+  finalAdminCondition,
+  finalResourceCapabilityCondition,
+  loadMonitoringAccess,
+  requireAdmin,
+  type FinalAuthorizationCondition,
+  type MonitoringAccess,
+} from "./monitoring-access.js";
 
 type IncidentState = "investigating" | "identified" | "monitoring" | "resolved";
 type IncidentSeverity = "minor" | "major" | "critical";
@@ -20,6 +27,68 @@ function validText(value: string, minimum: number, maximum: number, label: strin
     throw error(400, `${label} must contain between ${minimum} and ${maximum} characters`);
   }
   return trimmed;
+}
+
+function finalServiceSetManageCondition(
+  access: MonitoringAccess,
+  actorUserId: string,
+  serviceIds: readonly string[],
+): FinalAuthorizationCondition {
+  const servicePlaceholders = placeholders(serviceIds.length);
+  if (access.role === "admin") {
+    return {
+      sql: `EXISTS (
+        SELECT 1 FROM memberships actor
+        WHERE actor.workspace_id = ? AND actor.user_id = ?
+          AND actor.role = 'admin' AND actor.status = 'active'
+      )
+      AND (
+        SELECT COUNT(*) FROM services current
+        WHERE current.workspace_id = ? AND current.deleted_at IS NULL
+          AND current.id IN (${servicePlaceholders})
+      ) = ?`,
+      binds: [
+        access.workspaceId,
+        actorUserId,
+        access.workspaceId,
+        ...serviceIds,
+        serviceIds.length,
+      ],
+    };
+  }
+  return {
+    sql: `EXISTS (
+      SELECT 1 FROM memberships actor
+      WHERE actor.workspace_id = ? AND actor.user_id = ?
+        AND actor.role = 'member' AND actor.status = 'active'
+    )
+    AND (
+      SELECT COUNT(*) FROM services current
+      WHERE current.workspace_id = ? AND current.deleted_at IS NULL
+        AND current.id IN (${servicePlaceholders})
+        AND EXISTS (
+          SELECT 1 FROM resource_grants allowed
+          WHERE allowed.workspace_id = current.workspace_id AND allowed.subject_user_id = ?
+            AND allowed.resource_type = 'service' AND allowed.resource_id = current.id
+            AND allowed.capability = 'manage' AND allowed.effect = 'allow'
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM resource_grants denied
+          WHERE denied.workspace_id = current.workspace_id AND denied.subject_user_id = ?
+            AND denied.resource_type = 'service' AND denied.resource_id = current.id
+            AND denied.capability IN ('view', 'manage') AND denied.effect = 'deny'
+        )
+    ) = ?`,
+    binds: [
+      access.workspaceId,
+      actorUserId,
+      access.workspaceId,
+      ...serviceIds,
+      actorUserId,
+      actorUserId,
+      serviceIds.length,
+    ],
+  };
 }
 
 export async function createIncident(
@@ -71,13 +140,15 @@ export async function createIncident(
     throw error(404, "Service not found");
   }
   const incidentId = crypto.randomUUID();
+  const authorization = finalServiceSetManageCondition(access, userId, serviceIds);
   const statements: D1PreparedStatement[] = [
     db
       .prepare(
         `INSERT INTO incidents
         (id, workspace_id, title, summary, severity, state, starts_at,
          created_by, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'investigating', ?, ?, ?, ?)`,
+       SELECT ?, ?, ?, ?, ?, 'investigating', ?, ?, ?, ?
+       WHERE ${authorization.sql}`,
       )
       .bind(
         incidentId,
@@ -89,26 +160,45 @@ export async function createIncident(
         userId,
         now,
         now,
+        ...authorization.binds,
       ),
     db
       .prepare(
         `INSERT INTO incident_updates
         (id, incident_id, state, body, published_at, created_by, created_at)
-       VALUES (?, ?, 'investigating', ?, ?, ?, ?)`,
+       SELECT ?, ?, 'investigating', ?, ?, ?, ?
+       WHERE EXISTS (
+         SELECT 1 FROM incidents created WHERE created.id = ? AND created.workspace_id = ?
+       )`,
       )
-      .bind(crypto.randomUUID(), incidentId, summary, now, userId, now),
+      .bind(
+        crypto.randomUUID(),
+        incidentId,
+        summary,
+        now,
+        userId,
+        now,
+        incidentId,
+        access.workspaceId,
+      ),
   ];
   for (const serviceId of serviceIds) {
     statements.push(
       db
         .prepare(
           `INSERT INTO incident_resources (incident_id, resource_type, resource_id, impact)
-       VALUES (?, 'service', ?, ?)`,
+       SELECT ?, 'service', ?, ?
+       WHERE EXISTS (
+         SELECT 1 FROM incidents created WHERE created.id = ? AND created.workspace_id = ?
+       )`,
         )
-        .bind(incidentId, serviceId, input.impact),
+        .bind(incidentId, serviceId, input.impact, incidentId, access.workspaceId),
     );
   }
-  await db.batch(statements);
+  const results = await db.batch(statements);
+  if (results[0]?.meta.changes !== 1) {
+    throw error(409, "Incident access changed; reload and try again");
+  }
   return { incidentId };
 }
 
@@ -143,23 +233,38 @@ export async function appendIncidentUpdate(
       ),
   );
   if (!canManageIncident) throw error(404, "Incident not found");
+  const directIncidentAccess = canAccessIncident(
+    access.role,
+    access.grants,
+    incidentId,
+    "manage",
+    false,
+  );
   if (!(["investigating", "identified", "monitoring", "resolved"] as const).includes(input.state)) {
     throw error(400, "Incident state is invalid");
   }
   const body = validText(input.body, 2, 4_000, "Incident update");
   const now = Date.now();
-  await db.batch([
-    db
-      .prepare(
-        `INSERT INTO incident_updates
-        (id, incident_id, state, body, published_at, created_by, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  const authorization = directIncidentAccess
+    ? finalResourceCapabilityCondition(
+        access,
+        userId,
+        "incident",
+        "incidents.workspace_id",
+        "incidents.id",
+        "manage",
       )
-      .bind(crypto.randomUUID(), incidentId, input.state, body, now, userId, now),
+    : finalServiceSetManageCondition(
+        access,
+        userId,
+        resources.results.map((resource) => resource.resource_id),
+      );
+  const results = await db.batch([
     db
       .prepare(
         `UPDATE incidents SET state = ?, resolved_at = ?, updated_at = ?
-       WHERE id = ? AND workspace_id = ?`,
+       WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL
+         AND ${authorization.sql}`,
       )
       .bind(
         input.state,
@@ -167,8 +272,19 @@ export async function appendIncidentUpdate(
         now,
         incidentId,
         access.workspaceId,
+        ...authorization.binds,
       ),
+    db
+      .prepare(
+        `INSERT INTO incident_updates
+        (id, incident_id, state, body, published_at, created_by, created_at)
+       SELECT ?, ?, ?, ?, ?, ?, ? WHERE changes() = 1`,
+      )
+      .bind(crypto.randomUUID(), incidentId, input.state, body, now, userId, now),
   ]);
+  if (results[0]?.meta.changes !== 1) {
+    throw error(409, "Incident access changed; reload and try again");
+  }
 }
 
 export async function createAnnouncement(
@@ -201,12 +317,13 @@ export async function createAnnouncement(
     throw error(400, "Announcement expiry must be after its start and within one year");
   }
   const now = Date.now();
-  await db
+  const authorization = finalAdminCondition(userId, "?12");
+  const result = await db
     .prepare(
       `INSERT INTO announcements
       (id, workspace_id, title, body, severity, visibility, starts_at, expires_at,
        created_by, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE ${authorization.sql}`,
     )
     .bind(
       crypto.randomUUID(),
@@ -220,6 +337,11 @@ export async function createAnnouncement(
       userId,
       now,
       now,
+      access.workspaceId,
+      ...authorization.binds,
     )
     .run();
+  if (result.meta.changes !== 1) {
+    throw error(409, "Workspace access changed; reload and try again");
+  }
 }

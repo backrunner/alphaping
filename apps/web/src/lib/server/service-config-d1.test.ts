@@ -89,6 +89,24 @@ beforeEach(async () => {
   telemetryDatabase = await miniflare.getD1Database("TELEMETRY_DB");
   await database.batch([
     database.prepare(
+      `CREATE TABLE memberships (
+        workspace_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        status TEXT NOT NULL
+      )`,
+    ),
+    database.prepare(
+      `CREATE TABLE resource_grants (
+        workspace_id TEXT NOT NULL,
+        subject_user_id TEXT NOT NULL,
+        resource_type TEXT NOT NULL,
+        resource_id TEXT NOT NULL,
+        capability TEXT NOT NULL,
+        effect TEXT NOT NULL
+      )`,
+    ),
+    database.prepare(
       `CREATE TABLE telemetry_resource_sequences (
         kind TEXT PRIMARY KEY,
         value INTEGER NOT NULL
@@ -252,6 +270,7 @@ beforeEach(async () => {
     database.prepare(
       "INSERT INTO machines VALUES ('machine-1', 'workspace-1', 'Edge node', 1, 1, NULL)",
     ),
+    database.prepare("INSERT INTO memberships VALUES ('workspace-1', 'user-1', 'admin', 'active')"),
     database.prepare("INSERT INTO agents VALUES ('agent-1', 'machine-1', 'workspace-1', 'active')"),
   ]);
   await telemetryDatabase.batch([
@@ -317,7 +336,7 @@ async function seedServiceChecks(): Promise<void> {
   ]);
 }
 
-function setMemberAccess(machineCapability: "view" | "manage"): void {
+async function setMemberAccess(machineCapability: "view" | "manage"): Promise<void> {
   vi.mocked(loadMonitoringAccess).mockResolvedValue({
     workspaceId: "workspace-1",
     workspacePk: 1,
@@ -339,6 +358,22 @@ function setMemberAccess(machineCapability: "view" | "manage"): void {
       },
     ],
   });
+  await database.batch([
+    database.prepare(
+      `UPDATE memberships SET role = 'member' WHERE workspace_id = 'workspace-1' AND user_id = 'user-1'`,
+    ),
+    database.prepare("DELETE FROM resource_grants WHERE subject_user_id = 'user-1'"),
+    database.prepare(
+      `INSERT INTO resource_grants VALUES
+        ('workspace-1', 'user-1', 'service', 'service-1', 'manage', 'allow')`,
+    ),
+    database
+      .prepare(
+        `INSERT INTO resource_grants VALUES
+          ('workspace-1', 'user-1', 'machine', 'machine-1', ?, 'allow')`,
+      )
+      .bind(machineCapability),
+  ]);
 }
 
 async function assignCheckToAgent(checkId: string, enabled = true): Promise<void> {
@@ -513,13 +548,13 @@ async function concurrentAgentServiceCreates(): Promise<
 describe("Agent executor authorization", () => {
   it("lists only Agents whose machines the member can manage", async () => {
     await seedServiceChecks();
-    setMemberAccess("view");
+    await setMemberAccess("view");
 
     await expect(
       listServiceCheckAgents(database, "operations", "user-1", "service-1"),
     ).resolves.toEqual([]);
 
-    setMemberAccess("manage");
+    await setMemberAccess("manage");
     await expect(
       listServiceCheckAgents(database, "operations", "user-1", "service-1"),
     ).resolves.toEqual([{ id: "agent-1", name: "Edge node" }]);
@@ -527,7 +562,7 @@ describe("Agent executor authorization", () => {
 
   it("requires machine manage permission before adding an Agent check", async () => {
     await seedServiceChecks();
-    setMemberAccess("view");
+    await setMemberAccess("view");
 
     await expect(
       addServiceCheck(database, "operations", "user-1", "unused", "service-1", {
@@ -544,7 +579,7 @@ describe("Agent executor authorization", () => {
       ),
     ).resolves.toEqual({ revision: 1 });
 
-    setMemberAccess("manage");
+    await setMemberAccess("manage");
     await expect(
       addServiceCheck(database, "operations", "user-1", "unused", "service-1", {
         ...input,
@@ -558,10 +593,41 @@ describe("Agent executor authorization", () => {
     ).resolves.toEqual({ revision: 2 });
   });
 
+  it("rejects an Agent check after its machine manage grant is revoked", async () => {
+    await seedServiceChecks();
+    await setMemberAccess("manage");
+    const paused = pauseNextBatch(database);
+    const pending = addServiceCheck(paused.db, "operations", "user-1", "unused", "service-1", {
+      ...input,
+      checkName: "Private endpoint",
+    });
+    await paused.reached;
+    await database
+      .prepare(
+        `DELETE FROM resource_grants
+         WHERE subject_user_id = 'user-1' AND resource_type = 'machine'`,
+      )
+      .run();
+    paused.release();
+
+    await expect(pending).rejects.toMatchObject({ status: 409 });
+    await expect(
+      first<{ count: number }>("SELECT COUNT(*) AS count FROM check_configs"),
+    ).resolves.toEqual({ count: 2 });
+    await expect(
+      first<{ revision: number }>(
+        "SELECT desired_config_revision AS revision FROM machines WHERE id = 'machine-1'",
+      ),
+    ).resolves.toEqual({ revision: 1 });
+    await expect(
+      first<{ count: number }>("SELECT COUNT(*) AS count FROM audit_logs"),
+    ).resolves.toEqual({ count: 0 });
+  });
+
   it("requires machine manage permission before replacing an Agent target", async () => {
     await seedServiceChecks();
     await assignCheckToAgent("check-a");
-    setMemberAccess("view");
+    await setMemberAccess("view");
 
     await expect(
       replaceServiceCheckConfiguration(
@@ -585,7 +651,7 @@ describe("Agent executor authorization", () => {
   it("requires machine manage permission for enabled policy changes but permits disabling", async () => {
     await seedServiceChecks();
     await assignCheckToAgent("check-a");
-    setMemberAccess("view");
+    await setMemberAccess("view");
     const policy = {
       enabled: true,
       intervalSeconds: 30,
@@ -630,7 +696,7 @@ describe("Agent executor authorization", () => {
     await seedServiceChecks();
     await assignCheckToAgent("check-a");
     await database.prepare("UPDATE agents SET status = 'revoked' WHERE id = 'agent-1'").run();
-    setMemberAccess("manage");
+    await setMemberAccess("manage");
     const policy = {
       enabled: true,
       intervalSeconds: 60,
@@ -685,6 +751,32 @@ describe("Agent executor authorization", () => {
 });
 
 describe("Agent check configuration revision", () => {
+  it("rejects service creation after the actor loses administrator access", async () => {
+    const paused = pauseNextBatch(database);
+    const pending = createServiceMonitor(paused.db, "operations", "user-1", "unused", input);
+    await paused.reached;
+    await database
+      .prepare(
+        `UPDATE memberships SET role = 'member'
+         WHERE workspace_id = 'workspace-1' AND user_id = 'user-1'`,
+      )
+      .run();
+    paused.release();
+
+    await expect(pending).rejects.toMatchObject({ status: 409 });
+    await expect(
+      first<{ count: number }>("SELECT COUNT(*) AS count FROM services"),
+    ).resolves.toEqual({ count: 0 });
+    await expect(
+      first<{ revision: number }>(
+        "SELECT desired_config_revision AS revision FROM machines WHERE id = 'machine-1'",
+      ),
+    ).resolves.toEqual({ revision: 1 });
+    await expect(
+      first<{ count: number }>("SELECT COUNT(*) AS count FROM audit_logs"),
+    ).resolves.toEqual({ count: 0 });
+  });
+
   it("commits the machine and assigned check revision together", async () => {
     await expect(
       createServiceMonitor(database, "operations", "user-1", "unused", input),
@@ -768,10 +860,54 @@ describe("Agent check configuration revision", () => {
 });
 
 describe("service check invariants", () => {
+  it("rejects a policy update after the actor loses service manage access", async () => {
+    await seedServiceChecks();
+    await setMemberAccess("manage");
+    const paused = pauseNextBatch(database);
+    const pending = updateServiceCheckPolicy(
+      paused.db,
+      telemetryDatabase,
+      "operations",
+      "user-1",
+      "service-1",
+      "check-a",
+      {
+        enabled: true,
+        intervalSeconds: 120,
+        timeoutMs: 5_000,
+        retryCount: 0,
+        failureConfirmations: 2,
+        recoveryConfirmations: 2,
+        critical: true,
+      },
+    );
+    await paused.reached;
+    await database
+      .prepare(
+        `DELETE FROM resource_grants
+         WHERE subject_user_id = 'user-1' AND resource_type = 'service'`,
+      )
+      .run();
+    paused.release();
+
+    await expect(pending).rejects.toMatchObject({ status: 409 });
+    await expect(
+      first<{ interval_seconds: number }>(
+        "SELECT interval_seconds FROM check_configs WHERE id = 'check-a'",
+      ),
+    ).resolves.toEqual({ interval_seconds: 60 });
+    await expect(
+      first<{ count: number }>("SELECT COUNT(*) AS count FROM service_state_sync_jobs"),
+    ).resolves.toEqual({ count: 0 });
+    await expect(
+      first<{ count: number }>("SELECT COUNT(*) AS count FROM audit_logs"),
+    ).resolves.toEqual({ count: 0 });
+  });
+
   it("rejects a stale target replacement without mixing its assertions or secrets", async () => {
     await seedServiceChecks();
     await assignCheckToAgent("check-a");
-    setMemberAccess("manage");
+    await setMemberAccess("manage");
     const oldReferences = {
       headers: { authorization: "secret-old" },
       body: null,
@@ -1007,6 +1143,38 @@ describe("service check invariants", () => {
 });
 
 describe("service telemetry synchronization", () => {
+  it("rejects maintenance after the actor loses service manage access", async () => {
+    await seedServiceChecks();
+    await setMemberAccess("manage");
+    const paused = pauseNextBatch(database);
+    const pending = setServiceMaintenance(
+      paused.db,
+      telemetryDatabase,
+      "operations",
+      "user-1",
+      "service-1",
+      Date.now() + 60_000,
+    );
+    await paused.reached;
+    await database
+      .prepare(
+        `DELETE FROM resource_grants
+         WHERE subject_user_id = 'user-1' AND resource_type = 'service'`,
+      )
+      .run();
+    paused.release();
+
+    await expect(pending).rejects.toMatchObject({ status: 409 });
+    await expect(
+      first<{ maintenance_until: number | null }>(
+        "SELECT maintenance_until FROM services WHERE id = 'service-1'",
+      ),
+    ).resolves.toEqual({ maintenance_until: null });
+    await expect(
+      first<{ count: number }>("SELECT COUNT(*) AS count FROM service_state_sync_jobs"),
+    ).resolves.toEqual({ count: 0 });
+  });
+
   it("increments a replaced central configuration and invalidates its old latest", async () => {
     await seedServiceChecks();
     await telemetryDatabase.batch([
@@ -1169,5 +1337,41 @@ describe("service public access persistence", () => {
     await expect(
       first<{ count: number }>("SELECT COUNT(*) AS count FROM audit_logs"),
     ).resolves.toEqual({ count: 1 });
+  });
+
+  it("rejects a public access update after the actor loses administrator access", async () => {
+    await database.batch([
+      database.prepare("INSERT INTO workspaces VALUES ('workspace-1', 1, NULL)"),
+      database.prepare(
+        `INSERT INTO services
+          (id, telemetry_pk, workspace_id, name, slug, description, status_rule_json,
+           maintenance_until, created_at, updated_at, deleted_at)
+         VALUES ('service-1', 10, 'workspace-1', 'API', 'api', '', '{}', NULL, 1, 1, NULL)`,
+      ),
+      database.prepare(
+        "INSERT INTO dashboards VALUES ('dashboard-1', 'workspace-1', 'private', 1)",
+      ),
+    ]);
+    const paused = pauseNextBatch(database);
+    const pending = setServicePublicAccess(paused.db, "operations", "user-1", "service-1", true);
+    await paused.reached;
+    await database
+      .prepare(
+        `UPDATE memberships SET role = 'member'
+         WHERE workspace_id = 'workspace-1' AND user_id = 'user-1'`,
+      )
+      .run();
+    paused.release();
+
+    await expect(pending).rejects.toMatchObject({ status: 409 });
+    await expect(
+      first<{ count: number }>("SELECT COUNT(*) AS count FROM resource_public_policies"),
+    ).resolves.toEqual({ count: 0 });
+    await expect(
+      first<{ visibility: string }>("SELECT visibility FROM dashboards WHERE id = 'dashboard-1'"),
+    ).resolves.toEqual({ visibility: "private" });
+    await expect(
+      first<{ count: number }>("SELECT COUNT(*) AS count FROM audit_logs"),
+    ).resolves.toEqual({ count: 0 });
   });
 });

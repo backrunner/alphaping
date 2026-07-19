@@ -1,14 +1,25 @@
 import { Miniflare } from "miniflare";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("./monitoring-access.js", () => ({
-  loadMonitoringAccess: vi.fn(async () => ({ workspaceId: "workspace-1" })),
-  requireAdmin: vi.fn(),
-  requireResourceCapability: vi.fn(),
-}));
+vi.mock("./monitoring-access.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./monitoring-access.js")>();
+  return {
+    ...actual,
+    loadMonitoringAccess: vi.fn(async () => ({
+      workspaceId: "workspace-1",
+      role: "admin",
+      grants: [],
+    })),
+  };
+});
 
-import { restoreResource, revokeMachineEnrollmentToken, softDeleteResource } from "./resources.js";
-import { revokeWorkspaceInvitation } from "./workspace-invitations.js";
+import {
+  regenerateMachineEnrollmentToken,
+  restoreResource,
+  revokeMachineEnrollmentToken,
+  softDeleteResource,
+} from "./resources.js";
+import { createWorkspaceInvitation, revokeWorkspaceInvitation } from "./workspace-invitations.js";
 import { restoreWorkspace, softDeleteWorkspace } from "./workspace-lifecycle.js";
 
 let miniflare: Miniflare;
@@ -24,6 +35,22 @@ beforeEach(async () => {
   database = await miniflare.getD1Database("CONTROL_DB");
   await database.batch([
     database.prepare(
+      `CREATE TABLE user (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL
+      )`,
+    ),
+    database.prepare(
+      `CREATE TABLE resource_grants (
+        workspace_id TEXT NOT NULL,
+        subject_user_id TEXT NOT NULL,
+        resource_type TEXT NOT NULL,
+        resource_id TEXT NOT NULL,
+        capability TEXT NOT NULL,
+        effect TEXT NOT NULL
+      )`,
+    ),
+    database.prepare(
       `CREATE TABLE workspaces (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
@@ -38,7 +65,8 @@ beforeEach(async () => {
         workspace_id TEXT NOT NULL,
         user_id TEXT NOT NULL,
         role TEXT NOT NULL,
-        status TEXT NOT NULL
+        status TEXT NOT NULL,
+        updated_at INTEGER NOT NULL DEFAULT 1
       )`,
     ),
     database.prepare(
@@ -61,10 +89,14 @@ beforeEach(async () => {
       `CREATE TABLE workspace_invitations (
         id TEXT PRIMARY KEY,
         workspace_id TEXT NOT NULL,
+        email TEXT NOT NULL,
         role TEXT NOT NULL,
+        token_digest BLOB,
         expires_at INTEGER NOT NULL,
         accepted_at INTEGER,
-        revoked_at INTEGER
+        revoked_at INTEGER,
+        created_by TEXT,
+        created_at INTEGER NOT NULL
       )`,
     ),
     database.prepare(
@@ -72,9 +104,11 @@ beforeEach(async () => {
         id TEXT PRIMARY KEY,
         workspace_id TEXT NOT NULL,
         machine_id TEXT NOT NULL,
+        token_digest BLOB,
         expires_at INTEGER NOT NULL,
         used_at INTEGER,
         revoked_at INTEGER,
+        created_by TEXT,
         created_at INTEGER NOT NULL
       )`,
     ),
@@ -98,7 +132,7 @@ beforeEach(async () => {
     ),
     database.prepare(
       `INSERT INTO memberships VALUES
-        ('workspace-1', 'user-1', 'admin', 'active')`,
+        ('workspace-1', 'user-1', 'admin', 'active', 1)`,
     ),
     database.prepare(`INSERT INTO retention_policies VALUES ('workspace-1', 7)`),
     database.prepare(
@@ -106,11 +140,12 @@ beforeEach(async () => {
     ),
     database.prepare(
       `INSERT INTO workspace_invitations VALUES
-        ('invitation-1', 'workspace-1', 'member', 4102444800000, NULL, NULL)`,
+        ('invitation-1', 'workspace-1', 'member@example.com', 'member', NULL,
+         4102444800000, NULL, NULL, 'user-1', 1)`,
     ),
     database.prepare(
       `INSERT INTO agent_enrollment_tokens VALUES
-        ('token-1', 'workspace-1', 'machine-1', 4102444800000, NULL, NULL, 1)`,
+        ('token-1', 'workspace-1', 'machine-1', NULL, 4102444800000, NULL, NULL, 'user-1', 1)`,
     ),
   ]);
 });
@@ -177,6 +212,45 @@ describe("stale lifecycle mutations", () => {
         .prepare("SELECT deleted_at FROM machines WHERE id = 'machine-1'")
         .first<{ deleted_at: number | null }>(),
     ).resolves.toEqual({ deleted_at: null });
+    await expectNoAuditRows();
+  });
+
+  it("rejects resource deletion after the actor loses administrator access", async () => {
+    const stale = mutateBeforeBatch(
+      database,
+      "UPDATE memberships SET role = 'member' WHERE workspace_id = 'workspace-1' AND user_id = 'user-1'",
+    );
+
+    await expect(
+      softDeleteResource(stale, "operations", "user-1", "machine", "machine-1"),
+    ).rejects.toMatchObject({ status: 409 });
+    await expect(
+      database
+        .prepare("SELECT deleted_at FROM machines WHERE id = 'machine-1'")
+        .first<{ deleted_at: number | null }>(),
+    ).resolves.toEqual({ deleted_at: null });
+    await expectNoAuditRows();
+  });
+
+  it("rejects resource restoration after the actor loses administrator access", async () => {
+    const deletedAt = Date.now() - 1_000;
+    await database
+      .prepare("UPDATE machines SET deleted_at = ? WHERE id = 'machine-1'")
+      .bind(deletedAt)
+      .run();
+    const stale = mutateBeforeBatch(
+      database,
+      "UPDATE memberships SET role = 'member' WHERE workspace_id = 'workspace-1' AND user_id = 'user-1'",
+    );
+
+    await expect(
+      restoreResource(stale, "operations", "user-1", "machine", "machine-1"),
+    ).rejects.toMatchObject({ status: 409 });
+    await expect(
+      database
+        .prepare("SELECT deleted_at FROM machines WHERE id = 'machine-1'")
+        .first<{ deleted_at: number | null }>(),
+    ).resolves.toEqual({ deleted_at: deletedAt });
     await expectNoAuditRows();
   });
 
@@ -304,6 +378,26 @@ describe("stale lifecycle mutations", () => {
     await expectNoAuditRows();
   });
 
+  it("rejects invitation creation after the actor loses administrator access", async () => {
+    const stale = mutateBeforeBatch(
+      database,
+      "UPDATE memberships SET role = 'member' WHERE workspace_id = 'workspace-1' AND user_id = 'user-1'",
+    );
+
+    await expect(
+      createWorkspaceInvitation(stale, "operations", "user-1", "0".repeat(64), {
+        email: "new@example.com",
+        role: "member",
+      }),
+    ).rejects.toMatchObject({ status: 409 });
+    await expect(
+      database
+        .prepare("SELECT COUNT(*) AS count FROM workspace_invitations")
+        .first<{ count: number }>(),
+    ).resolves.toEqual({ count: 1 });
+    await expectNoAuditRows();
+  });
+
   it("rejects enrollment revocation after another request revokes it", async () => {
     const stale = mutateBeforeBatch(
       database,
@@ -313,6 +407,21 @@ describe("stale lifecycle mutations", () => {
     await expect(
       revokeMachineEnrollmentToken(stale, "operations", "user-1", "machine-1", "token-1"),
     ).rejects.toMatchObject({ status: 409 });
+    await expectNoAuditRows();
+  });
+
+  it("rejects enrollment regeneration after the actor loses administrator access", async () => {
+    const stale = mutateBeforeBatch(
+      database,
+      "UPDATE memberships SET role = 'member' WHERE workspace_id = 'workspace-1' AND user_id = 'user-1'",
+    );
+
+    await expect(
+      regenerateMachineEnrollmentToken(stale, "operations", "user-1", "0".repeat(64), "machine-1"),
+    ).rejects.toMatchObject({ status: 409 });
+    await expect(
+      database.prepare("SELECT id, revoked_at FROM agent_enrollment_tokens ORDER BY id").all(),
+    ).resolves.toMatchObject({ results: [{ id: "token-1", revoked_at: null }] });
     await expectNoAuditRows();
   });
 });

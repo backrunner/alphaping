@@ -6,6 +6,7 @@ import {
   requireWorkspaceResource,
   type WorkspaceResourceType,
 } from "./workspace-admin.js";
+import { finalAdminCondition } from "./monitoring-access.js";
 
 export type DashboardVisibility = "private" | "authenticated" | "public";
 export type ProjectionProfile = "summary" | "detailed";
@@ -170,12 +171,14 @@ export async function updateDashboardVisibility(
     .first<{ visibility: DashboardVisibility }>();
   if (!current) throw error(404, "Dashboard not found");
   const now = Date.now();
-  await db.batch([
+  const authorization = finalAdminCondition(actorUserId, "dashboards.workspace_id");
+  const results = await db.batch([
     db
       .prepare(
-        `UPDATE dashboards SET visibility = ?, updated_at = ? WHERE id = ? AND workspace_id = ?`,
+        `UPDATE dashboards SET visibility = ?, updated_at = ?
+         WHERE id = ? AND workspace_id = ? AND ${authorization.sql}`,
       )
-      .bind(visibility, now, access.defaultDashboardId, access.workspaceId),
+      .bind(visibility, now, access.defaultDashboardId, access.workspaceId, ...authorization.binds),
     await prepareAuditStatement(db, {
       workspaceId: access.workspaceId,
       actorUserId,
@@ -185,8 +188,11 @@ export async function updateDashboardVisibility(
       before: current,
       after: { visibility },
       now,
+      onlyIfPreviousStatementChanged: true,
     }),
   ]);
+  if (results[0]?.meta.changes !== 1)
+    throw error(409, "Dashboard access changed; reload and try again");
 }
 
 export async function updateResourcePublicPolicy(
@@ -219,12 +225,28 @@ export async function updateResourcePublicPolicy(
     .bind(access.workspaceId, input.resourceType, input.resourceId)
     .first<{ effect: "allow" | "deny"; projection_profile: ProjectionProfile }>();
   const now = Date.now();
+  const resourceTable =
+    input.resourceType === "machine"
+      ? "machines"
+      : input.resourceType === "service"
+        ? "services"
+        : "containers";
+  const authorizationSql = `EXISTS (
+    SELECT 1 FROM memberships actor
+    WHERE actor.workspace_id = ? AND actor.user_id = ?
+      AND actor.role = 'admin' AND actor.status = 'active'
+  )`;
   const statements: D1PreparedStatement[] = [
     db
       .prepare(
         `INSERT INTO resource_public_policies
           (workspace_id, resource_type, resource_id, effect, projection_profile, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?)
+         SELECT ?, ?, ?, ?, ?, ?
+         WHERE ${authorizationSql}
+           AND EXISTS (
+             SELECT 1 FROM ${resourceTable} resource
+             WHERE resource.id = ? AND resource.workspace_id = ? AND resource.deleted_at IS NULL
+           )
          ON CONFLICT(workspace_id, resource_type, resource_id) DO UPDATE SET
            effect = excluded.effect, projection_profile = excluded.projection_profile,
            updated_at = excluded.updated_at`,
@@ -236,6 +258,10 @@ export async function updateResourcePublicPolicy(
         input.effect,
         input.projectionProfile,
         now,
+        access.workspaceId,
+        actorUserId,
+        input.resourceId,
+        access.workspaceId,
       ),
   ];
   if (input.resourceType !== "container") {
@@ -244,7 +270,12 @@ export async function updateResourcePublicPolicy(
         .prepare(
           `INSERT INTO dashboard_resources
             (dashboard_id, resource_type, resource_id, sort_order, public_override)
-           VALUES (?, ?, ?, 0, ?)
+           SELECT ?, ?, ?, 0, ?
+           WHERE ${authorizationSql}
+             AND EXISTS (
+               SELECT 1 FROM ${resourceTable} resource
+               WHERE resource.id = ? AND resource.workspace_id = ? AND resource.deleted_at IS NULL
+             )
            ON CONFLICT(dashboard_id, resource_type, resource_id) DO UPDATE SET
              public_override = excluded.public_override`,
         )
@@ -253,6 +284,10 @@ export async function updateResourcePublicPolicy(
           input.resourceType,
           input.resourceId,
           input.effect === "allow" ? "allow" : "deny",
+          access.workspaceId,
+          actorUserId,
+          input.resourceId,
+          access.workspaceId,
         ),
     );
   }
@@ -266,9 +301,13 @@ export async function updateResourcePublicPolicy(
       before: current,
       after: { effect: input.effect, projectionProfile: input.projectionProfile },
       now,
+      onlyIfPreviousStatementChanged: true,
     }),
   );
-  await db.batch(statements);
+  const results = await db.batch(statements);
+  if (results[0]?.meta.changes !== 1) {
+    throw error(409, "Public access policy changed; reload and try again");
+  }
 }
 
 function validateRetention(input: RetentionSettings): void {
@@ -306,14 +345,15 @@ export async function updateRetentionSettings(
     .first<RetentionRow>();
   if (!current) throw error(404, "Retention policy not found");
   const now = Date.now();
-  await db.batch([
+  const authorization = finalAdminCondition(actorUserId, "retention_policies.workspace_id");
+  const results = await db.batch([
     db
       .prepare(
         `UPDATE retention_policies SET
            raw_days = ?, rollup_5m_days = ?, rollup_1h_days = ?, event_days = ?,
            audit_log_days = ?, expired_announcement_grace_days = ?,
            soft_delete_grace_days = ?, updated_at = ?
-         WHERE workspace_id = ?`,
+         WHERE workspace_id = ? AND ${authorization.sql}`,
       )
       .bind(
         retention.rawDays,
@@ -325,6 +365,7 @@ export async function updateRetentionSettings(
         retention.softDeleteGraceDays,
         now,
         access.workspaceId,
+        ...authorization.binds,
       ),
     await prepareAuditStatement(db, {
       workspaceId: access.workspaceId,
@@ -335,6 +376,9 @@ export async function updateRetentionSettings(
       before: current,
       after: retention,
       now,
+      onlyIfPreviousStatementChanged: true,
     }),
   ]);
+  if (results[0]?.meta.changes !== 1)
+    throw error(409, "Retention policy changed; reload and try again");
 }

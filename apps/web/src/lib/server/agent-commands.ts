@@ -1,6 +1,8 @@
 import { error } from "@sveltejs/kit";
 
 import {
+  finalAdminCondition,
+  finalResourceCapabilityCondition,
   loadMonitoringAccess,
   requireAdmin,
   requireResourceCapability,
@@ -52,12 +54,31 @@ export async function queueAgentCommand(
       : {}),
   });
   const commandId = crypto.randomUUID();
-  await db
+  const authorization =
+    input.type === "redetect_runtimes"
+      ? finalResourceCapabilityCondition(
+          access,
+          userId,
+          "machine",
+          "?",
+          "?",
+          "manage",
+          [machineId],
+          [access.workspaceId],
+        )
+      : finalAdminCondition(userId, "?10");
+  const result = await db
     .prepare(
       `INSERT INTO agent_commands
         (id, workspace_id, agent_id, type, payload_json, state, not_before, expires_at,
          attempt_limit, payload_schema_version, created_by, created_at)
-       VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, 3, 1, ?, ?)`,
+       SELECT ?, ?, ?, ?, ?, 'pending', ?, ?, 3, 1, ?, ?
+       WHERE ${authorization.sql}
+         AND EXISTS (
+           SELECT 1 FROM agents current JOIN machines machine ON machine.id = current.machine_id
+           WHERE current.id = ? AND current.workspace_id = ? AND current.machine_id = ?
+             AND current.status = 'active' AND machine.deleted_at IS NULL
+         )`,
     )
     .bind(
       commandId,
@@ -69,7 +90,15 @@ export async function queueAgentCommand(
       now + 30 * 60_000,
       userId,
       now,
+      ...(input.type === "redetect_runtimes" ? [] : [access.workspaceId]),
+      ...authorization.binds,
+      agent.id,
+      access.workspaceId,
+      machineId,
     )
     .run();
+  if (result.meta.changes !== 1) {
+    throw error(409, "Machine access changed; reload and try again");
+  }
   return { commandId };
 }

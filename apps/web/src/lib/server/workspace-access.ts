@@ -300,13 +300,67 @@ export async function setMemberResourcePermission(
     .bind(access.workspaceId, input.memberId, input.resourceType, input.resourceId)
     .all<Pick<GrantRow, "capability" | "effect">>();
   const now = Date.now();
+  const resourceTable =
+    input.resourceType === "machine"
+      ? "machines"
+      : input.resourceType === "service"
+        ? "services"
+        : "containers";
+  const authorizationSql = `EXISTS (
+    SELECT 1 FROM memberships actor
+    WHERE actor.workspace_id = ? AND actor.user_id = ?
+      AND actor.role = 'admin' AND actor.status = 'active'
+  )
+  AND EXISTS (
+    SELECT 1 FROM memberships subject
+    WHERE subject.workspace_id = ? AND subject.user_id = ?
+      AND subject.role = 'member' AND subject.status IN ('active', 'suspended')
+  )
+  AND EXISTS (
+    SELECT 1 FROM ${resourceTable} resource
+    WHERE resource.id = ? AND resource.workspace_id = ? AND resource.deleted_at IS NULL
+  )`;
+  const authorizationBinds = [
+    access.workspaceId,
+    actorUserId,
+    access.workspaceId,
+    input.memberId,
+    input.resourceId,
+    access.workspaceId,
+  ] as const;
+  const guard = db
+    .prepare(
+      `UPDATE memberships SET updated_at = updated_at
+       WHERE workspace_id = ? AND user_id = ? AND role = 'member'
+         AND status IN ('active', 'suspended') AND ${authorizationSql}`,
+    )
+    .bind(access.workspaceId, input.memberId, ...authorizationBinds);
   const statements: D1PreparedStatement[] = [
+    guard,
+    await prepareAuditStatement(db, {
+      workspaceId: access.workspaceId,
+      actorUserId,
+      action: "resource_grant.replace",
+      resourceType: input.resourceType,
+      resourceId: input.resourceId,
+      before: existing.results,
+      after: { memberId: input.memberId, permission: input.permission },
+      now,
+      onlyIfPreviousStatementChanged: true,
+    }),
     db
       .prepare(
         `DELETE FROM resource_grants
-         WHERE workspace_id = ? AND subject_user_id = ? AND resource_type = ? AND resource_id = ?`,
+         WHERE workspace_id = ? AND subject_user_id = ? AND resource_type = ? AND resource_id = ?
+           AND ${authorizationSql}`,
       )
-      .bind(access.workspaceId, input.memberId, input.resourceType, input.resourceId),
+      .bind(
+        access.workspaceId,
+        input.memberId,
+        input.resourceType,
+        input.resourceId,
+        ...authorizationBinds,
+      ),
   ];
   const insert = (capability: "view" | "manage", effect: "allow" | "deny") =>
     db
@@ -314,7 +368,7 @@ export async function setMemberResourcePermission(
         `INSERT INTO resource_grants
           (id, workspace_id, subject_user_id, resource_type, resource_id, capability,
            effect, created_by, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         SELECT ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE ${authorizationSql}`,
       )
       .bind(
         crypto.randomUUID(),
@@ -326,23 +380,15 @@ export async function setMemberResourcePermission(
         effect,
         actorUserId,
         now,
+        ...authorizationBinds,
       );
   if (input.permission === "view") statements.push(insert("view", "allow"));
   if (input.permission === "manage") statements.push(insert("manage", "allow"));
   if (input.permission === "deny") {
     statements.push(insert("view", "deny"), insert("manage", "deny"));
   }
-  statements.push(
-    await prepareAuditStatement(db, {
-      workspaceId: access.workspaceId,
-      actorUserId,
-      action: "resource_grant.replace",
-      resourceType: input.resourceType,
-      resourceId: input.resourceId,
-      before: existing.results,
-      after: { memberId: input.memberId, permission: input.permission },
-      now,
-    }),
-  );
-  await db.batch(statements);
+  const results = await db.batch(statements);
+  if (results[0]?.meta.changes !== 1) {
+    throw error(409, "Resource permission changed; reload and try again");
+  }
 }

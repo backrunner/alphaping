@@ -88,6 +88,100 @@ export function requireResourceCapability(
   }
 }
 
+export interface FinalAuthorizationCondition {
+  sql: string;
+  binds: readonly unknown[];
+}
+
+export function combineFinalAuthorizationConditions(
+  ...conditions: readonly FinalAuthorizationCondition[]
+): FinalAuthorizationCondition {
+  return {
+    sql: conditions.map((condition) => `(${condition.sql})`).join(" AND "),
+    binds: conditions.flatMap((condition) => condition.binds),
+  };
+}
+
+/**
+ * Re-check the actor inside the mutation statement. The access object is a
+ * snapshot, so a membership or grant change can happen after the initial
+ * authorization read and before the write batch executes.
+ */
+export function finalResourceCapabilityCondition(
+  access: MonitoringAccess,
+  actorUserId: string,
+  resourceType: ResourceType,
+  workspaceExpression: string,
+  resourceIdExpression: string,
+  capability: Capability,
+  resourceIdBinds: readonly unknown[] = [],
+  workspaceBinds: readonly unknown[] = [],
+): FinalAuthorizationCondition {
+  if (access.role !== "member") {
+    return {
+      sql: `EXISTS (
+        SELECT 1 FROM memberships actor
+        WHERE actor.workspace_id = ${workspaceExpression}
+          AND actor.user_id = ? AND actor.role = 'admin' AND actor.status = 'active'
+      )`,
+      binds: [...workspaceBinds, actorUserId],
+    };
+  }
+  const allowedCapabilities = capability === "manage" ? "'manage'" : "'view', 'manage'";
+  const deniedCapabilities = capability === "manage" ? "'view', 'manage'" : "'view'";
+  return {
+    sql: `EXISTS (
+      SELECT 1 FROM memberships actor
+      WHERE actor.workspace_id = ${workspaceExpression}
+        AND actor.user_id = ? AND actor.role = 'member' AND actor.status = 'active'
+    )
+    AND EXISTS (
+      SELECT 1 FROM resource_grants allowed
+      WHERE allowed.workspace_id = ${workspaceExpression}
+        AND allowed.subject_user_id = ?
+        AND allowed.resource_type = ?
+        AND allowed.resource_id = ${resourceIdExpression}
+        AND allowed.capability IN (${allowedCapabilities})
+        AND allowed.effect = 'allow'
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM resource_grants denied
+      WHERE denied.workspace_id = ${workspaceExpression}
+        AND denied.subject_user_id = ?
+        AND denied.resource_type = ?
+        AND denied.resource_id = ${resourceIdExpression}
+        AND denied.capability IN (${deniedCapabilities})
+        AND denied.effect = 'deny'
+    )`,
+    binds: [
+      ...workspaceBinds,
+      actorUserId,
+      ...workspaceBinds,
+      actorUserId,
+      resourceType,
+      ...resourceIdBinds,
+      ...workspaceBinds,
+      actorUserId,
+      resourceType,
+      ...resourceIdBinds,
+    ],
+  };
+}
+
+export function finalAdminCondition(
+  actorUserId: string,
+  workspaceExpression: string,
+): FinalAuthorizationCondition {
+  return {
+    sql: `EXISTS (
+      SELECT 1 FROM memberships actor
+      WHERE actor.workspace_id = ${workspaceExpression}
+        AND actor.user_id = ? AND actor.role = 'admin' AND actor.status = 'active'
+    )`,
+    binds: [actorUserId],
+  };
+}
+
 export async function loadDeveloperPanel(
   db: D1Database,
   workspaceSlug: string,
