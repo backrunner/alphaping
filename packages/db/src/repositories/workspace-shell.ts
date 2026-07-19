@@ -1,9 +1,4 @@
-import {
-  canAccessResource,
-  type ResourceGrant,
-  type ResourceType,
-  type WorkspaceRole,
-} from "@alphaping/authz";
+import { canAccessResource, type ResourceGrant, type WorkspaceRole } from "@alphaping/authz";
 
 interface WorkspaceRow {
   id: string;
@@ -12,16 +7,14 @@ interface WorkspaceRow {
   role: WorkspaceRole;
 }
 
-interface GrantRow {
-  resource_type: ResourceType;
-  resource_id: string;
-  capability: "view" | "manage";
-  effect: "allow" | "deny";
-}
-
 interface ResourceRow {
   resource_type: "machine" | "service";
   resource_id: string;
+}
+
+interface NavigationRow {
+  machines: number;
+  services: number;
 }
 
 export interface WorkspaceShellNavigation {
@@ -70,34 +63,48 @@ export async function loadWorkspaceShell(
     .first<WorkspaceRow>();
   if (!workspace) throw new WorkspaceShellNotFoundError();
 
-  const [grantRows, resourceRows] = await Promise.all([
-    db
-      .prepare(
-        `SELECT resource_type, resource_id, capability, effect FROM resource_grants
-         WHERE workspace_id = ? AND subject_user_id = ?
-           AND resource_type IN ('machine', 'service')`,
-      )
-      .bind(workspace.id, userId)
-      .all<GrantRow>(),
-    db
-      .prepare(
-        `SELECT 'machine' AS resource_type, id AS resource_id FROM machines
-         WHERE workspace_id = ? AND deleted_at IS NULL
-         UNION ALL
-         SELECT 'service' AS resource_type, id AS resource_id FROM services
-         WHERE workspace_id = ? AND deleted_at IS NULL`,
-      )
-      .bind(workspace.id, workspace.id)
-      .all<ResourceRow>(),
-  ]);
-  const grants = grantRows.results.map<ResourceGrant>((grant) => ({
-    resourceType: grant.resource_type,
-    resourceId: grant.resource_id,
-    capability: grant.capability,
-    effect: grant.effect,
-  }));
+  const visibleResourceExists = (table: "machines" | "services", resourceType: string) =>
+    workspace.role === "admin"
+      ? `EXISTS (
+          SELECT 1 FROM ${table} resource
+          WHERE resource.workspace_id = ? AND resource.deleted_at IS NULL
+        )`
+      : `EXISTS (
+          SELECT 1 FROM resource_grants allowed
+          JOIN ${table} resource
+            ON resource.id = allowed.resource_id AND resource.workspace_id = allowed.workspace_id
+              AND resource.deleted_at IS NULL
+          WHERE allowed.workspace_id = ? AND allowed.subject_user_id = ?
+            AND allowed.resource_type = '${resourceType}'
+            AND allowed.capability IN ('view', 'manage') AND allowed.effect = 'allow'
+            AND NOT EXISTS (
+              SELECT 1 FROM resource_grants denied
+              WHERE denied.workspace_id = allowed.workspace_id
+                AND denied.subject_user_id = allowed.subject_user_id
+                AND denied.resource_type = allowed.resource_type
+                AND denied.resource_id = allowed.resource_id
+                AND denied.capability = 'view' AND denied.effect = 'deny'
+            )
+        )`;
+  const navigationBindings =
+    workspace.role === "admin"
+      ? [workspace.id, workspace.id]
+      : [workspace.id, userId, workspace.id, userId];
+  const navigation = await db
+    .prepare(
+      `SELECT
+         ${visibleResourceExists("machines", "machine")} AS machines,
+         ${visibleResourceExists("services", "service")} AS services`,
+    )
+    .bind(...navigationBindings)
+    .first<NavigationRow>();
+  if (!navigation) throw new WorkspaceShellNotFoundError();
   return {
     workspace,
-    navigation: computeWorkspaceShellNavigation(workspace.role, grants, resourceRows.results),
+    navigation: {
+      machines: navigation.machines === 1,
+      services: navigation.services === 1,
+      developer: workspace.role === "admin",
+    },
   };
 }
