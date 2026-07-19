@@ -849,11 +849,13 @@ async fn classify_slot(
     let slot = report_slot(report.nominal_minute_ms);
     let query = format!(
         "SELECT report_id_{slot} AS report_id, payload_hash_{slot} AS payload_hash
-         FROM telemetry_blocks_5m WHERE machine_pk = ? AND block_start = ?"
+         FROM telemetry_blocks_5m
+         WHERE workspace_pk = ? AND machine_pk = ? AND block_start = ?"
     );
     let existing = db
         .prepare(query)
         .bind(&[
+            unsigned(report.workspace_pk),
             unsigned(report.machine_pk),
             number(block_start(report.nominal_minute_ms)),
         ])?
@@ -890,9 +892,10 @@ fn block_statement(
           {id_column} = excluded.{id_column},
           {hash_column} = excluded.{hash_column},
           schema_version = excluded.schema_version
-         WHERE telemetry_blocks_5m.{id_column} IS NULL
+         WHERE telemetry_blocks_5m.workspace_pk = excluded.workspace_pk
+           AND (telemetry_blocks_5m.{id_column} IS NULL
             OR (telemetry_blocks_5m.{id_column} = excluded.{id_column}
-                AND telemetry_blocks_5m.{hash_column} = excluded.{hash_column})"
+                AND telemetry_blocks_5m.{hash_column} = excluded.{hash_column}))"
     );
     Ok(db.prepare(query).bind(&[
         unsigned(report.machine_pk),
@@ -945,7 +948,8 @@ fn latest_statement(
                container_inventory_json = COALESCE(
                  excluded.container_inventory_json, machine_latest.container_inventory_json
                )
-             WHERE excluded.observed_at >= machine_latest.observed_at",
+             WHERE machine_latest.workspace_pk = excluded.workspace_pk
+               AND excluded.observed_at >= machine_latest.observed_at",
         )
         .bind(&[
             unsigned(report.machine_pk),
@@ -992,13 +996,14 @@ fn state_transition_statement(
              SELECT workspace_pk, 1, machine_pk, ?, ?, state, ?,
                     CASE WHEN state = 'offline' THEN 'agent_report_received' ELSE ? END
              FROM machine_latest
-             WHERE machine_pk = ? AND state != ? AND observed_at <= ?",
+             WHERE workspace_pk = ? AND machine_pk = ? AND state != ? AND observed_at <= ?",
         )
         .bind(&[
             number(now),
             blob(&report.report_id),
             text(state.as_str()),
             text(reason),
+            unsigned(report.workspace_pk),
             unsigned(report.machine_pk),
             text(state.as_str()),
             number(latest.observed_at_ms),
@@ -1024,7 +1029,8 @@ fn rollup_statement(
            memory_avg_bytes = excluded.memory_avg_bytes,
            storage_max_bytes = excluded.storage_max_bytes,
            network_rx_bytes = excluded.network_rx_bytes,
-           network_tx_bytes = excluded.network_tx_bytes"
+           network_tx_bytes = excluded.network_tx_bytes
+         WHERE {table}.workspace_pk = excluded.workspace_pk"
     );
     Ok(db.prepare(query).bind(&[
         unsigned(report.machine_pk),
@@ -1051,9 +1057,13 @@ async fn closed_rollups(
     let block = db
         .prepare(
             "SELECT report_0, report_1, report_2, report_3 FROM telemetry_blocks_5m
-             WHERE machine_pk = ? AND block_start = ?",
+             WHERE workspace_pk = ? AND machine_pk = ? AND block_start = ?",
         )
-        .bind(&[unsigned(report.machine_pk), number(five_start)])?
+        .bind(&[
+            unsigned(report.workspace_pk),
+            unsigned(report.machine_pk),
+            number(five_start),
+        ])?
         .first::<BlockRow>(None)
         .await?;
     let mut five = MachineRollup::default();
@@ -1091,10 +1101,12 @@ async fn closed_rollups(
             "SELECT sample_count, cpu_avg_permille, cpu_max_permille, memory_avg_bytes,
                     storage_max_bytes, network_rx_bytes, network_tx_bytes
              FROM machine_rollups_5m
-             WHERE machine_pk = ? AND bucket_start >= ? AND bucket_start < ?
+             WHERE workspace_pk = ? AND machine_pk = ?
+               AND bucket_start >= ? AND bucket_start < ?
              ORDER BY bucket_start",
         )
         .bind(&[
+            unsigned(report.workspace_pk),
             unsigned(report.machine_pk),
             number(hour_start),
             number(five_start),
@@ -1168,8 +1180,11 @@ async fn durable_ack(
     let machine_state = machine_health_state(latest_sample, maintenance);
     let previous_container_inventory = if !duplicate && report.container_inventory.is_some() {
         telemetry_db
-            .prepare("SELECT container_inventory_json FROM machine_latest WHERE machine_pk = ?")
-            .bind(&[unsigned(report.machine_pk)])?
+            .prepare(
+                "SELECT container_inventory_json FROM machine_latest
+                 WHERE workspace_pk = ? AND machine_pk = ?",
+            )
+            .bind(&[unsigned(report.workspace_pk), unsigned(report.machine_pk)])?
             .first::<LatestContainerRow>(None)
             .await?
             .and_then(|row| row.container_inventory_json)
