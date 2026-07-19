@@ -491,3 +491,35 @@ fn command_side_effect_and_result_are_deduplicated_until_durable_ack() {
     );
     assert!(spool.acknowledge(&report_id).expect("ack report"));
 }
+
+#[test]
+fn command_remains_due_after_a_crash_during_its_final_attempt() {
+    let directory = tempdir().expect("temp directory");
+    let mut spool = Spool::open(directory.path().join("spool.db")).expect("open spool");
+    let command = AgentCommand {
+        id: "018f5f7e-7d28-7e12-a521-3456789abcde".to_owned(),
+        r#type: AgentCommandType::CheckUpdate as i32,
+        not_before_ms: 60_000,
+        expires_at_ms: 3_600_000,
+        attempt_limit: 1,
+        payload_schema_version: 1,
+        requested_version: String::new(),
+        bypass_rollout: false,
+    };
+    spool
+        .accept_commands(std::slice::from_ref(&command), 60_000)
+        .expect("accept command");
+    assert_eq!(
+        spool
+            .mark_command_attempt(&command.id, 90_000)
+            .expect("mark final attempt"),
+        1
+    );
+
+    let recovered = spool
+        .due_command(90_000)
+        .expect("read command after restart")
+        .expect("exhausted command remains visible");
+    assert_eq!(recovered.command, command);
+    assert_eq!(recovered.attempt_count, 1);
+}

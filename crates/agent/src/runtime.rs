@@ -368,6 +368,16 @@ fn start_due_command(
         ))?;
         return Ok(false);
     }
+    if pending.attempt_count >= pending.command.attempt_limit {
+        spool.complete_command(&command_result(
+            pending.command.id,
+            false,
+            now_ms,
+            "command_attempt_limit_reached",
+            env!("CARGO_PKG_VERSION").to_owned(),
+        ))?;
+        return Ok(false);
+    }
     let random = rand::rng().random_range(0.0..=1.0);
     let retry_delay =
         equal_jitter_delay(pending.attempt_count, random).max(Duration::from_secs(30));

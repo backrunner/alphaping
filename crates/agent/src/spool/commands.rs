@@ -47,7 +47,6 @@ impl Spool {
             .query_row(
                 "SELECT payload, attempt_count FROM agent_commands
                  WHERE state IN ('pending', 'running') AND next_attempt_at <= ?
-                   AND attempt_count < attempt_limit
                  ORDER BY next_attempt_at, created_at LIMIT 1",
                 [now_ms],
                 |row| Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, u32>(1)?)),
