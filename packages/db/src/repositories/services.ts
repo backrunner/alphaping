@@ -1,11 +1,9 @@
-import { canAccessResource } from "@alphaping/authz";
-
 import { queryInBatches } from "./d1-query-batches.js";
+import { resourceCapabilityCondition } from "./resource-access-query.js";
 import type {
   CheckLatestRow,
   CheckRow,
   EventRow,
-  GrantRow,
   MonitorState,
   ServiceCollection,
   ServiceCheckEditConfiguration,
@@ -59,67 +57,120 @@ async function loadWorkspaceAccess(
     .bind(workspaceSlug, userId)
     .first<WorkspaceRow>();
   if (!workspace) throw new ServiceNotFoundError();
-  const rows = await db
-    .prepare(
-      `SELECT resource_type, resource_id, capability, effect FROM resource_grants
-     WHERE workspace_id = ? AND subject_user_id = ?
-       AND resource_type IN ('service', 'incident')`,
-    )
-    .bind(workspace.id, userId)
-    .all<GrantRow>();
-  return {
-    workspace,
-    grants: rows.results.map((grant) => ({
-      resourceType: grant.resource_type,
-      resourceId: grant.resource_id,
-      capability: grant.capability,
-      effect: grant.effect,
-    })),
-  };
+  return { workspace };
 }
 
 async function loadServiceRows(
   db: D1Database,
-  workspaceId: string,
+  access: WorkspaceAccess,
+  userId: string,
 ): Promise<readonly ServiceRow[]> {
+  const authorization = resourceCapabilityCondition(
+    {
+      workspaceId: access.workspace.id,
+      userId,
+      role: access.workspace.role,
+    },
+    "service",
+    "service.id",
+    "view",
+  );
+  const management = resourceCapabilityCondition(
+    {
+      workspaceId: access.workspace.id,
+      userId,
+      role: access.workspace.role,
+    },
+    "service",
+    "service.id",
+    "manage",
+  );
   return (
     await db
       .prepare(
-        `SELECT id, telemetry_pk, name, slug, description, maintenance_until, created_at
-     FROM services WHERE workspace_id = ? AND deleted_at IS NULL
+        `SELECT id, telemetry_pk, name, slug, description, maintenance_until, created_at,
+                CASE WHEN (${management.sql}) THEN 1 ELSE 0 END AS can_manage
+     FROM services service WHERE workspace_id = ? AND deleted_at IS NULL
+       AND (${authorization.sql})
      ORDER BY name LIMIT 200`,
       )
-      .bind(workspaceId)
+      .bind(...management.binds, access.workspace.id, ...authorization.binds)
       .all<ServiceRow>()
   ).results;
 }
 
 async function loadServiceRow(
   db: D1Database,
-  workspaceId: string,
+  access: WorkspaceAccess,
+  userId: string,
   serviceId: string,
 ): Promise<ServiceRow | null> {
+  const queryAccess = {
+    workspaceId: access.workspace.id,
+    userId,
+    role: access.workspace.role,
+  };
+  const authorization = resourceCapabilityCondition(queryAccess, "service", "service.id", "view");
+  const management = resourceCapabilityCondition(queryAccess, "service", "service.id", "manage");
   return db
     .prepare(
-      `SELECT id, telemetry_pk, name, slug, description, maintenance_until, created_at
-       FROM services WHERE workspace_id = ? AND id = ? AND deleted_at IS NULL`,
+      `SELECT id, telemetry_pk, name, slug, description, maintenance_until, created_at,
+              CASE WHEN (${management.sql}) THEN 1 ELSE 0 END AS can_manage
+       FROM services service
+       WHERE workspace_id = ? AND id = ? AND deleted_at IS NULL
+         AND (${authorization.sql})`,
     )
-    .bind(workspaceId, serviceId)
+    .bind(...management.binds, access.workspace.id, serviceId, ...authorization.binds)
     .first<ServiceRow>();
 }
 
-async function loadCheckRows(db: D1Database, workspaceId: string): Promise<readonly CheckRow[]> {
-  return (
-    await db
-      .prepare(
-        `SELECT id, telemetry_pk, service_id, name, kind, executor_kind, executor_agent_id, enabled,
-            interval_seconds, timeout_ms, retry_count, critical, request_json,
-            secret_refs_json, failure_confirmations, recovery_confirmations
-     FROM check_configs WHERE workspace_id = ? ORDER BY service_id, created_at LIMIT 1000`,
-      )
-      .bind(workspaceId)
-      .all<CheckRow>()
-  ).results;
+async function loadCheckRows(
+  db: D1Database,
+  access: WorkspaceAccess,
+  userId: string,
+  serviceId?: string,
+): Promise<readonly CheckRow[]> {
+  const serviceIdExpression = serviceId ? "c.service_id" : "selected.id";
+  const authorization = resourceCapabilityCondition(
+    {
+      workspaceId: access.workspace.id,
+      userId,
+      role: access.workspace.role,
+    },
+    "service",
+    serviceIdExpression,
+    "view",
+  );
+  const statement = serviceId
+    ? db
+        .prepare(
+          `SELECT c.id, c.telemetry_pk, c.service_id, c.name, c.kind, c.executor_kind,
+                  c.executor_agent_id, c.enabled, c.interval_seconds, c.timeout_ms,
+                  c.retry_count, c.critical, c.request_json, c.secret_refs_json,
+                  c.failure_confirmations, c.recovery_confirmations
+           FROM check_configs c
+           WHERE c.workspace_id = ? AND c.service_id = ? AND (${authorization.sql})
+           ORDER BY c.service_id, c.created_at LIMIT 1000`,
+        )
+        .bind(access.workspace.id, serviceId, ...authorization.binds)
+    : db
+        .prepare(
+          `SELECT c.id, c.telemetry_pk, c.service_id, c.name, c.kind, c.executor_kind,
+                  c.executor_agent_id, c.enabled, c.interval_seconds, c.timeout_ms,
+                  c.retry_count, c.critical, c.request_json, c.secret_refs_json,
+                  c.failure_confirmations, c.recovery_confirmations
+           FROM check_configs c
+           JOIN (
+             SELECT selected.id FROM services selected
+             WHERE selected.workspace_id = ? AND selected.deleted_at IS NULL
+               AND (${authorization.sql})
+             ORDER BY selected.name LIMIT 200
+           ) visible ON visible.id = c.service_id
+           WHERE c.workspace_id = ?
+           ORDER BY c.service_id, c.created_at LIMIT 1000`,
+        )
+        .bind(access.workspace.id, ...authorization.binds, access.workspace.id);
+  return (await statement.all<CheckRow>()).results;
 }
 
 interface CheckAssertionRow {
@@ -403,12 +454,9 @@ export async function loadServiceCollection(
   now = Date.now(),
 ): Promise<ServiceCollection> {
   const access = await loadWorkspaceAccess(controlDb, workspaceSlug, userId);
-  const allServices = await loadServiceRows(controlDb, access.workspace.id);
-  const services = allServices.filter((service) =>
-    canAccessResource(access.workspace.role, access.grants, "service", service.id, "view"),
-  );
+  const services = await loadServiceRows(controlDb, access, userId);
   const allowedIds = new Set(services.map((service) => service.id));
-  const checks = (await loadCheckRows(controlDb, access.workspace.id)).filter(
+  const checks = (await loadCheckRows(controlDb, access, userId)).filter(
     (check) => allowedIds.has(check.service_id) && check.enabled === 1,
   );
   const telemetry = await loadTelemetry(
@@ -430,7 +478,7 @@ export async function loadServiceCollection(
         service,
         checks.filter((check) => check.service_id === service.id),
         telemetry,
-        canAccessResource(access.workspace.role, access.grants, "service", service.id, "manage"),
+        service.can_manage === 1,
         now,
       ),
     ),
@@ -444,13 +492,8 @@ export async function loadAuthorizedServiceScope(
   serviceId: string,
 ): Promise<{ workspaceId: string; workspacePk: number; servicePk: number }> {
   const access = await loadWorkspaceAccess(controlDb, workspaceSlug, userId);
-  const service = await loadServiceRow(controlDb, access.workspace.id, serviceId);
-  if (
-    !service ||
-    !canAccessResource(access.workspace.role, access.grants, "service", service.id, "view")
-  ) {
-    throw new ServiceNotFoundError();
-  }
+  const service = await loadServiceRow(controlDb, access, userId, serviceId);
+  if (!service) throw new ServiceNotFoundError();
   return {
     workspaceId: access.workspace.id,
     workspacePk: access.workspace.telemetry_pk,
@@ -467,25 +510,10 @@ export async function loadServiceDetail(
   now = Date.now(),
 ): Promise<ServiceDetail> {
   const access = await loadWorkspaceAccess(controlDb, workspaceSlug, userId);
-  const service = (await loadServiceRows(controlDb, access.workspace.id)).find(
-    (row) => row.id === serviceId,
-  );
-  if (
-    !service ||
-    !canAccessResource(access.workspace.role, access.grants, "service", service.id, "view")
-  ) {
-    throw new ServiceNotFoundError();
-  }
-  const canManage = canAccessResource(
-    access.workspace.role,
-    access.grants,
-    "service",
-    service.id,
-    "manage",
-  );
-  const checks = (await loadCheckRows(controlDb, access.workspace.id)).filter(
-    (check) => check.service_id === service.id,
-  );
+  const service = await loadServiceRow(controlDb, access, userId, serviceId);
+  if (!service) throw new ServiceNotFoundError();
+  const canManage = service.can_manage === 1;
+  const checks = await loadCheckRows(controlDb, access, userId, service.id);
   const assertions =
     canManage && checks.length > 0
       ? (

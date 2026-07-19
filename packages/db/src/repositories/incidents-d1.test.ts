@@ -159,6 +159,75 @@ describe("incident center announcement visibility", () => {
 });
 
 describe("incident center collection bounds", () => {
+  it("applies service and incident visibility before collection limits", async () => {
+    await database.batch([
+      database.prepare(
+        `WITH RECURSIVE sequence(value) AS (
+           VALUES (1) UNION ALL SELECT value + 1 FROM sequence WHERE value < 201
+         )
+         INSERT INTO services (id, workspace_id, name, deleted_at)
+         SELECT printf('service-%03d', value), 'workspace-1',
+                printf('Service %03d', value), NULL FROM sequence`,
+      ),
+      database
+        .prepare(
+          `WITH RECURSIVE sequence(value) AS (
+             VALUES (1) UNION ALL SELECT value + 1 FROM sequence WHERE value < 101
+           )
+           INSERT INTO incidents
+             (id, workspace_id, title, summary, severity, state, starts_at,
+              resolved_at, created_at, deleted_at)
+           SELECT printf('incident-%03d', value), 'workspace-1',
+                  printf('Incident %03d', value), 'Visibility bound', 'minor',
+                  'monitoring', ? - value, NULL, ? - value, NULL FROM sequence`,
+        )
+        .bind(now, now),
+      database.prepare(
+        `INSERT INTO incident_resources VALUES
+          ('incident-101', 'service', 'service-201', 'degraded'),
+          ('incident-101', 'service', 'service-200', 'degraded')`,
+      ),
+      database.prepare(
+        `INSERT INTO resource_grants VALUES
+          ('workspace-1', 'member-1', 'service', 'service-201', 'view', 'allow'),
+          ('workspace-1', 'member-1', 'service', 'service-201', 'manage', 'allow')`,
+      ),
+    ]);
+
+    const center = await loadIncidentCenter(database, "operations", "member-1", now);
+
+    expect(center.services.map((service) => service.id)).toEqual(["service-201"]);
+    expect(center.incidents.map((incident) => incident.id)).toEqual(["incident-101"]);
+    expect(center.incidents[0]?.affectedServices.map((service) => service.id)).toEqual([
+      "service-201",
+    ]);
+    expect(center.incidents[0]?.canManage).toBe(false);
+
+    await database
+      .prepare(
+        `INSERT INTO resource_grants VALUES
+          ('workspace-1', 'member-1', 'service', 'service-200', 'manage', 'allow')`,
+      )
+      .run();
+    await expect(
+      loadIncidentCenter(database, "operations", "member-1", now),
+    ).resolves.toMatchObject({
+      incidents: [{ id: "incident-101", canManage: true }],
+    });
+
+    await database
+      .prepare(
+        `INSERT INTO resource_grants VALUES
+          ('workspace-1', 'member-1', 'incident', 'incident-101', 'view', 'deny')`,
+      )
+      .run();
+    await expect(
+      loadIncidentCenter(database, "operations", "member-1", now),
+    ).resolves.toMatchObject({
+      incidents: [],
+    });
+  });
+
   it("batches 100 incident relations while preserving the latest 500 updates globally", async () => {
     await database.batch([
       database.prepare(

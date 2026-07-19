@@ -1,13 +1,12 @@
-import {
-  canAccessIncident,
-  canAccessResource,
-  type ResourceGrant,
-  type ResourceType,
-  type WorkspaceRole,
-} from "@alphaping/authz";
+import type { WorkspaceRole } from "@alphaping/authz";
 
 import { queryInBatches } from "./d1-query-batches.js";
 import { loadLatestIncidentUpdates } from "./incident-updates.js";
+import {
+  incidentManageCondition,
+  incidentViewCondition,
+  resourceCapabilityCondition,
+} from "./resource-access-query.js";
 
 const INCIDENT_UPDATES_PER_INCIDENT_LIMIT = 50;
 const INCIDENT_UPDATES_GLOBAL_LIMIT = 500;
@@ -19,16 +18,10 @@ interface WorkspaceRow {
   role: WorkspaceRole;
 }
 
-interface GrantRow {
-  resource_type: ResourceType;
-  resource_id: string;
-  capability: "view" | "manage";
-  effect: "allow" | "deny";
-}
-
 interface ServiceRow {
   id: string;
   name: string;
+  can_manage: number;
 }
 
 interface IncidentRow {
@@ -40,6 +33,7 @@ interface IncidentRow {
   starts_at: number;
   resolved_at: number | null;
   created_at: number;
+  can_manage: number;
 }
 
 interface IncidentResourceRow {
@@ -107,44 +101,40 @@ export async function loadIncidentCenter(
     .bind(workspaceSlug, userId)
     .first<WorkspaceRow>();
   if (!workspace) throw new IncidentCenterNotFoundError();
-  const grantsResult = await db
-    .prepare(
-      `SELECT resource_type, resource_id, capability, effect FROM resource_grants
-     WHERE workspace_id = ? AND subject_user_id = ?
-       AND resource_type IN ('service', 'incident')`,
-    )
-    .bind(workspace.id, userId)
-    .all<GrantRow>();
-  const grants: readonly ResourceGrant[] = grantsResult.results.map((grant) => ({
-    resourceType: grant.resource_type,
-    resourceId: grant.resource_id,
-    capability: grant.capability,
-    effect: grant.effect,
-  }));
+  const access = { workspaceId: workspace.id, userId, role: workspace.role };
+  const serviceAuthorization = resourceCapabilityCondition(access, "service", "service.id", "view");
+  const serviceManagement = resourceCapabilityCondition(access, "service", "service.id", "manage");
   const serviceRows = (
     await db
       .prepare(
-        `SELECT id, name FROM services WHERE workspace_id = ? AND deleted_at IS NULL
-     ORDER BY name LIMIT 200`,
+        `SELECT id, name,
+                CASE WHEN (${serviceManagement.sql}) THEN 1 ELSE 0 END AS can_manage
+         FROM services service
+         WHERE workspace_id = ? AND deleted_at IS NULL
+           AND (${serviceAuthorization.sql})
+         ORDER BY name LIMIT 200`,
       )
-      .bind(workspace.id)
+      .bind(...serviceManagement.binds, workspace.id, ...serviceAuthorization.binds)
       .all<ServiceRow>()
   ).results;
-  const services = serviceRows
-    .filter((service) => canAccessResource(workspace.role, grants, "service", service.id, "view"))
-    .map((service) => ({
-      ...service,
-      canManage: canAccessResource(workspace.role, grants, "service", service.id, "manage"),
-    }));
+  const services = serviceRows.map((service) => ({
+    id: service.id,
+    name: service.name,
+    canManage: service.can_manage === 1,
+  }));
   const serviceNameById = new Map(services.map((service) => [service.id, service.name]));
+  const incidentAuthorization = incidentViewCondition(access, "incident.id");
+  const incidentManagement = incidentManageCondition(access, "incident.id");
   const incidents = (
     await db
       .prepare(
-        `SELECT id, title, summary, severity, state, starts_at, resolved_at, created_at
-     FROM incidents WHERE workspace_id = ? AND deleted_at IS NULL
-     ORDER BY starts_at DESC LIMIT 100`,
+        `SELECT id, title, summary, severity, state, starts_at, resolved_at, created_at,
+                CASE WHEN (${incidentManagement.sql}) THEN 1 ELSE 0 END AS can_manage
+         FROM incidents incident WHERE workspace_id = ? AND deleted_at IS NULL
+           AND (${incidentAuthorization.sql})
+         ORDER BY starts_at DESC LIMIT 100`,
       )
-      .bind(workspace.id)
+      .bind(...incidentManagement.binds, workspace.id, ...incidentAuthorization.binds)
       .all<IncidentRow>()
   ).results;
   const incidentIds = incidents.map((incident) => incident.id);
@@ -164,54 +154,34 @@ export async function loadIncidentCenter(
       INCIDENT_UPDATES_GLOBAL_LIMIT,
     ),
   ]);
-  const visibleIncidents = incidents.flatMap((incident) => {
+  const visibleIncidents = incidents.map((incident) => {
     const incidentResources = resources.filter((resource) => resource.incident_id === incident.id);
     const visibleResources = incidentResources.filter((resource) =>
       serviceNameById.has(resource.resource_id),
     );
-    const canViewIncident = canAccessIncident(
-      workspace.role,
-      grants,
-      incident.id,
-      "view",
-      visibleResources.length > 0,
-    );
-    if (!canViewIncident) return [];
-    const canManage = canAccessIncident(
-      workspace.role,
-      grants,
-      incident.id,
-      "manage",
-      incidentResources.length > 0 &&
-        incidentResources.every((resource) =>
-          canAccessResource(workspace.role, grants, "service", resource.resource_id, "manage"),
-        ),
-    );
-    return [
-      {
-        id: incident.id,
-        title: incident.title,
-        summary: incident.summary,
-        severity: incident.severity,
-        state: incident.state,
-        startsAt: incident.starts_at,
-        resolvedAt: incident.resolved_at,
-        affectedServices: visibleResources.map((resource) => ({
-          id: resource.resource_id,
-          name: serviceNameById.get(resource.resource_id) ?? "Service",
-          impact: resource.impact,
+    return {
+      id: incident.id,
+      title: incident.title,
+      summary: incident.summary,
+      severity: incident.severity,
+      state: incident.state,
+      startsAt: incident.starts_at,
+      resolvedAt: incident.resolved_at,
+      affectedServices: visibleResources.map((resource) => ({
+        id: resource.resource_id,
+        name: serviceNameById.get(resource.resource_id) ?? "Service",
+        impact: resource.impact,
+      })),
+      updates: updates
+        .filter((update) => update.incident_id === incident.id)
+        .map((update) => ({
+          id: update.id,
+          state: update.state,
+          body: update.body,
+          publishedAt: update.published_at ?? update.created_at,
         })),
-        updates: updates
-          .filter((update) => update.incident_id === incident.id)
-          .map((update) => ({
-            id: update.id,
-            state: update.state,
-            body: update.body,
-            publishedAt: update.published_at ?? update.created_at,
-          })),
-        canManage,
-      },
-    ];
+      canManage: incident.can_manage === 1,
+    };
   });
   const announcements = (
     await db

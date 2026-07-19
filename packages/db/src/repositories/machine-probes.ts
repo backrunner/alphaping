@@ -1,6 +1,7 @@
-import { canAccessResource, type ResourceGrant, type WorkspaceRole } from "@alphaping/authz";
+import type { WorkspaceRole } from "@alphaping/authz";
 
 import type { MachineProbeTask } from "./machine-models.js";
+import { resourceCapabilityCondition } from "./resource-access-query.js";
 
 interface ProbeConfigRow {
   id: string;
@@ -36,8 +37,8 @@ interface ProbeRollupRow {
 
 export interface MachineProbeAccess {
   workspaceId: string;
+  userId: string;
   role: WorkspaceRole;
-  grants: readonly ResourceGrant[];
 }
 
 function placeholders(length: number): string {
@@ -76,6 +77,7 @@ export async function loadMachineProbeTasks(
   now: number,
 ): Promise<readonly MachineProbeTask[]> {
   if (!agentId) return [];
+  const authorization = resourceCapabilityCondition(access, "service", "s.id", "view");
   const configured = (
     await controlDb
       .prepare(
@@ -85,13 +87,12 @@ export async function loadMachineProbeTasks(
          FROM check_configs c JOIN services s ON s.id = c.service_id
          WHERE c.executor_kind = 'agent' AND c.executor_agent_id = ? AND c.enabled = 1
            AND c.workspace_id = ? AND s.deleted_at IS NULL
+           AND (${authorization.sql})
          ORDER BY s.name, c.name LIMIT 32`,
       )
-      .bind(agentId, access.workspaceId)
+      .bind(agentId, access.workspaceId, ...authorization.binds)
       .all<ProbeConfigRow>()
-  ).results.filter((task) =>
-    canAccessResource(access.role, access.grants, "service", task.service_id, "view"),
-  );
+  ).results;
   if (configured.length === 0) return [];
   const checkPks = configured.map((task) => task.telemetry_pk);
   const values = placeholders(checkPks.length);

@@ -1,4 +1,4 @@
-import type { ResourceGrant, ResourceType, WorkspaceRole } from "@alphaping/authz";
+import type { WorkspaceRole } from "@alphaping/authz";
 
 export type MonitorState = "healthy" | "degraded" | "down" | "maintenance" | "unknown";
 
@@ -10,13 +10,6 @@ export interface WorkspaceRow {
   role: WorkspaceRole;
 }
 
-export interface GrantRow {
-  resource_type: ResourceType;
-  resource_id: string;
-  capability: "view" | "manage";
-  effect: "allow" | "deny";
-}
-
 export interface ServiceRow {
   id: string;
   telemetry_pk: number;
@@ -25,6 +18,7 @@ export interface ServiceRow {
   description: string;
   maintenance_until: number | null;
   created_at: number;
+  can_manage: number;
 }
 
 export interface CheckRow {
@@ -117,7 +111,6 @@ export interface EventRow {
 
 export interface WorkspaceAccess {
   workspace: WorkspaceRow;
-  grants: readonly ResourceGrant[];
 }
 
 export interface ServiceTimelineBucket {

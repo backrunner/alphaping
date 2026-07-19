@@ -1,12 +1,7 @@
-import {
-  canAccessIncident,
-  canAccessResource,
-  type ResourceGrant,
-  type ResourceType,
-  type WorkspaceRole,
-} from "@alphaping/authz";
+import type { WorkspaceRole } from "@alphaping/authz";
 
 import { queryInBatches } from "./d1-query-batches.js";
+import { incidentViewCondition, resourceCapabilityCondition } from "./resource-access-query.js";
 
 interface WorkspaceRow {
   id: string;
@@ -14,13 +9,6 @@ interface WorkspaceRow {
   slug: string;
   telemetry_pk: number;
   role: WorkspaceRole;
-}
-
-interface GrantRow {
-  resource_type: ResourceType;
-  resource_id: string;
-  capability: "view" | "manage";
-  effect: "allow" | "deny";
 }
 
 interface MachineRow {
@@ -85,11 +73,6 @@ interface ServiceBucketRow {
 
 interface IncidentRow {
   id: string;
-}
-
-interface IncidentResourceRow {
-  incident_id: string;
-  resource_id: string;
 }
 
 export interface DashboardMachine {
@@ -185,41 +168,32 @@ export async function loadDashboardSnapshot(
     .first<WorkspaceRow>();
   if (!workspace) throw new DashboardNotFoundError();
 
-  const grantsResult = await controlDb
-    .prepare(
-      `SELECT resource_type, resource_id, capability, effect FROM resource_grants
-       WHERE workspace_id = ? AND subject_user_id = ?`,
-    )
-    .bind(workspace.id, userId)
-    .all<GrantRow>();
-  const grants: readonly ResourceGrant[] = grantsResult.results.map((grant) => ({
-    resourceType: grant.resource_type,
-    resourceId: grant.resource_id,
-    capability: grant.capability,
-    effect: grant.effect,
-  }));
+  const access = { workspaceId: workspace.id, userId, role: workspace.role };
+  const machineAuthorization = resourceCapabilityCondition(access, "machine", "m.id", "view");
+  const serviceAuthorization = resourceCapabilityCondition(access, "service", "service.id", "view");
   const machineRows = await controlDb
     .prepare(
       `SELECT m.id, m.telemetry_pk, m.name, m.labels_json, m.offline_after_seconds,
               m.container_monitoring_enabled, a.agent_version, a.platform, a.arch
        FROM machines m LEFT JOIN agents a ON a.machine_id = m.id AND a.status = 'active'
-       WHERE m.workspace_id = ? AND m.deleted_at IS NULL ORDER BY m.name LIMIT 500`,
+       WHERE m.workspace_id = ? AND m.deleted_at IS NULL
+         AND (${machineAuthorization.sql})
+       ORDER BY m.name LIMIT 500`,
     )
-    .bind(workspace.id)
+    .bind(workspace.id, ...machineAuthorization.binds)
     .all<MachineRow>();
   const serviceRows = await controlDb
     .prepare(
-      `SELECT id, telemetry_pk, name, maintenance_until FROM services
-       WHERE workspace_id = ? AND deleted_at IS NULL ORDER BY name LIMIT 500`,
+      `SELECT service.id, service.telemetry_pk, service.name, service.maintenance_until
+       FROM services service
+       WHERE service.workspace_id = ? AND service.deleted_at IS NULL
+         AND (${serviceAuthorization.sql})
+       ORDER BY service.name LIMIT 500`,
     )
-    .bind(workspace.id)
+    .bind(workspace.id, ...serviceAuthorization.binds)
     .all<ServiceRow>();
-  const allowedMachines = machineRows.results.filter((machine) =>
-    canAccessResource(workspace.role, grants, "machine", machine.id, "view"),
-  );
-  const allowedServices = serviceRows.results.filter((service) =>
-    canAccessResource(workspace.role, grants, "service", service.id, "view"),
-  );
+  const allowedMachines = machineRows.results;
+  const allowedServices = serviceRows.results;
 
   const machinePks = allowedMachines.map((machine) => machine.telemetry_pk);
   const latestMachines = await queryInBatches<MachineLatestRow>(telemetryDb, machinePks, (batch) =>
@@ -262,51 +236,39 @@ export async function loadDashboardSnapshot(
     };
   });
 
-  const allowedServiceIds = new Set(allowedServices.map((service) => service.id));
+  const incidentAuthorization = incidentViewCondition(access, "incident.id");
   const activeIncidents = (
     await controlDb
       .prepare(
-        `SELECT id FROM incidents
+        `SELECT id FROM incidents incident
          WHERE workspace_id = ? AND deleted_at IS NULL AND state != 'resolved'
+           AND (${incidentAuthorization.sql})
          ORDER BY starts_at DESC LIMIT 500`,
       )
-      .bind(workspace.id)
+      .bind(workspace.id, ...incidentAuthorization.binds)
       .all<IncidentRow>()
   ).results;
-  const activeIncidentIds = activeIncidents.map((incident) => incident.id);
-  const activeIncidentResources = await queryInBatches<IncidentResourceRow>(
-    controlDb,
-    activeIncidentIds,
-    (batch) =>
-      controlDb
-        .prepare(
-          `SELECT incident_id, resource_id FROM incident_resources
-           WHERE resource_type = 'service'
-             AND incident_id IN (${placeholders(batch.length)})`,
-        )
-        .bind(...batch),
+  const checksServiceAuthorization = resourceCapabilityCondition(
+    access,
+    "service",
+    "selected.id",
+    "view",
   );
-  const activeIncidentCount = activeIncidents.filter((incident) =>
-    canAccessIncident(
-      workspace.role,
-      grants,
-      incident.id,
-      "view",
-      activeIncidentResources.some(
-        (resource) =>
-          resource.incident_id === incident.id && allowedServiceIds.has(resource.resource_id),
-      ),
-    ),
-  ).length;
   const checks = (
     await controlDb
       .prepare(
-        `SELECT service_id, telemetry_pk, critical FROM check_configs
-         WHERE workspace_id = ? AND enabled = 1 LIMIT 1000`,
+        `SELECT c.service_id, c.telemetry_pk, c.critical FROM check_configs c
+         JOIN (
+           SELECT selected.id FROM services selected
+           WHERE selected.workspace_id = ? AND selected.deleted_at IS NULL
+             AND (${checksServiceAuthorization.sql})
+           ORDER BY selected.name LIMIT 500
+         ) visible ON visible.id = c.service_id
+         WHERE c.workspace_id = ? AND c.enabled = 1 LIMIT 1000`,
       )
-      .bind(workspace.id)
+      .bind(workspace.id, ...checksServiceAuthorization.binds, workspace.id)
       .all<CheckRow>()
-  ).results.filter((check) => allowedServiceIds.has(check.service_id));
+  ).results;
   const checkPks = checks.map((check) => check.telemetry_pk);
   const historyStart = Math.floor((now - 30 * 300_000) / 300_000) * 300_000;
   const servicePks = allowedServices.map((service) => service.telemetry_pk);
@@ -423,7 +385,7 @@ export async function loadDashboardSnapshot(
       networkTxTotal: machines.reduce((total, machine) => total + machine.networkTxTotal, 0),
       services: services.length,
       servicesDown: services.filter((service) => service.state === "down").length,
-      activeIncidents: activeIncidentCount,
+      activeIncidents: activeIncidents.length,
     },
     machines: machinePreview,
     services: servicePreview,

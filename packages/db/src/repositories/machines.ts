@@ -1,6 +1,5 @@
 import {
   canAccessContainer,
-  canAccessResource,
   type ResourceGrant,
   type ResourceType,
   type WorkspaceRole,
@@ -16,6 +15,7 @@ import type {
   MachineRuntimeStatus,
 } from "./machine-models.js";
 import { loadMachineProbeTasks } from "./machine-probes.js";
+import { resourceCapabilityCondition } from "./resource-access-query.js";
 
 export type {
   MachineCollection,
@@ -66,6 +66,7 @@ interface MachineRow {
   agent_kernel_version: string | null;
   agent_created_at: number | null;
   agent_last_seen_at: number | null;
+  can_manage?: number;
 }
 
 interface MachineLatestRow {
@@ -105,7 +106,6 @@ interface AgentCommandRow {
 
 interface WorkspaceAccess {
   workspace: WorkspaceRow;
-  grants: readonly ResourceGrant[];
 }
 
 export class MachineNotFoundError extends Error {}
@@ -124,29 +124,24 @@ async function loadWorkspaceAccess(
     .bind(workspaceSlug, userId)
     .first<WorkspaceRow>();
   if (!workspace) throw new MachineNotFoundError();
-  const rows = await db
-    .prepare(
-      `SELECT resource_type, resource_id, capability, effect FROM resource_grants
-       WHERE workspace_id = ? AND subject_user_id = ?
-         AND resource_type IN ('machine', 'container', 'service')`,
-    )
-    .bind(workspace.id, userId)
-    .all<GrantRow>();
-  return {
-    workspace,
-    grants: rows.results.map((grant) => ({
-      resourceType: grant.resource_type,
-      resourceId: grant.resource_id,
-      capability: grant.capability,
-      effect: grant.effect,
-    })),
-  };
+  return { workspace };
 }
 
 async function loadMachineRows(
   db: D1Database,
-  workspaceId: string,
+  access: WorkspaceAccess,
+  userId: string,
 ): Promise<readonly MachineRow[]> {
+  const authorization = resourceCapabilityCondition(
+    {
+      workspaceId: access.workspace.id,
+      userId,
+      role: access.workspace.role,
+    },
+    "machine",
+    "m.id",
+    "view",
+  );
   return (
     await db
       .prepare(
@@ -158,18 +153,28 @@ async function loadMachineRows(
                 a.os_version AS agent_os_version, a.kernel_version AS agent_kernel_version,
                 a.created_at AS agent_created_at, a.last_seen_at AS agent_last_seen_at
          FROM machines m LEFT JOIN agents a ON a.machine_id = m.id AND a.status = 'active'
-         WHERE m.workspace_id = ? AND m.deleted_at IS NULL ORDER BY m.name LIMIT 500`,
+         WHERE m.workspace_id = ? AND m.deleted_at IS NULL
+           AND (${authorization.sql})
+         ORDER BY m.name LIMIT 500`,
       )
-      .bind(workspaceId)
+      .bind(access.workspace.id, ...authorization.binds)
       .all<MachineRow>()
   ).results;
 }
 
 async function loadMachineRow(
   db: D1Database,
-  workspaceId: string,
+  access: WorkspaceAccess,
+  userId: string,
   machineId: string,
 ): Promise<MachineRow | null> {
+  const queryAccess = {
+    workspaceId: access.workspace.id,
+    userId,
+    role: access.workspace.role,
+  };
+  const authorization = resourceCapabilityCondition(queryAccess, "machine", "m.id", "view");
+  const management = resourceCapabilityCondition(queryAccess, "machine", "m.id", "manage");
   return db
     .prepare(
       `SELECT m.id, m.telemetry_pk, m.name, m.description, m.expected_host, m.labels_json,
@@ -178,12 +183,43 @@ async function loadMachineRow(
               m.created_at, a.agent_version, a.platform, a.arch, a.applied_config_revision,
               a.id AS agent_id, a.hostname AS agent_hostname, a.os_name AS agent_os_name,
               a.os_version AS agent_os_version, a.kernel_version AS agent_kernel_version,
-              a.created_at AS agent_created_at, a.last_seen_at AS agent_last_seen_at
+              a.created_at AS agent_created_at, a.last_seen_at AS agent_last_seen_at,
+              CASE WHEN (${management.sql}) THEN 1 ELSE 0 END AS can_manage
        FROM machines m LEFT JOIN agents a ON a.machine_id = m.id AND a.status = 'active'
-       WHERE m.workspace_id = ? AND m.id = ? AND m.deleted_at IS NULL`,
+       WHERE m.workspace_id = ? AND m.id = ? AND m.deleted_at IS NULL
+         AND (${authorization.sql})`,
     )
-    .bind(workspaceId, machineId)
+    .bind(...management.binds, access.workspace.id, machineId, ...authorization.binds)
     .first<MachineRow>();
+}
+
+async function loadMachineGrants(
+  db: D1Database,
+  access: WorkspaceAccess,
+  userId: string,
+  machineId: string,
+  containerIds: readonly string[],
+): Promise<readonly ResourceGrant[]> {
+  if (access.workspace.role === "admin") return [];
+  const uniqueContainerIds = [...new Set(containerIds)];
+  const containerClause =
+    uniqueContainerIds.length === 0
+      ? ""
+      : ` OR (resource_type = 'container' AND resource_id IN (${placeholders(uniqueContainerIds.length)}))`;
+  const rows = await db
+    .prepare(
+      `SELECT resource_type, resource_id, capability, effect FROM resource_grants
+       WHERE workspace_id = ? AND subject_user_id = ?
+         AND ((resource_type = 'machine' AND resource_id = ?)${containerClause})`,
+    )
+    .bind(access.workspace.id, userId, machineId, ...uniqueContainerIds)
+    .all<GrantRow>();
+  return rows.results.map((grant) => ({
+    resourceType: grant.resource_type,
+    resourceId: grant.resource_id,
+    capability: grant.capability,
+    effect: grant.effect,
+  }));
 }
 
 function placeholders(length: number): string {
@@ -479,9 +515,7 @@ export async function loadMachineCollection(
   now = Date.now(),
 ): Promise<MachineCollection> {
   const access = await loadWorkspaceAccess(controlDb, workspaceSlug, userId);
-  const rows = (await loadMachineRows(controlDb, access.workspace.id)).filter((machine) =>
-    canAccessResource(access.workspace.role, access.grants, "machine", machine.id, "view"),
-  );
+  const rows = await loadMachineRows(controlDb, access, userId);
   const latest = await loadLatestRows(
     telemetryDb,
     rows.map((machine) => machine.telemetry_pk),
@@ -507,13 +541,8 @@ async function loadAuthorizedMachine(
   machineId: string,
 ): Promise<{ access: WorkspaceAccess; machine: MachineRow }> {
   const access = await loadWorkspaceAccess(controlDb, workspaceSlug, userId);
-  const machine = await loadMachineRow(controlDb, access.workspace.id, machineId);
-  if (
-    !machine ||
-    !canAccessResource(access.workspace.role, access.grants, "machine", machine.id, "view")
-  ) {
-    throw new MachineNotFoundError();
-  }
+  const machine = await loadMachineRow(controlDb, access, userId, machineId);
+  if (!machine) throw new MachineNotFoundError();
   return { access, machine };
 }
 
@@ -568,13 +597,14 @@ export async function loadMachineDetail(
   );
   const latestRow = await loadLatestDetailRow(telemetryDb, machine.telemetry_pk);
   const inventory = parseContainerInventory(latestRow?.container_inventory_json ?? null);
-  const canManage = canAccessResource(
-    access.workspace.role,
-    access.grants,
-    "machine",
+  const grants = await loadMachineGrants(
+    controlDb,
+    access,
+    userId,
     machine.id,
-    "manage",
+    inventory?.containers.map((container) => container.id) ?? [],
   );
+  const canManage = machine.can_manage === 1;
   const events = await telemetryDb
     .prepare(
       `SELECT occurred_at, previous_state, current_state, reason_code FROM state_events
@@ -589,7 +619,7 @@ export async function loadMachineDetail(
     {
       workspaceId: access.workspace.id,
       role: access.workspace.role,
-      grants: access.grants,
+      userId,
     },
     machine.agent_id,
     now,
@@ -663,13 +693,7 @@ export async function loadMachineDetail(
       ? {
           ...inventory,
           containers: inventory.containers.filter((container) =>
-            canAccessContainer(
-              access.workspace.role,
-              access.grants,
-              machine.id,
-              container.id,
-              "view",
-            ),
+            canAccessContainer(access.workspace.role, grants, machine.id, container.id, "view"),
           ),
         }
       : null,
