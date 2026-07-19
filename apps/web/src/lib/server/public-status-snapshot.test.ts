@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   buildPublicStatusSnapshot,
   parsePublicStatusSnapshot,
+  PUBLIC_STATUS_FRESH_CACHE_TTL_SECONDS,
   PUBLIC_STATUS_SNAPSHOT_TTL_SECONDS,
   publicStatusSnapshotKey,
+  publicStatusSnapshotFreshMaxAge,
 } from "./public-status-snapshot.js";
 
 const now = 1_752_580_800_000;
@@ -28,6 +30,14 @@ const page = {
 };
 
 describe("public status snapshot", () => {
+  it("uses a short freshness window before retaining the snapshot for fallback", () => {
+    const boundary = now + PUBLIC_STATUS_FRESH_CACHE_TTL_SECONDS * 1_000;
+    expect(publicStatusSnapshotFreshMaxAge(now, now + 500)).toBe(30);
+    expect(publicStatusSnapshotFreshMaxAge(now, boundary)).toBe(0);
+    expect(publicStatusSnapshotFreshMaxAge(now, boundary + 1)).toBeNull();
+    expect(publicStatusSnapshotFreshMaxAge(now + 1, now)).toBeNull();
+  });
+
   it("uses a versioned origin and workspace-scoped cache key", () => {
     expect(publicStatusSnapshotKey("https://status.example.test", "operations", 3).url).toBe(
       "https://status.example.test/__alphaping_cache__/public-status/v2/operations/services/3",

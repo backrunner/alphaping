@@ -8,6 +8,7 @@ import {
 } from "$lib/public-status-view";
 
 export const PUBLIC_STATUS_SNAPSHOT_TTL_SECONDS = 6 * 60 * 60;
+export const PUBLIC_STATUS_FRESH_CACHE_TTL_SECONDS = 30;
 export const PUBLIC_STATUS_SNAPSHOT_CACHE = "alphaping-public-status-v2";
 
 const MAX_SNAPSHOT_BYTES = 1024 * 1024;
@@ -398,6 +399,12 @@ export function parsePublicStatusSnapshot(
   } catch {
     return null;
   }
+}
+
+export function publicStatusSnapshotFreshMaxAge(cachedAt: number, now: number): number | null {
+  if (!Number.isSafeInteger(cachedAt) || !Number.isSafeInteger(now) || cachedAt > now) return null;
+  const remainingMs = PUBLIC_STATUS_FRESH_CACHE_TTL_SECONDS * 1_000 - (now - cachedAt);
+  return remainingMs < 0 ? null : Math.ceil(remainingMs / 1_000);
 }
 
 export async function writePublicStatusSnapshot(

@@ -394,7 +394,7 @@ export async function runWebPerformanceE2e({
   try {
     const fallbackStatus = await fetchPublicStatus(baseUrl, {
       servicePage: lastServicePage,
-      source: "snapshot",
+      source: "cache",
       cacheBust: String(Date.now()),
     });
     if (!fallbackStatus.html.includes(lastPublicService.name)) {

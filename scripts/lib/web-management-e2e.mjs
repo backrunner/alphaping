@@ -1,5 +1,7 @@
 import { deflateSync } from "node:zlib";
 
+const PUBLIC_STATUS_FRESH_CACHE_WAIT_MS = 30_100;
+
 function assertResponse(response, expectedStatus, label) {
   if (response.status !== expectedStatus) {
     throw new Error(`${label} returned ${response.status}, expected ${expectedStatus}`);
@@ -1606,6 +1608,22 @@ export async function runWebManagementE2e({
   for (const privateValue of ["192.0.2.10", "e2e-private-value", "Expired maintenance notice"]) {
     if (publicPage.includes(privateValue)) throw new Error(`public status leaked ${privateValue}`);
   }
+  response = await fetch(`${baseUrl}/status/operations?fresh-cache=${Date.now()}`);
+  assertResponse(response, 200, "fresh public status cache");
+  if (
+    response.headers.get("cache-control") !== "public, max-age=30, must-revalidate" ||
+    response.headers.get("x-alphaping-status-source") !== "cache"
+  ) {
+    throw new Error("fresh public status snapshot did not bypass the live D1 projection");
+  }
+  const cachedPublicPage = await response.text();
+  if (
+    !cachedPublicPage.includes("AlphaPing API E2E") ||
+    cachedPublicPage.includes("e2e-private-value")
+  ) {
+    throw new Error("fresh public status snapshot was incomplete or leaked private data");
+  }
+  await new Promise((resolve) => setTimeout(resolve, PUBLIC_STATUS_FRESH_CACHE_WAIT_MS));
   for (const [binding, table] of [
     ["telemetry", "machine_latest"],
     ["control", "workspaces"],
