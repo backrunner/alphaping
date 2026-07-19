@@ -295,6 +295,7 @@ async function finalizeMachines(
     const agents = await loadAgentPage(env.CONTROL_DB, machine.id, cursor);
     const purge = await purgeMachineTelemetry(
       env.TELEMETRY_DB,
+      policy.workspace_pk,
       machine.telemetry_pk,
       agents.rows.map((agent) => agent.id),
       ROW_BATCH,
@@ -419,6 +420,7 @@ async function finalizeServices(
     const checks = await loadCheckPage(env.CONTROL_DB, policy, service.id, cursor);
     const purge = await purgeServiceTelemetry(
       env.TELEMETRY_DB,
+      policy.workspace_pk,
       service.telemetry_pk,
       checks.rows.map((check) => check.telemetry_pk),
       ROW_BATCH,

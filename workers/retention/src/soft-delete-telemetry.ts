@@ -30,6 +30,7 @@ function placeholders(length: number): string {
 async function deleteTimedResourceRows(
   db: D1Database,
   target: TimedTarget,
+  workspacePk: number,
   resourcePk: number,
   rowBatch: number,
 ): Promise<number> {
@@ -38,10 +39,11 @@ async function deleteTimedResourceRows(
       `DELETE FROM ${target.table}
        WHERE (${target.resourceColumn}, ${target.timeColumn}) IN (
          SELECT ${target.resourceColumn}, ${target.timeColumn} FROM ${target.table}
-         WHERE ${target.resourceColumn} = ? ORDER BY ${target.timeColumn} LIMIT ?
+         WHERE workspace_pk = ? AND ${target.resourceColumn} = ?
+         ORDER BY ${target.timeColumn} LIMIT ?
        )`,
     )
-    .bind(resourcePk, rowBatch)
+    .bind(workspacePk, resourcePk, rowBatch)
     .run();
   return result.meta.changes ?? 0;
 }
@@ -49,19 +51,20 @@ async function deleteTimedResourceRows(
 async function deleteResourceEvents(
   db: D1Database,
   resourceType: 1 | 2,
+  workspacePk: number,
   resourcePk: number,
   rowBatch: number,
 ): Promise<number> {
   const result = await db
     .prepare(
       `DELETE FROM state_events
-       WHERE (resource_type, resource_pk, occurred_at, event_id) IN (
+       WHERE workspace_pk = ? AND (resource_type, resource_pk, occurred_at, event_id) IN (
          SELECT resource_type, resource_pk, occurred_at, event_id FROM state_events
-         WHERE resource_type = ? AND resource_pk = ?
+         WHERE workspace_pk = ? AND resource_type = ? AND resource_pk = ?
          ORDER BY occurred_at, event_id LIMIT ?
        )`,
     )
-    .bind(resourceType, resourcePk, rowBatch)
+    .bind(workspacePk, workspacePk, resourceType, resourcePk, rowBatch)
     .run();
   return result.meta.changes ?? 0;
 }
@@ -69,19 +72,20 @@ async function deleteResourceEvents(
 async function deleteStatusBuckets(
   db: D1Database,
   resourceType: 1 | 2,
+  workspacePk: number,
   resourcePk: number,
   rowBatch: number,
 ): Promise<number> {
   const result = await db
     .prepare(
       `DELETE FROM status_buckets
-       WHERE (resource_type, resource_pk, bucket_seconds, bucket_start) IN (
+       WHERE workspace_pk = ? AND (resource_type, resource_pk, bucket_seconds, bucket_start) IN (
          SELECT resource_type, resource_pk, bucket_seconds, bucket_start FROM status_buckets
-         WHERE resource_type = ? AND resource_pk = ?
+         WHERE workspace_pk = ? AND resource_type = ? AND resource_pk = ?
          ORDER BY bucket_seconds, bucket_start LIMIT ?
        )`,
     )
-    .bind(resourceType, resourcePk, rowBatch)
+    .bind(workspacePk, workspacePk, resourceType, resourcePk, rowBatch)
     .run();
   return result.meta.changes ?? 0;
 }
@@ -111,21 +115,35 @@ async function deleteAgentReplayRows(
 
 async function machineTelemetryRemains(
   db: D1Database,
+  workspacePk: number,
   machinePk: number,
   agentIds: readonly string[],
 ): Promise<boolean> {
   const row = await db
     .prepare(
       `SELECT CASE WHEN
-         EXISTS(SELECT 1 FROM telemetry_blocks_5m WHERE machine_pk = ?) OR
-         EXISTS(SELECT 1 FROM machine_rollups_5m WHERE machine_pk = ?) OR
-         EXISTS(SELECT 1 FROM machine_rollups_1h WHERE machine_pk = ?) OR
-         EXISTS(SELECT 1 FROM machine_latest WHERE machine_pk = ?) OR
-         EXISTS(SELECT 1 FROM state_events WHERE resource_type = 1 AND resource_pk = ?) OR
-         EXISTS(SELECT 1 FROM status_buckets WHERE resource_type = 1 AND resource_pk = ?)
+         EXISTS(SELECT 1 FROM telemetry_blocks_5m WHERE workspace_pk = ? AND machine_pk = ?) OR
+         EXISTS(SELECT 1 FROM machine_rollups_5m WHERE workspace_pk = ? AND machine_pk = ?) OR
+         EXISTS(SELECT 1 FROM machine_rollups_1h WHERE workspace_pk = ? AND machine_pk = ?) OR
+         EXISTS(SELECT 1 FROM machine_latest WHERE workspace_pk = ? AND machine_pk = ?) OR
+         EXISTS(SELECT 1 FROM state_events WHERE workspace_pk = ? AND resource_type = 1 AND resource_pk = ?) OR
+         EXISTS(SELECT 1 FROM status_buckets WHERE workspace_pk = ? AND resource_type = 1 AND resource_pk = ?)
        THEN 1 ELSE 0 END AS present`,
     )
-    .bind(machinePk, machinePk, machinePk, machinePk, machinePk, machinePk)
+    .bind(
+      workspacePk,
+      machinePk,
+      workspacePk,
+      machinePk,
+      workspacePk,
+      machinePk,
+      workspacePk,
+      machinePk,
+      workspacePk,
+      machinePk,
+      workspacePk,
+      machinePk,
+    )
     .first<{ present: number }>();
   if (row?.present === 1) return true;
   for (let offset = 0; offset < agentIds.length; offset += ID_BATCH) {
@@ -144,24 +162,25 @@ async function machineTelemetryRemains(
 
 export async function purgeMachineTelemetry(
   db: D1Database,
+  workspacePk: number,
   machinePk: number,
   agentIds: readonly string[],
   rowBatch: number,
 ): Promise<TelemetryPurgeResult> {
   let deleted = 0;
   for (const target of MACHINE_TARGETS) {
-    deleted += await deleteTimedResourceRows(db, target, machinePk, rowBatch);
+    deleted += await deleteTimedResourceRows(db, target, workspacePk, machinePk, rowBatch);
   }
-  deleted += await deleteResourceEvents(db, 1, machinePk, rowBatch);
-  deleted += await deleteStatusBuckets(db, 1, machinePk, rowBatch);
+  deleted += await deleteResourceEvents(db, 1, workspacePk, machinePk, rowBatch);
+  deleted += await deleteStatusBuckets(db, 1, workspacePk, machinePk, rowBatch);
   const latest = await db
-    .prepare("DELETE FROM machine_latest WHERE machine_pk = ?")
-    .bind(machinePk)
+    .prepare("DELETE FROM machine_latest WHERE workspace_pk = ? AND machine_pk = ?")
+    .bind(workspacePk, machinePk)
     .run();
   deleted += latest.meta.changes ?? 0;
   deleted += await deleteAgentReplayRows(db, agentIds, rowBatch);
   return {
-    complete: !(await machineTelemetryRemains(db, machinePk, agentIds)),
+    complete: !(await machineTelemetryRemains(db, workspacePk, machinePk, agentIds)),
     deleted,
   };
 }
@@ -169,6 +188,7 @@ export async function purgeMachineTelemetry(
 async function deleteCheckRows(
   db: D1Database,
   target: TimedTarget,
+  workspacePk: number,
   checkPks: readonly number[],
   rowBatch: number,
 ): Promise<number> {
@@ -180,11 +200,11 @@ async function deleteCheckRows(
         `DELETE FROM ${target.table}
          WHERE (${target.resourceColumn}, ${target.timeColumn}) IN (
            SELECT ${target.resourceColumn}, ${target.timeColumn} FROM ${target.table}
-           WHERE ${target.resourceColumn} IN (${placeholders(ids.length)})
+           WHERE workspace_pk = ? AND ${target.resourceColumn} IN (${placeholders(ids.length)})
            ORDER BY ${target.resourceColumn}, ${target.timeColumn} LIMIT ?
          )`,
       )
-      .bind(...ids, rowBatch)
+      .bind(workspacePk, ...ids, rowBatch)
       .run();
     deleted += result.meta.changes ?? 0;
   }
@@ -193,6 +213,7 @@ async function deleteCheckRows(
 
 async function checkTelemetryRemains(
   db: D1Database,
+  workspacePk: number,
   checkPks: readonly number[],
 ): Promise<boolean> {
   for (let offset = 0; offset < checkPks.length; offset += ID_BATCH) {
@@ -204,9 +225,9 @@ async function checkTelemetryRemains(
       const row = await db
         .prepare(
           `SELECT 1 AS present FROM ${target.table}
-           WHERE ${target.resourceColumn} IN (${placeholders(ids.length)}) LIMIT 1`,
+           WHERE workspace_pk = ? AND ${target.resourceColumn} IN (${placeholders(ids.length)}) LIMIT 1`,
         )
-        .bind(...ids)
+        .bind(workspacePk, ...ids)
         .first<{ present: number }>();
       if (row) return true;
     }
@@ -216,41 +237,46 @@ async function checkTelemetryRemains(
 
 export async function purgeServiceTelemetry(
   db: D1Database,
+  workspacePk: number,
   servicePk: number,
   checkPks: readonly number[],
   rowBatch: number,
 ): Promise<TelemetryPurgeResult> {
   let deleted = 0;
   for (const target of CHECK_TARGETS) {
-    deleted += await deleteCheckRows(db, target, checkPks, rowBatch);
+    deleted += await deleteCheckRows(db, target, workspacePk, checkPks, rowBatch);
   }
   for (let offset = 0; offset < checkPks.length; offset += ID_BATCH) {
     const ids = checkPks.slice(offset, offset + ID_BATCH);
     const latest = await db
-      .prepare(`DELETE FROM check_latest WHERE check_pk IN (${placeholders(ids.length)})`)
-      .bind(...ids)
+      .prepare(
+        `DELETE FROM check_latest
+         WHERE workspace_pk = ? AND check_pk IN (${placeholders(ids.length)})`,
+      )
+      .bind(workspacePk, ...ids)
       .run();
     deleted += latest.meta.changes ?? 0;
   }
-  deleted += await deleteResourceEvents(db, 2, servicePk, rowBatch);
-  deleted += await deleteStatusBuckets(db, 2, servicePk, rowBatch);
+  deleted += await deleteResourceEvents(db, 2, workspacePk, servicePk, rowBatch);
+  deleted += await deleteStatusBuckets(db, 2, workspacePk, servicePk, rowBatch);
   const latest = await db
-    .prepare("DELETE FROM service_latest WHERE service_pk = ?")
-    .bind(servicePk)
+    .prepare("DELETE FROM service_latest WHERE workspace_pk = ? AND service_pk = ?")
+    .bind(workspacePk, servicePk)
     .run();
   deleted += latest.meta.changes ?? 0;
   const serviceRowsRemain = await db
     .prepare(
       `SELECT CASE WHEN
-         EXISTS(SELECT 1 FROM service_latest WHERE service_pk = ?) OR
-         EXISTS(SELECT 1 FROM state_events WHERE resource_type = 2 AND resource_pk = ?) OR
-         EXISTS(SELECT 1 FROM status_buckets WHERE resource_type = 2 AND resource_pk = ?)
+         EXISTS(SELECT 1 FROM service_latest WHERE workspace_pk = ? AND service_pk = ?) OR
+         EXISTS(SELECT 1 FROM state_events WHERE workspace_pk = ? AND resource_type = 2 AND resource_pk = ?) OR
+         EXISTS(SELECT 1 FROM status_buckets WHERE workspace_pk = ? AND resource_type = 2 AND resource_pk = ?)
        THEN 1 ELSE 0 END AS present`,
     )
-    .bind(servicePk, servicePk, servicePk)
+    .bind(workspacePk, servicePk, workspacePk, servicePk, workspacePk, servicePk)
     .first<{ present: number }>();
   return {
-    complete: serviceRowsRemain?.present !== 1 && !(await checkTelemetryRemains(db, checkPks)),
+    complete:
+      serviceRowsRemain?.present !== 1 && !(await checkTelemetryRemains(db, workspacePk, checkPks)),
     deleted,
   };
 }

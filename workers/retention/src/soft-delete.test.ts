@@ -6,6 +6,7 @@ import {
   finalizeSoftDeletedResources,
   type SoftDeletePolicy,
 } from "./soft-delete";
+import { purgeMachineTelemetry, purgeServiceTelemetry } from "./soft-delete-telemetry";
 
 const DAY_MS = 86_400_000;
 const now = 100 * DAY_MS;
@@ -175,6 +176,28 @@ async function runInBatches(
 }
 
 describe("soft-delete finalization", () => {
+  it("does not purge telemetry owned by another workspace", async () => {
+    await env.TELEMETRY_DB.batch([
+      env.TELEMETRY_DB.prepare("INSERT INTO machine_latest VALUES (99, 2)"),
+      env.TELEMETRY_DB.prepare("INSERT INTO check_latest VALUES (199, 2)"),
+      env.TELEMETRY_DB.prepare("INSERT INTO service_latest VALUES (299, 2)"),
+      env.TELEMETRY_DB.prepare("INSERT INTO state_events VALUES (2, 2, 299, 1, X'01')"),
+    ]);
+
+    await expect(purgeMachineTelemetry(env.TELEMETRY_DB, 1, 99, [], 10)).resolves.toEqual({
+      complete: true,
+      deleted: 0,
+    });
+    await expect(purgeServiceTelemetry(env.TELEMETRY_DB, 1, 299, [199], 10)).resolves.toEqual({
+      complete: true,
+      deleted: 0,
+    });
+    await expect(count(env.TELEMETRY_DB, "machine_latest")).resolves.toBe(1);
+    await expect(count(env.TELEMETRY_DB, "check_latest")).resolves.toBe(1);
+    await expect(count(env.TELEMETRY_DB, "service_latest")).resolves.toBe(1);
+    await expect(count(env.TELEMETRY_DB, "state_events")).resolves.toBe(1);
+  });
+
   it("purges machine, service, replay, secret, and authorization rows", async () => {
     const deletedAt = now - 8 * DAY_MS;
     await env.CONTROL_DB.batch([
