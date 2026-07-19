@@ -11,7 +11,7 @@ allowBuilds:
 catalog:
   "@cloudflare/workers-types": 5.20260715.1
   typescript: 5.9.2
-  vitest: 3.2.4
+  vitest: 3.2.6
 
 minimumReleaseAgeExclude:
   - "@cloudflare/workers-types@5.20260715.1"
