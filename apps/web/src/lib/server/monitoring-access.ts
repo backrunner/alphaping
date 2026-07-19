@@ -22,6 +22,8 @@ interface GrantRow {
   effect: "allow" | "deny";
 }
 
+const MAX_ACCESS_GRANTS = 5_000;
+
 export interface MonitoringAccess {
   workspaceId: string;
   workspacePk: number;
@@ -51,13 +53,27 @@ export async function loadMonitoringAccess(
     .bind(workspaceSlug, userId)
     .first<WorkspaceRow>();
   if (!workspace) throw error(404, "Workspace not found");
+  if (workspace.role === "admin") {
+    return {
+      workspaceId: workspace.id,
+      workspacePk: workspace.telemetry_pk,
+      defaultDashboardId: workspace.default_dashboard_id,
+      defaultSamplingIntervalSeconds: workspace.default_sampling_interval_seconds,
+      role: workspace.role,
+      grants: [],
+    };
+  }
   const grants = await db
     .prepare(
       `SELECT resource_type, resource_id, capability, effect FROM resource_grants
-     WHERE workspace_id = ? AND subject_user_id = ?`,
+       WHERE workspace_id = ? AND subject_user_id = ?
+       ORDER BY resource_type, resource_id, capability, effect LIMIT ?`,
     )
-    .bind(workspace.id, userId)
+    .bind(workspace.id, userId, MAX_ACCESS_GRANTS + 1)
     .all<GrantRow>();
+  if (grants.results.length > MAX_ACCESS_GRANTS) {
+    throw error(503, "Resource access scope exceeds the supported limit");
+  }
   return {
     workspaceId: workspace.id,
     workspacePk: workspace.telemetry_pk,
