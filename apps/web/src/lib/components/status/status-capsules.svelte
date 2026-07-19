@@ -13,6 +13,8 @@
     label,
     compact = false,
   }: { buckets: readonly Bucket[]; label: string; compact?: boolean } = $props();
+  let activeIndex = $state(0);
+  let capsuleButtons: HTMLButtonElement[] = [];
 
   const stateLabel: Readonly<Record<State, string>> = {
     healthy: "Healthy",
@@ -34,15 +36,41 @@
         : `${bucket.latencyMs} ms`;
     return `${time} · ${stateLabel[bucket.state]} · ${availability} · ${latency}`;
   }
+
+  function focusBucket(index: number): void {
+    const nextIndex = Math.max(0, Math.min(index, buckets.length - 1));
+    activeIndex = nextIndex;
+    capsuleButtons[nextIndex]?.focus();
+  }
+
+  function handleKeydown(event: KeyboardEvent, index: number): void {
+    if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      event.preventDefault();
+      focusBucket(index - 1);
+    } else if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      event.preventDefault();
+      focusBucket(index + 1);
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      focusBucket(0);
+    } else if (event.key === "End") {
+      event.preventDefault();
+      focusBucket(buckets.length - 1);
+    }
+  }
 </script>
 
-<div class:compact class="capsules" aria-label={label}>
-  {#each buckets as bucket (bucket.bucketStart)}
+<div class:compact class="capsules" role="group" aria-label={label}>
+  {#each buckets as bucket, index (bucket.bucketStart)}
     <button
+      bind:this={capsuleButtons[index]}
       type="button"
       class={`capsule capsule--${bucket.state}`}
       aria-label={details(bucket)}
       title={details(bucket)}
+      tabindex={index === activeIndex ? 0 : -1}
+      onfocus={() => (activeIndex = index)}
+      onkeydown={(event) => handleKeydown(event, index)}
     ></button>
   {/each}
 </div>

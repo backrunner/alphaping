@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { buildPublicStatusView } from "$lib/public-status-view";
+
 import {
   buildPublicStatusSnapshot,
   parsePublicStatusSnapshot,
@@ -8,7 +10,7 @@ import {
 } from "./public-status-snapshot.js";
 
 const now = 1_752_580_800_000;
-const page = {
+const sourcePage = {
   workspace: { name: "Operations", slug: "operations", internalId: "private-workspace" },
   dashboard: { name: "System status", token: "private-token" },
   machines: [],
@@ -17,11 +19,12 @@ const page = {
   announcements: [],
   updatedAt: now - 1_000,
 };
+const page = buildPublicStatusView(sourcePage, 1);
 
 describe("public status snapshot", () => {
   it("uses a versioned origin and workspace-scoped cache key", () => {
-    expect(publicStatusSnapshotKey("https://status.example.test", "operations").url).toBe(
-      "https://status.example.test/__alphaping_cache__/public-status/v1/operations",
+    expect(publicStatusSnapshotKey("https://status.example.test", "operations", 3).url).toBe(
+      "https://status.example.test/__alphaping_cache__/public-status/v2/operations/services/3",
     );
   });
 
@@ -39,6 +42,15 @@ describe("public status snapshot", () => {
         incidents: [],
         announcements: [],
         updatedAt: now - 1_000,
+        overallState: "unknown",
+        servicePagination: {
+          page: 1,
+          pageSize: 25,
+          pageCount: 1,
+          total: 0,
+          from: 0,
+          to: 0,
+        },
       },
       cachedAt: now,
     });

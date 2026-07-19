@@ -3,27 +3,15 @@
   import type { PublicStatusPage } from "@alphaping/db";
 
   import StatusLabel from "$components/status/status-label.svelte";
+  import type { PublicStatusOverallState } from "$lib/public-status-view";
 
   let {
     workspace,
     dashboard,
-    machines,
-    services,
-  }: Pick<PublicStatusPage, "workspace" | "dashboard" | "machines" | "services"> = $props();
-
-  const overallState = $derived.by(() => {
-    const states = [
-      ...machines.map((machine) => machine.state),
-      ...services.map((service) => service.state),
-    ];
-    if (states.some((state) => state === "down" || state === "offline")) return "down" as const;
-    if (states.some((state) => state === "degraded")) return "degraded" as const;
-    if (states.some((state) => state === "maintenance")) return "maintenance" as const;
-    if (states.length > 0 && states.every((state) => state === "healthy")) {
-      return "healthy" as const;
-    }
-    return "unknown" as const;
-  });
+    overallState,
+  }: Pick<PublicStatusPage, "workspace" | "dashboard"> & {
+    overallState: PublicStatusOverallState;
+  } = $props();
 </script>
 
 <header class="status-header">

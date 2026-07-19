@@ -1,16 +1,23 @@
 import type { PublicStatusPage } from "@alphaping/db";
 
+import {
+  normalizePublicStatusServicePage,
+  PUBLIC_STATUS_MAX_SERVICE_PAGES,
+  PUBLIC_STATUS_SERVICE_PAGE_SIZE,
+  type PublicStatusView,
+} from "$lib/public-status-view";
+
 export const PUBLIC_STATUS_SNAPSHOT_TTL_SECONDS = 6 * 60 * 60;
-export const PUBLIC_STATUS_SNAPSHOT_CACHE = "alphaping-public-status-v1";
+export const PUBLIC_STATUS_SNAPSHOT_CACHE = "alphaping-public-status-v2";
 
 const MAX_SNAPSHOT_BYTES = 1024 * 1024;
 const serviceStates = new Set(["healthy", "degraded", "down", "maintenance", "unknown"]);
 const machineStates = new Set(["healthy", "degraded", "down", "offline", "maintenance", "unknown"]);
 
 interface PublicStatusSnapshot {
-  version: 1;
+  version: 2;
   cachedAt: number;
-  page: PublicStatusPage;
+  page: PublicStatusView;
 }
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
@@ -292,41 +299,87 @@ function sanitizePage(value: unknown, workspaceSlug: string): PublicStatusPage |
   };
 }
 
+function sanitizeView(value: unknown, workspaceSlug: string): PublicStatusView | null {
+  if (!isRecord(value) || !isRecord(value.servicePagination)) return null;
+  const page = sanitizePage(value, workspaceSlug);
+  const pagination = value.servicePagination;
+  const currentPage = integer(pagination.page, 1, PUBLIC_STATUS_MAX_SERVICE_PAGES);
+  const pageSize = integer(pagination.pageSize, PUBLIC_STATUS_SERVICE_PAGE_SIZE);
+  const pageCount = integer(pagination.pageCount, 1, PUBLIC_STATUS_MAX_SERVICE_PAGES);
+  const total = integer(pagination.total, 0, 200);
+  const from = integer(pagination.from, 0, 200);
+  const to = integer(pagination.to, 0, 200);
+  if (
+    !page ||
+    typeof value.overallState !== "string" ||
+    !serviceStates.has(value.overallState) ||
+    currentPage === null ||
+    pageSize !== PUBLIC_STATUS_SERVICE_PAGE_SIZE ||
+    pageCount === null ||
+    total === null ||
+    from === null ||
+    to === null ||
+    pageCount !== Math.max(1, Math.ceil(total / pageSize)) ||
+    currentPage > pageCount
+  ) {
+    return null;
+  }
+  const expectedFrom = total === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const expectedTo = Math.min(currentPage * pageSize, total);
+  if (
+    from !== expectedFrom ||
+    to !== expectedTo ||
+    page.services.length !== (total === 0 ? 0 : to - from + 1)
+  ) {
+    return null;
+  }
+  return {
+    ...page,
+    overallState: value.overallState as PublicStatusView["overallState"],
+    servicePagination: { page: currentPage, pageSize, pageCount, total, from, to },
+  };
+}
+
 function visibleAnnouncements(
-  page: PublicStatusPage,
+  page: PublicStatusView,
   now: number,
-): PublicStatusPage["announcements"] {
+): PublicStatusView["announcements"] {
   return page.announcements.filter(
     (announcement) => announcement.startsAt <= now && announcement.expiresAt > now,
   );
 }
 
-export function publicStatusSnapshotKey(origin: string, workspaceSlug: string): Request {
+export function publicStatusSnapshotKey(
+  origin: string,
+  workspaceSlug: string,
+  servicePage = 1,
+): Request {
+  const normalizedPage = normalizePublicStatusServicePage(String(servicePage));
   const url = new URL(
-    `/__alphaping_cache__/public-status/v1/${encodeURIComponent(workspaceSlug)}`,
+    `/__alphaping_cache__/public-status/v2/${encodeURIComponent(workspaceSlug)}/services/${normalizedPage}`,
     origin,
   );
   return new Request(url, { method: "GET" });
 }
 
 export function buildPublicStatusSnapshot(
-  page: PublicStatusPage,
+  page: PublicStatusView,
   cachedAt: number,
 ): PublicStatusSnapshot {
-  const sanitized = sanitizePage(page, page.workspace.slug);
+  const sanitized = sanitizeView(page, page.workspace.slug);
   if (!sanitized || integer(cachedAt) === null) throw new Error("invalid_public_status_snapshot");
-  return { version: 1, cachedAt, page: sanitized };
+  return { version: 2, cachedAt, page: sanitized };
 }
 
 export function parsePublicStatusSnapshot(
   value: string,
   workspaceSlug: string,
   now: number,
-): { page: PublicStatusPage; cachedAt: number } | null {
+): { page: PublicStatusView; cachedAt: number } | null {
   if (value.length === 0 || value.length > MAX_SNAPSHOT_BYTES) return null;
   try {
     const parsed = JSON.parse(value) as unknown;
-    if (!isRecord(parsed) || parsed.version !== 1) return null;
+    if (!isRecord(parsed) || parsed.version !== 2) return null;
     const cachedAt = integer(parsed.cachedAt);
     if (
       cachedAt === null ||
@@ -335,7 +388,7 @@ export function parsePublicStatusSnapshot(
     ) {
       return null;
     }
-    const page = sanitizePage(parsed.page, workspaceSlug);
+    const page = sanitizeView(parsed.page, workspaceSlug);
     return page
       ? {
           page: { ...page, announcements: visibleAnnouncements(page, now) },
@@ -350,12 +403,13 @@ export function parsePublicStatusSnapshot(
 export async function writePublicStatusSnapshot(
   cache: Cache,
   origin: string,
-  page: PublicStatusPage,
+  page: PublicStatusView,
   cachedAt: number,
+  servicePage = page.servicePagination.page,
 ): Promise<void> {
   const snapshot = buildPublicStatusSnapshot(page, cachedAt);
   await cache.put(
-    publicStatusSnapshotKey(origin, page.workspace.slug),
+    publicStatusSnapshotKey(origin, page.workspace.slug, servicePage),
     Response.json(snapshot, {
       headers: {
         "cache-control": `public, max-age=${PUBLIC_STATUS_SNAPSHOT_TTL_SECONDS}`,
@@ -369,8 +423,9 @@ export async function readPublicStatusSnapshot(
   origin: string,
   workspaceSlug: string,
   now: number,
-): Promise<{ page: PublicStatusPage; cachedAt: number } | null> {
-  const response = await cache.match(publicStatusSnapshotKey(origin, workspaceSlug));
+  servicePage = 1,
+): Promise<{ page: PublicStatusView; cachedAt: number } | null> {
+  const response = await cache.match(publicStatusSnapshotKey(origin, workspaceSlug, servicePage));
   if (!response) return null;
   return parsePublicStatusSnapshot(await response.text(), workspaceSlug, now);
 }

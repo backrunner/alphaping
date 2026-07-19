@@ -6,6 +6,9 @@ const SERVICE_TARGET = 200;
 const MEASURED_REQUESTS = 20;
 const SSR_P95_LIMIT_MS = 500;
 const SSR_HTML_LIMIT_BYTES = 250_000;
+const PUBLIC_STATUS_SSR_LIMIT_MS = 500;
+const PUBLIC_STATUS_HTML_LIMIT_BYTES = 1_000_000;
+const PUBLIC_STATUS_SERVICE_PAGE_SIZE = 25;
 const TELEMETRY_PK_BASE = 1_000_000;
 const SERVICE_TELEMETRY_PK_BASE = 2_000_000;
 const CHECK_TELEMETRY_PK_BASE = 3_000_000;
@@ -92,18 +95,27 @@ async function fetchServiceDetail(baseUrl, adminCookie, serviceId) {
   return html;
 }
 
-async function fetchPublicStatus(baseUrl) {
-  const response = await fetch(`${baseUrl}/status/operations?fixture=performance`);
+async function fetchPublicStatus(
+  baseUrl,
+  { servicePage = 1, source = "live", cacheBust = null } = {},
+) {
+  const url = new URL("/status/operations", baseUrl);
+  url.searchParams.set("fixture", "performance");
+  if (servicePage > 1) url.searchParams.set("servicePage", String(servicePage));
+  if (cacheBust) url.searchParams.set("fallback", cacheBust);
+  const startedAt = performance.now();
+  const response = await fetch(url);
   const html = await response.text();
+  const durationMs = performance.now() - startedAt;
   if (response.status !== 200) {
     throw new Error(
       `200-resource public status returned ${response.status}, expected 200; body starts with ${JSON.stringify(html.slice(0, 500))}`,
     );
   }
-  if (response.headers.get("x-alphaping-status-source") !== "live") {
-    throw new Error("200-resource public status did not use the live projection");
+  if (response.headers.get("x-alphaping-status-source") !== source) {
+    throw new Error(`200-resource public status did not use the ${source} projection`);
   }
-  return html;
+  return { durationMs, html };
 }
 
 export async function runWebPerformanceE2e({
@@ -363,15 +375,47 @@ export async function runWebPerformanceE2e({
     throw new Error("101-check service detail omitted the final check");
   }
   const publicStatus = await fetchPublicStatus(baseUrl);
-  for (const resource of [
-    publicMachineRows[0],
-    publicMachineRows.at(-1),
-    publicServiceRows[0],
-    publicServiceRows.at(-1),
-  ]) {
-    if (!resource || !publicStatus.includes(resource.name)) {
+  for (const resource of [publicMachineRows[0], publicMachineRows.at(-1), publicServiceRows[0]]) {
+    if (!resource || !publicStatus.html.includes(resource.name)) {
       throw new Error("200-resource public status omitted a bounded resource");
     }
+  }
+  const firstOmittedService = publicServiceRows[PUBLIC_STATUS_SERVICE_PAGE_SIZE];
+  if (!firstOmittedService || publicStatus.html.includes(firstOmittedService.name)) {
+    throw new Error("public status first page serialized services beyond its bounded page");
+  }
+  const lastServicePage = Math.ceil(publicServiceRows.length / PUBLIC_STATUS_SERVICE_PAGE_SIZE);
+  const lastPublicStatus = await fetchPublicStatus(baseUrl, { servicePage: lastServicePage });
+  const lastPublicService = publicServiceRows.at(-1);
+  if (!lastPublicService || !lastPublicStatus.html.includes(lastPublicService.name)) {
+    throw new Error("public status last page omitted the final published service");
+  }
+  queryTelemetryDb("ALTER TABLE machine_latest RENAME TO machine_latest_unavailable");
+  try {
+    const fallbackStatus = await fetchPublicStatus(baseUrl, {
+      servicePage: lastServicePage,
+      source: "snapshot",
+      cacheBust: String(Date.now()),
+    });
+    if (!fallbackStatus.html.includes(lastPublicService.name)) {
+      throw new Error("paged public status snapshot omitted the final published service");
+    }
+  } finally {
+    queryTelemetryDb("ALTER TABLE machine_latest_unavailable RENAME TO machine_latest");
+  }
+  const publicStatusBytes = Buffer.byteLength(publicStatus.html);
+  console.log(
+    `Web 200-machine/200-service public status SSR: ${publicStatus.durationMs.toFixed(1)}ms html=${publicStatusBytes}B page=${PUBLIC_STATUS_SERVICE_PAGE_SIZE}`,
+  );
+  if (publicStatus.durationMs >= PUBLIC_STATUS_SSR_LIMIT_MS) {
+    throw new Error(
+      `public status SSR ${publicStatus.durationMs.toFixed(1)}ms exceeded ${PUBLIC_STATUS_SSR_LIMIT_MS}ms`,
+    );
+  }
+  if (publicStatusBytes > PUBLIC_STATUS_HTML_LIMIT_BYTES) {
+    throw new Error(
+      `public status HTML ${publicStatusBytes}B exceeded ${PUBLIC_STATUS_HTML_LIMIT_BYTES}B`,
+    );
   }
 
   await fetchDashboard(baseUrl, adminCookie);

@@ -20,8 +20,7 @@
   <PublicStatusHeader
     workspace={data.workspace}
     dashboard={data.dashboard}
-    machines={data.machines}
-    services={data.services}
+    overallState={data.overallState}
   />
   {#if data.stale}
     <div class="stale-notice" role="status">
@@ -34,7 +33,7 @@
   {/if}
   <PublicAnnouncements announcements={data.announcements} />
   <PublicMachineList machines={data.machines} />
-  <PublicServiceList services={data.services} />
+  <PublicServiceList services={data.services} pagination={data.servicePagination} />
   <PublicIncidentList incidents={data.incidents} />
   <footer>
     <span

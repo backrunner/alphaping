@@ -1,20 +1,37 @@
 <script lang="ts">
-  import type { PublicStatusPage } from "@alphaping/db";
+  import { page } from "$app/state";
+  import { ChevronLeft, ChevronRight } from "lucide-svelte";
+  import { SvelteURLSearchParams } from "svelte/reactivity";
 
   import StatusCapsules from "$components/status/status-capsules.svelte";
   import StatusLabel from "$components/status/status-label.svelte";
+  import type { PublicStatusView } from "$lib/public-status-view";
   import { formatRelativeTime } from "$lib/utils/format";
 
-  let { services }: { services: PublicStatusPage["services"] } = $props();
+  let {
+    services,
+    pagination,
+  }: {
+    services: PublicStatusView["services"];
+    pagination: PublicStatusView["servicePagination"];
+  } = $props();
+
+  function paginationHref(value: number): string {
+    const params = new SvelteURLSearchParams(page.url.searchParams);
+    if (value <= 1) params.delete("servicePage");
+    else params.set("servicePage", String(value));
+    const query = params.toString();
+    return `${page.url.pathname}${query ? `?${query}` : ""}`;
+  }
 </script>
 
 <section aria-labelledby="services-title">
   <header>
     <div>
       <h2 id="services-title">Services</h2>
-      <span>{services.length} published</span>
+      <span>{pagination.total} published</span>
     </div>
-    <small>Last 24 hours</small>
+    <small>{pagination.from}-{pagination.to} · Last 24 hours</small>
   </header>
   {#if services.length > 0}
     <div class="service-list">
@@ -47,6 +64,17 @@
         </article>
       {/each}
     </div>
+    {#if pagination.pageCount > 1}
+      <nav class="pagination" aria-label="Published service pages">
+        {#if pagination.page > 1}
+          <a href={paginationHref(pagination.page - 1)}><ChevronLeft size={13} />Previous</a>
+        {:else}<span><ChevronLeft size={13} />Previous</span>{/if}
+        <strong>Page {pagination.page} of {pagination.pageCount}</strong>
+        {#if pagination.page < pagination.pageCount}
+          <a href={paginationHref(pagination.page + 1)}>Next<ChevronRight size={13} /></a>
+        {:else}<span>Next<ChevronRight size={13} /></span>{/if}
+      </nav>
+    {/if}
   {:else}<p class="empty">No services are published on this status page.</p>{/if}
 </section>
 
@@ -140,6 +168,39 @@
     padding: 22px 0;
     color: var(--text-muted);
     font-size: 11px;
+  }
+
+  .pagination {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    min-height: 32px;
+    margin-top: 10px;
+    color: var(--text-faint);
+    font-size: 10px;
+  }
+
+  .pagination a,
+  .pagination span {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .pagination a {
+    color: var(--accent);
+    text-decoration: none;
+  }
+
+  .pagination a:last-child,
+  .pagination span:last-child {
+    justify-self: end;
+  }
+
+  .pagination strong {
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-weight: 500;
   }
 
   @media (max-width: 560px) {
