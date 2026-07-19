@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   acceptInvitationForUser,
+  loadWorkspaceInvitation,
   registerFromWorkspaceInvitation,
 } from "./workspace-invitations.js";
 
@@ -96,6 +97,29 @@ async function insertInvitation(email: string): Promise<void> {
 }
 
 describe("workspace invitation acceptance fencing", () => {
+  it("reports a session email match without exposing the recipient address", async () => {
+    await database
+      .prepare("INSERT INTO user (id, name, email) VALUES ('user-1', 'One', 'one@example.com')")
+      .run();
+    await insertInvitation("one@example.com");
+
+    await expect(
+      loadWorkspaceInvitation(database, TOKEN, SECRET, 1_000, "ONE@example.com"),
+    ).resolves.toMatchObject({
+      existingAccount: true,
+      recipientMatchesAuthenticatedEmail: true,
+    });
+    const mismatched = await loadWorkspaceInvitation(
+      database,
+      TOKEN,
+      SECRET,
+      1_000,
+      "other@example.com",
+    );
+    expect(mismatched.recipientMatchesAuthenticatedEmail).toBe(false);
+    expect(mismatched).not.toHaveProperty("email");
+  });
+
   it("allows only one concurrent existing account acceptance", async () => {
     await database.batch([
       database.prepare(

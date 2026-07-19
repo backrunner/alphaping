@@ -10,10 +10,13 @@ import type { Actions, PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = async ({ locals, params, platform }) => {
   if (!platform) throw error(503, "Cloudflare bindings are unavailable");
+  const authenticatedEmail = locals.session?.user.email ?? null;
   const invitation = await loadWorkspaceInvitation(
     platform.env.CONTROL_DB,
     params.token,
     platform.env.BETTER_AUTH_SECRET,
+    Date.now(),
+    authenticatedEmail,
   );
   return {
     invitation,
@@ -28,6 +31,12 @@ export const actions: Actions = {
     if (!platform) return fail(503, { message: "Cloudflare bindings are unavailable" });
     const form = await request.formData();
     try {
+      if (locals.session && form.get("intent") === "switch-account") {
+        if (!locals.auth) return fail(503, { message: "Authentication is unavailable" });
+        await locals.auth.api.signOut({ headers: request.headers });
+        const invitePath = `/invite/${encodeURIComponent(params.token)}`;
+        throw redirect(303, `/login?returnTo=${encodeURIComponent(invitePath)}`);
+      }
       if (locals.session) {
         const result = await acceptInvitationForUser(
           platform.env.CONTROL_DB,

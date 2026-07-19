@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ArrowRight, Check, KeyRound, UserPlus } from "lucide-svelte";
+  import { ArrowRight, Check, KeyRound, LogIn, UserPlus } from "lucide-svelte";
 
   import Button from "$components/ui/button/button.svelte";
 
@@ -29,7 +29,7 @@
           >
         </div>
       </div>
-    {:else if data.authenticated}
+    {:else if data.authenticated && data.invitation.recipientMatchesAuthenticatedEmail}
       <form method="POST">
         {#if form?.message}<p class="form-error" role="alert">{form.message}</p>{/if}
         <div class="invite__state">
@@ -37,6 +37,19 @@
           <div><strong>Signed in</strong><span>{data.authenticatedEmail}</span></div>
         </div>
         <Button type="submit">Accept invitation <ArrowRight size={14} /></Button>
+      </form>
+    {:else if data.authenticated}
+      <form method="POST">
+        <input type="hidden" name="intent" value="switch-account" />
+        <div class="invite__state invite__state--error">
+          <KeyRound size={16} />
+          <div>
+            <strong>Different account signed in</strong>
+            <span>{data.authenticatedEmail}</span>
+            <span>Sign in with the invited email to continue.</span>
+          </div>
+        </div>
+        <Button type="submit" variant="secondary"><LogIn size={14} /> Switch account</Button>
       </form>
     {:else if data.invitation.existingAccount}
       <div class="invite__state">

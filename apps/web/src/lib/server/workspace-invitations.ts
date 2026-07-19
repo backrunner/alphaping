@@ -23,6 +23,7 @@ export interface WorkspaceInvitationPage {
   expiresAt: number;
   expired: boolean;
   existingAccount: boolean;
+  recipientMatchesAuthenticatedEmail: boolean;
 }
 
 function randomToken(): string {
@@ -93,6 +94,7 @@ export async function loadWorkspaceInvitation(
   token: string,
   secret: string,
   now = Date.now(),
+  authenticatedEmail: string | null = null,
 ): Promise<WorkspaceInvitationPage> {
   const invitation = await invitationRecord(db, token, secret, false, now);
   return {
@@ -103,6 +105,8 @@ export async function loadWorkspaceInvitation(
     expiresAt: invitation.expires_at,
     expired: invitation.expires_at <= now,
     existingAccount: invitation.existing_user_id !== null,
+    recipientMatchesAuthenticatedEmail:
+      authenticatedEmail !== null && authenticatedEmail.trim().toLowerCase() === invitation.email,
   };
 }
 

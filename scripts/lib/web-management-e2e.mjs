@@ -1423,6 +1423,69 @@ export async function runWebManagementE2e({
     "invited member lookup",
   );
 
+  const secondAdminLogin = await fetch(`${baseUrl}/login`, {
+    method: "POST",
+    headers: {
+      accept: "text/html",
+      "content-type": "application/x-www-form-urlencoded",
+      origin: baseUrl,
+    },
+    body: form({ email: "admin@example.test", password: "correct horse battery staple" }),
+    redirect: "manual",
+  });
+  assertResponse(secondAdminLogin, 303, "second admin sign-in for invitation mismatch");
+  const secondAdminCookie = cookieHeader(secondAdminLogin);
+  const existingAccountInvite = await submitAction(
+    baseUrl,
+    "/platform-e2e/admin/access?/invite",
+    adminCookie,
+    { email: "member@example.test", role: "member" },
+    "existing account invitation creation",
+  );
+  const existingAccountToken = existingAccountInvite.serialized.match(
+    /\/invite\/([A-Za-z0-9_-]{43})/,
+  )?.[1];
+  if (!existingAccountToken)
+    throw new Error("existing account invitation did not return a one-time URL");
+  response = await fetch(`${baseUrl}/invite/${existingAccountToken}`, {
+    headers: { cookie: secondAdminCookie },
+  });
+  assertResponse(response, 200, "mismatched authenticated invitation view");
+  const mismatchedInvitationPage = await response.text();
+  if (
+    !mismatchedInvitationPage.includes("Different account signed in") ||
+    !mismatchedInvitationPage.includes("Switch account")
+  ) {
+    throw new Error("mismatched invitation did not offer an account switch action");
+  }
+  response = await fetch(`${baseUrl}/invite/${existingAccountToken}`, {
+    method: "POST",
+    headers: {
+      accept: "text/html",
+      "content-type": "application/x-www-form-urlencoded",
+      cookie: secondAdminCookie,
+      origin: baseUrl,
+    },
+    body: form({ intent: "switch-account" }),
+    redirect: "manual",
+  });
+  assertResponse(response, 303, "mismatched invitation account switch");
+  const expectedLoginLocation = `/login?returnTo=${encodeURIComponent(`/invite/${existingAccountToken}`)}`;
+  if (response.headers.get("location") !== expectedLoginLocation) {
+    throw new Error("account switch did not preserve the invitation return path");
+  }
+  response = await fetch(`${baseUrl}/invite/${existingAccountToken}`, {
+    headers: { cookie: secondAdminCookie },
+  });
+  assertResponse(response, 200, "signed-out invitation view");
+  const signedOutInvitationPage = await response.text();
+  if (
+    !signedOutInvitationPage.includes("Account found") ||
+    signedOutInvitationPage.includes("Different account signed in")
+  ) {
+    throw new Error("account switch did not clear the mismatched session");
+  }
+
   response = await fetch(`${baseUrl}/operations/admin`, { headers: { cookie: memberCookie } });
   assertResponse(response, 404, "member developer panel access");
   response = await fetch(`${baseUrl}/operations/machines/${machine.id}`, {
