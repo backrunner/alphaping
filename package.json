@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "license": "Apache-2.0",
+  "repository": "https://github.com/alkinum/alphaping",
   "packageManager": "pnpm@11.10.0",
   "engines": {
     "node": ">=22"
