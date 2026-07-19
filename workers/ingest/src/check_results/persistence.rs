@@ -34,9 +34,12 @@ pub async fn persist_batch(
         .prepare(
             "SELECT observed_at, state, failure_code, failure_summary,
                     consecutive_failures, consecutive_successes
-             FROM check_latest WHERE check_pk = ?",
+             FROM check_latest WHERE workspace_pk = ? AND check_pk = ?",
         )
-        .bind(&[unsigned(batch.config.check_pk)])?
+        .bind(&[
+            unsigned(batch.config.workspace_pk),
+            unsigned(batch.config.check_pk),
+        ])?
         .first::<PreviousCheckRow>(None)
         .await?;
     let historical = previous
@@ -59,11 +62,13 @@ async fn classify_slot(
     let slot = minute_slot(batch.nominal_minute);
     let query = format!(
         "SELECT result_id_{slot} AS result_id, payload_hash_{slot} AS payload_hash
-         FROM check_result_blocks_5m WHERE check_pk = ? AND block_start = ?"
+         FROM check_result_blocks_5m
+         WHERE workspace_pk = ? AND check_pk = ? AND block_start = ?"
     );
     let existing = db
         .prepare(query)
         .bind(&[
+            unsigned(batch.config.workspace_pk),
             unsigned(batch.config.check_pk),
             number(block_start(batch.nominal_minute)),
         ])?
@@ -92,9 +97,10 @@ fn block_statement(
          ON CONFLICT(check_pk, block_start) DO UPDATE SET
            {result} = excluded.{result}, {id} = excluded.{id}, {hash} = excluded.{hash},
            schema_version = MAX(check_result_blocks_5m.schema_version, excluded.schema_version)
-         WHERE check_result_blocks_5m.{id} IS NULL
+         WHERE check_result_blocks_5m.workspace_pk = excluded.workspace_pk
+           AND (check_result_blocks_5m.{id} IS NULL
             OR (check_result_blocks_5m.{id} = excluded.{id}
-                AND check_result_blocks_5m.{hash} = excluded.{hash})"
+                AND check_result_blocks_5m.{hash} = excluded.{hash}))"
     );
     db.prepare(query).bind(&[
         unsigned(batch.config.check_pk),
@@ -134,7 +140,8 @@ fn current_state_statements(
                consecutive_successes = excluded.consecutive_successes,
                critical = excluded.critical,
                result_id = excluded.result_id
-             WHERE excluded.observed_at >= check_latest.observed_at",
+             WHERE check_latest.workspace_pk = excluded.workspace_pk
+               AND excluded.observed_at >= check_latest.observed_at",
         )
         .bind(&[
             unsigned(batch.config.check_pk),
@@ -161,7 +168,7 @@ const SERVICE_STATE_CTE: &str = "WITH service_aggregate(rank) AS (
          WHEN state IN ('down', 'degraded') THEN 2
          WHEN state = 'healthy' THEN 1
          ELSE 0 END), 0)
-       FROM check_latest WHERE service_pk = ?
+       FROM check_latest WHERE workspace_pk = ? AND service_pk = ?
      ), next_service(state) AS (
        SELECT CASE
          WHEN ? > ? THEN 'maintenance'
@@ -192,10 +199,16 @@ fn service_state_statements(
          SELECT ?, 2, ?, ?, ?, COALESCE(previous.state, 'unknown'), next_service.state,
                 {SERVICE_REASON_SQL}
          FROM next_service
-         LEFT JOIN service_latest previous ON previous.service_pk = ?
+         LEFT JOIN service_latest previous
+           ON previous.workspace_pk = ? AND previous.service_pk = ?
          WHERE EXISTS (
-           SELECT 1 FROM check_latest WHERE check_pk = ? AND result_id = ?
+           SELECT 1 FROM check_latest
+           WHERE workspace_pk = ? AND check_pk = ? AND result_id = ?
          )
+           AND NOT EXISTS (
+             SELECT 1 FROM service_latest existing
+             WHERE existing.service_pk = ? AND existing.workspace_pk != ?
+           )
            AND COALESCE(previous.state, 'unknown') != next_service.state"
     );
     let latest = "INSERT INTO service_latest
@@ -203,27 +216,30 @@ fn service_state_statements(
            last_transition_at, updated_at)
          SELECT ?, ?, event.current_state, ?, event.reason_code, ?, ?
          FROM state_events event
-         WHERE event.resource_type = 2 AND event.resource_pk = ?
+         WHERE event.workspace_pk = ? AND event.resource_type = 2 AND event.resource_pk = ?
            AND event.occurred_at = ? AND event.event_id = ?
            AND changes() = 1
          ON CONFLICT(service_pk) DO UPDATE SET
            workspace_pk = excluded.workspace_pk, state = excluded.state,
            status_since = excluded.status_since, reason_code = excluded.reason_code,
-           last_transition_at = excluded.last_transition_at, updated_at = excluded.updated_at";
+           last_transition_at = excluded.last_transition_at, updated_at = excluded.updated_at
+         WHERE service_latest.workspace_pk = excluded.workspace_pk";
     let initial = "INSERT OR IGNORE INTO service_latest
           (service_pk, workspace_pk, state, status_since, reason_code,
            last_transition_at, updated_at)
          SELECT ?, ?, 'unknown', ?, 'check_unknown', ?, ?
          WHERE EXISTS (
-           SELECT 1 FROM check_latest WHERE check_pk = ? AND result_id = ?
+           SELECT 1 FROM check_latest
+           WHERE workspace_pk = ? AND check_pk = ? AND result_id = ?
          )
            AND NOT EXISTS (
              SELECT 1 FROM state_events event
-             WHERE event.resource_type = 2 AND event.resource_pk = ?
+             WHERE event.workspace_pk = ? AND event.resource_type = 2 AND event.resource_pk = ?
                AND event.occurred_at = ? AND event.event_id = ?
            )";
     Ok(vec![
         db.prepare(event).bind(&[
+            unsigned(batch.config.workspace_pk),
             unsigned(batch.config.service_pk),
             maintenance_until.clone(),
             number(batch.observed_at),
@@ -231,9 +247,13 @@ fn service_state_statements(
             unsigned(batch.config.service_pk),
             number(batch.observed_at),
             blob(&batch.result_id),
+            unsigned(batch.config.workspace_pk),
             unsigned(batch.config.service_pk),
+            unsigned(batch.config.workspace_pk),
             unsigned(batch.config.check_pk),
             blob(&batch.result_id),
+            unsigned(batch.config.service_pk),
+            unsigned(batch.config.workspace_pk),
         ])?,
         db.prepare(latest).bind(&[
             unsigned(batch.config.service_pk),
@@ -241,6 +261,7 @@ fn service_state_statements(
             number(batch.observed_at),
             number(batch.observed_at),
             number(batch.observed_at),
+            unsigned(batch.config.workspace_pk),
             unsigned(batch.config.service_pk),
             number(batch.observed_at),
             blob(&batch.result_id),
@@ -251,8 +272,10 @@ fn service_state_statements(
             number(batch.observed_at),
             number(batch.observed_at),
             number(batch.observed_at),
+            unsigned(batch.config.workspace_pk),
             unsigned(batch.config.check_pk),
             blob(&batch.result_id),
+            unsigned(batch.config.workspace_pk),
             unsigned(batch.config.service_pk),
             number(batch.observed_at),
             blob(&batch.result_id),

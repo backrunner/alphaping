@@ -83,9 +83,14 @@ pub async fn closed_rollup_statements(
     let block = db
         .prepare(
             "SELECT result_0, result_1, result_2, result_3
-             FROM check_result_blocks_5m WHERE check_pk = ? AND block_start = ?",
+             FROM check_result_blocks_5m
+             WHERE workspace_pk = ? AND check_pk = ? AND block_start = ?",
         )
-        .bind(&[unsigned(batch.config.check_pk), number(bucket)])?
+        .bind(&[
+            unsigned(batch.config.workspace_pk),
+            unsigned(batch.config.check_pk),
+            number(bucket),
+        ])?
         .first::<BlockRow>(None)
         .await?;
     let mut five = Rollup::default();
@@ -132,10 +137,12 @@ async fn hourly_rollup_statement(
             "SELECT total_count, healthy_count, degraded_count, down_count,
                     latency_avg_ms, latency_max_ms
              FROM check_rollups_5m
-             WHERE check_pk = ? AND bucket_start >= ? AND bucket_start < ?
+             WHERE workspace_pk = ? AND check_pk = ?
+               AND bucket_start >= ? AND bucket_start < ?
              ORDER BY bucket_start",
         )
         .bind(&[
+            unsigned(batch.config.workspace_pk),
             unsigned(batch.config.check_pk),
             number(hour_start),
             number(bucket),
@@ -175,7 +182,8 @@ fn rollup_statement(
          ON CONFLICT(check_pk, bucket_start) DO UPDATE SET
            total_count = excluded.total_count, healthy_count = excluded.healthy_count,
            degraded_count = excluded.degraded_count, down_count = excluded.down_count,
-           latency_avg_ms = excluded.latency_avg_ms, latency_max_ms = excluded.latency_max_ms"
+           latency_avg_ms = excluded.latency_avg_ms, latency_max_ms = excluded.latency_max_ms
+         WHERE {table}.workspace_pk = excluded.workspace_pk"
     );
     db.prepare(query).bind(&[
         unsigned(batch.config.check_pk),
@@ -241,7 +249,8 @@ fn status_bucket_statement(
              WHEN status_buckets.latency_max_ms IS NULL THEN excluded.latency_max_ms
              WHEN excluded.latency_max_ms IS NULL THEN status_buckets.latency_max_ms
              ELSE MAX(status_buckets.latency_max_ms, excluded.latency_max_ms) END,
-           summary_code = excluded.summary_code",
+           summary_code = excluded.summary_code
+         WHERE status_buckets.workspace_pk = excluded.workspace_pk",
     )
     .bind(&[
         unsigned(batch.config.service_pk),
