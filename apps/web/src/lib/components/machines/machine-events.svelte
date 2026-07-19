@@ -2,6 +2,8 @@
   import { TriangleAlert } from "lucide-svelte";
   import type { MachineDetail } from "@alphaping/db";
 
+  import EmptyState from "$components/ui/empty-state/empty-state.svelte";
+
   let { events }: { events: MachineDetail["events"] } = $props();
 
   function formatTimestamp(value: number) {
@@ -39,7 +41,12 @@
     {/each}
   </ol>
 {:else}
-  <div class="empty">No machine state transitions have been recorded.</div>
+  <EmptyState
+    compact
+    icon={TriangleAlert}
+    title="No state changes yet"
+    description="Durable machine transitions will appear here after the first health change."
+  />
 {/if}
 
 <style>
@@ -53,12 +60,12 @@
   }
 
   h2 {
-    font-size: 14px;
+    font-size: 15px;
   }
 
   p {
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: 12px;
   }
 
   ol {
@@ -92,7 +99,7 @@
   }
 
   strong {
-    font-size: 10px;
+    font-size: 12px;
   }
 
   small,
@@ -100,13 +107,6 @@
     margin-top: 2px;
     color: var(--text-faint);
     font-family: var(--font-mono);
-    font-size: 9px;
-  }
-
-  .empty {
-    padding: 28px 0;
-    border-block: 1px solid var(--border);
-    color: var(--text-muted);
     font-size: 11px;
   }
 

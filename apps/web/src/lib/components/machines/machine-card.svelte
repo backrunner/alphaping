@@ -76,9 +76,10 @@
     display: block;
     min-width: 0;
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-card);
     color: inherit;
     background: var(--surface);
+    box-shadow: var(--shadow-card);
     text-decoration: none;
     transition:
       border-color 140ms ease,
@@ -88,7 +89,7 @@
 
   .machine:hover {
     border-color: var(--border-strong);
-    box-shadow: 0 8px 22px rgb(16 24 40 / 0.08);
+    box-shadow: var(--shadow-card-hover);
     translate: 0 -1px;
   }
 
@@ -114,7 +115,7 @@
     display: block;
     overflow: hidden;
     color: var(--text);
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 650;
     text-decoration: none;
     text-overflow: ellipsis;
@@ -130,7 +131,7 @@
     margin-top: 2px;
     overflow: hidden;
     color: var(--text-faint);
-    font-size: 10px;
+    font-size: 11px;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -150,7 +151,7 @@
     border-radius: 999px;
     color: var(--text-muted);
     background: var(--surface-subtle);
-    font-size: 9px;
+    font-size: 10px;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -176,7 +177,7 @@
 
   .machine__metric span {
     overflow: hidden;
-    font-size: 10px;
+    font-size: 11px;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -185,7 +186,7 @@
     grid-column: 1 / -1;
     color: var(--text);
     font-family: var(--font-mono);
-    font-size: 13px;
+    font-size: 14px;
     font-variant-numeric: tabular-nums;
   }
 
@@ -194,7 +195,7 @@
     overflow: hidden;
     color: var(--text-faint);
     font-family: var(--font-mono);
-    font-size: 9px;
+    font-size: 10px;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -202,7 +203,7 @@
   .machine__footer {
     color: var(--text-muted);
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: 11px;
   }
 
   .machine__network,
@@ -227,7 +228,7 @@
   .machine__network small {
     grid-column: 1 / -1;
     color: var(--text-faint);
-    font-size: 9px;
+    font-size: 10px;
     white-space: nowrap;
   }
 

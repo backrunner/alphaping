@@ -4,6 +4,7 @@
 
   import ContainerList from "$components/machines/container-list.svelte";
   import ContainerRuntimeList from "$components/machines/container-runtime-list.svelte";
+  import EmptyState from "$components/ui/empty-state/empty-state.svelte";
   import { formatRelativeTime } from "$lib/utils/format";
 
   let { inventory }: { inventory: MachineDetail["containerInventory"] } = $props();
@@ -22,13 +23,12 @@
 </script>
 
 {#if !inventory}
-  <div class="awaiting" role="status">
-    <Clock3 size={20} />
-    <div>
-      <h2>Awaiting container inventory</h2>
-      <p>The Agent will report detected runtimes with its next durable report.</p>
-    </div>
-  </div>
+  <EmptyState
+    compact
+    icon={Clock3}
+    title="Awaiting container inventory"
+    description="The Agent will report detected runtimes with its next durable report."
+  />
 {:else}
   <section class="summary" aria-label="Container inventory summary">
     <div><span>Containers</span><strong>{inventory.containers.length}</strong></div>
@@ -52,11 +52,12 @@
       </div>
     </header>
     {#if inventory.containers.length === 0}
-      <div class="empty">
-        <Boxes size={20} />
-        <strong>No containers detected</strong>
-        <span>Available runtimes are reporting an empty inventory.</span>
-      </div>
+      <EmptyState
+        compact
+        icon={Boxes}
+        title="No containers detected"
+        description="Available runtimes are connected and currently reporting an empty inventory."
+      />
     {:else}
       <ContainerList containers={inventory.containers} />
     {/if}
@@ -69,26 +70,15 @@
     margin: 0;
   }
 
-  .awaiting {
-    display: flex;
-    min-height: 240px;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    color: var(--text-faint);
-  }
-
-  .awaiting h2,
   .container-section h2 {
     color: var(--text);
-    font-size: 14px;
+    font-size: 15px;
   }
 
-  .awaiting p,
   header p {
     margin-top: 2px;
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: 12px;
   }
 
   .summary {
@@ -110,13 +100,13 @@
 
   .summary span {
     color: var(--text-faint);
-    font-size: 9px;
+    font-size: 11px;
   }
 
   .summary strong {
     margin-top: 2px;
     font-family: var(--font-mono);
-    font-size: 14px;
+    font-size: 15px;
   }
 
   .summary strong.problem {
@@ -126,7 +116,7 @@
   .summary p {
     justify-self: end;
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: 11px;
   }
 
   .summary time {
@@ -134,7 +124,7 @@
     margin-top: 2px;
     color: var(--text-faint);
     font-family: var(--font-mono);
-    font-size: 9px;
+    font-size: 10px;
   }
 
   .container-section {
@@ -143,25 +133,6 @@
 
   .container-section > header {
     margin-bottom: 10px;
-  }
-
-  .empty {
-    display: grid;
-    min-height: 160px;
-    place-content: center;
-    justify-items: center;
-    gap: 5px;
-    border-block: 1px solid var(--border);
-    color: var(--text-faint);
-  }
-
-  .empty strong {
-    color: var(--text);
-    font-size: 11px;
-  }
-
-  .empty span {
-    font-size: 9px;
   }
 
   @media (max-width: 820px) {

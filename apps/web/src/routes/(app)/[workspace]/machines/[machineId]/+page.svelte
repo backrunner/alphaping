@@ -1,5 +1,6 @@
 <script lang="ts">
   import { ArrowLeft, Trash2 } from "lucide-svelte";
+  import { Tabs } from "bits-ui";
   import type { LiveViewerSnapshot } from "@alphaping/contracts";
   import type { DashboardMachine } from "@alphaping/db";
 
@@ -41,17 +42,6 @@
     { id: "events" as const, label: "Events" },
     ...(data.canManage ? [{ id: "config" as const, label: "Config" }] : []),
   ]);
-
-  function handleTabKeydown(event: KeyboardEvent, index: number) {
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-    event.preventDefault();
-    const offset = event.key === "ArrowRight" ? 1 : -1;
-    const nextIndex = (index + offset + tabs.length) % tabs.length;
-    const next = tabs[nextIndex];
-    if (!next) return;
-    activeTab = next.id;
-    requestAnimationFrame(() => document.getElementById(`machine-tab-${next.id}`)?.focus());
-  }
 
   function applyLiveSnapshot(snapshot: LiveViewerSnapshot) {
     if (snapshot.observedAt <= (currentLatest.observedAt ?? 0)) return;
@@ -120,56 +110,52 @@
 
   {#if deleteError}<p class="page-error" role="alert">{deleteError}</p>{/if}
 
-  <div class="tabs" role="tablist" aria-label="Machine details">
-    {#each tabs as tab, index}
-      <button
-        id={`machine-tab-${tab.id}`}
-        role="tab"
-        aria-selected={activeTab === tab.id}
-        aria-controls={`machine-panel-${tab.id}`}
-        tabindex={activeTab === tab.id ? 0 : -1}
-        class:active={activeTab === tab.id}
-        onclick={() => (activeTab = tab.id)}
-        onkeydown={(event) => handleTabKeydown(event, index)}>{tab.label}</button
-      >
-    {/each}
-  </div>
+  <div class="machine-tabs">
+    <Tabs.Root bind:value={activeTab}>
+      <Tabs.List class="tabs" aria-label="Machine details">
+        {#each tabs as tab}
+          <Tabs.Trigger class="tab" value={tab.id}>{tab.label}</Tabs.Trigger>
+        {/each}
+      </Tabs.List>
 
-  <div
-    id={`machine-panel-${activeTab}`}
-    class="panel"
-    role="tabpanel"
-    aria-labelledby={`machine-tab-${activeTab}`}
-  >
-    {#if activeTab === "overview"}
-      <MachineOverview detail={data} latest={currentLatest} />
-    {:else if activeTab === "probes"}
-      <MachineProbes tasks={data.probeTasks} />
-    {:else if activeTab === "containers"}
-      <MachineContainers inventory={data.containerInventory} />
-    {:else if activeTab === "events"}
-      <MachineEvents events={data.events} />
-    {:else if activeTab === "config" && data.canManage}
-      <MachineConfig machine={data.machine} result={form ?? null} />
-      {#if data.canAdministerAgent}
-        <MachineEnrollment
-          tokens={data.enrollmentTokens}
-          result={form ?? null}
-          ingestOrigin={data.ingestOrigin}
-          installOrigin={data.installOrigin}
-          checksums={data.installerChecksums}
-          manageHref={`/${data.workspace.slug}/machines/${data.machine.id}?tab=config`}
-        />
+      <Tabs.Content class="panel" value="overview">
+        <MachineOverview detail={data} latest={currentLatest} />
+      </Tabs.Content>
+      <Tabs.Content class="panel" value="probes">
+        <MachineProbes tasks={data.probeTasks} />
+      </Tabs.Content>
+      {#if data.machine.containersEnabled}
+        <Tabs.Content class="panel" value="containers">
+          <MachineContainers inventory={data.containerInventory} />
+        </Tabs.Content>
       {/if}
-      {#if data.agent}
-        <AgentUpdateControls
-          agent={data.agent}
-          commands={data.agentCommands}
-          result={form}
-          canInstall={data.canAdministerAgent}
-        />
+      <Tabs.Content class="panel" value="events">
+        <MachineEvents events={data.events} />
+      </Tabs.Content>
+      {#if data.canManage}
+        <Tabs.Content class="panel" value="config">
+          <MachineConfig machine={data.machine} result={form ?? null} />
+          {#if data.canAdministerAgent}
+            <MachineEnrollment
+              tokens={data.enrollmentTokens}
+              result={form ?? null}
+              ingestOrigin={data.ingestOrigin}
+              installOrigin={data.installOrigin}
+              checksums={data.installerChecksums}
+              manageHref={`/${data.workspace.slug}/machines/${data.machine.id}?tab=config`}
+            />
+          {/if}
+          {#if data.agent}
+            <AgentUpdateControls
+              agent={data.agent}
+              commands={data.agentCommands}
+              result={form}
+              canInstall={data.canAdministerAgent}
+            />
+          {/if}
+        </Tabs.Content>
       {/if}
-    {/if}
+    </Tabs.Root>
   </div>
 </main>
 
@@ -177,7 +163,7 @@
   main {
     width: min(100% - 24px, 1120px);
     margin: 0 auto;
-    padding: 24px 0 48px;
+    padding: 28px 0 52px;
   }
 
   .page-header {
@@ -211,7 +197,7 @@
   }
 
   h1 {
-    font-size: 22px;
+    font-size: 24px;
   }
 
   .page-header p {
@@ -220,7 +206,7 @@
     margin-top: 5px;
     color: var(--text-muted);
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: 12px;
   }
 
   .page-header p span::before {
@@ -231,13 +217,13 @@
   .page-error {
     margin: 10px 0 0;
     padding: 8px 10px;
-    border-radius: 6px;
+    border-radius: var(--radius-control);
     color: var(--status-down);
     background: var(--status-down-bg);
-    font-size: 11px;
+    font-size: 12px;
   }
 
-  .tabs {
+  .machine-tabs :global(.tabs) {
     display: flex;
     overflow-x: auto;
     gap: 2px;
@@ -245,35 +231,36 @@
     border-bottom: 1px solid var(--border);
   }
 
-  .tabs button {
+  .machine-tabs :global(.tab) {
     height: 28px;
     flex: none;
     padding: 0 9px;
     border: 0;
-    border-radius: 5px;
+    border-radius: var(--radius-control);
     color: var(--text-muted);
     background: transparent;
     font: inherit;
-    font-size: 11px;
+    font-size: 12px;
     cursor: pointer;
   }
 
-  .tabs button.active {
+  .machine-tabs :global(.tab[data-state="active"]) {
     color: var(--text);
     background: var(--surface-strong);
+    box-shadow: 0 1px 2px rgb(16 24 40 / 0.07);
     font-weight: 650;
   }
 
-  .panel {
+  .machine-tabs :global(.panel) {
     padding-top: 18px;
   }
 
   @media (max-width: 520px) {
-    .tabs {
+    .machine-tabs :global(.tabs) {
       gap: 0;
     }
 
-    .tabs button {
+    .machine-tabs :global(.tab) {
       padding-inline: 8px;
     }
 

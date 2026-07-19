@@ -5,6 +5,8 @@
 
   import MachineCard from "$components/machines/machine-card.svelte";
   import Button from "$components/ui/button/button.svelte";
+  import EmptyState from "$components/ui/empty-state/empty-state.svelte";
+  import SelectField from "$components/ui/select/select.svelte";
 
   let { data } = $props();
   const pageSize = 60;
@@ -33,9 +35,8 @@
     return { down: 0, degraded: 1, offline: 2, unknown: 3, maintenance: 4, healthy: 5 }[state];
   }
 
-  function submitFilters(event: Event): void {
-    const select = event.currentTarget;
-    if (select instanceof HTMLSelectElement) select.form?.requestSubmit();
+  function submitFilters(): void {
+    document.querySelector<HTMLFormElement>(".filters")?.requestSubmit();
   }
 
   function filterHref(name: string, value: string): string {
@@ -152,50 +153,60 @@
             placeholder="Search machines"
           />
         </label>
-        <select
+        <SelectField
           name="platform"
-          aria-label="Filter by operating system"
+          label="Filter by operating system"
           value={platform}
-          onchange={submitFilters}
-        >
-          <option value="">All systems</option>
-          {#each platformOptions as option}<option value={option}>{option}</option>{/each}
-        </select>
-        <select
+          options={[
+            { value: "", label: "All systems" },
+            ...platformOptions.map((option) => ({ value: option, label: option })),
+          ]}
+          onvaluechange={submitFilters}
+        />
+        <SelectField
           name="version"
-          aria-label="Filter by Agent version"
+          label="Filter by Agent version"
           value={version}
-          onchange={submitFilters}
-        >
-          <option value="">All versions</option>
-          {#each versionOptions as option}<option value={option}>{option}</option>{/each}
-        </select>
-        <select
+          options={[
+            { value: "", label: "All versions" },
+            ...versionOptions.map((option) => ({ value: option, label: option })),
+          ]}
+          onvaluechange={submitFilters}
+        />
+        <SelectField
           name="tag"
-          aria-label="Filter by machine label"
+          label="Filter by machine label"
           value={tag}
-          onchange={submitFilters}
-        >
-          <option value="">All labels</option>
-          {#each tagOptions as option}<option value={option}>{option}</option>{/each}
-        </select>
-        <select
+          options={[
+            { value: "", label: "All labels" },
+            ...tagOptions.map((option) => ({ value: option, label: option })),
+          ]}
+          onvaluechange={submitFilters}
+        />
+        <SelectField
           name="container"
-          aria-label="Filter by container monitoring"
+          label="Filter by container monitoring"
           value={container}
-          onchange={submitFilters}
-        >
-          <option value="">All container states</option>
-          <option value="enabled">Containers enabled</option>
-          <option value="disabled">Containers disabled</option>
-        </select>
-        <select name="sort" aria-label="Sort machines" value={sort} onchange={submitFilters}>
-          <option value="priority">Problems first</option>
-          <option value="name">Name</option>
-          <option value="download">Download rate</option>
-          <option value="upload">Upload rate</option>
-          <option value="recent">Last report</option>
-        </select>
+          options={[
+            { value: "", label: "All container states" },
+            { value: "enabled", label: "Containers enabled" },
+            { value: "disabled", label: "Containers disabled" },
+          ]}
+          onvaluechange={submitFilters}
+        />
+        <SelectField
+          name="sort"
+          label="Sort machines"
+          value={sort}
+          options={[
+            { value: "priority", label: "Problems first" },
+            { value: "name", label: "Name" },
+            { value: "download", label: "Download rate" },
+            { value: "upload", label: "Upload rate" },
+            { value: "recent", label: "Last report" },
+          ]}
+          onvaluechange={submitFilters}
+        />
         <button class="search-submit" type="submit">Search</button>
       </form>
       <nav class="segments" aria-label="Filter machine status">
@@ -233,18 +244,19 @@
         </nav>
       {/if}
     {:else}
-      <section class="empty compact">
-        <Search size={22} />
-        <h2>No matching machines</h2>
-        <p>Change the search or status filter.</p>
-      </section>
+      <EmptyState
+        compact
+        icon={Search}
+        title="No matching machines"
+        description="Change the search query or remove one of the active filters."
+      />
     {/if}
   {:else}
-    <section class="empty">
-      <Server size={26} />
-      <h2>No machines available</h2>
-      <p>No machine has been configured or granted to this account.</p>
-    </section>
+    <EmptyState
+      icon={Server}
+      title="No machines available"
+      description="No machine has been configured or granted to this account."
+    />
   {/if}
 </main>
 
@@ -252,7 +264,7 @@
   .machines-page {
     width: min(100% - 24px, 1180px);
     margin: 0 auto;
-    padding: 24px 0 48px;
+    padding: 28px 0 52px;
   }
 
   .page-header {
@@ -274,21 +286,20 @@
   }
 
   h1,
-  h2,
   p {
     margin: 0;
   }
 
   h1 {
     margin-top: 14px;
-    font-size: 22px;
+    font-size: 24px;
   }
 
   .page-header p,
-  .empty p {
+  .page-header p {
     margin-top: 3px;
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .toolbar {
@@ -314,9 +325,10 @@
     gap: 7px;
     padding: 0 9px;
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-control);
     color: var(--text-faint);
     background: var(--surface);
+    box-shadow: 0 1px 2px rgb(16 24 40 / 0.04);
   }
 
   .search input {
@@ -335,21 +347,20 @@
     outline-offset: 1px;
   }
 
-  .filters select,
   .search-submit {
-    height: 30px;
+    height: 34px;
     min-width: 0;
     border: 1px solid var(--border);
-    border-radius: 5px;
+    border-radius: var(--radius-control);
     color: var(--text-muted);
     background: var(--surface);
     font: inherit;
-    font-size: 10px;
+    font-size: 12px;
   }
 
-  .filters select {
+  .filters :global(.select-trigger) {
+    width: auto;
     max-width: 132px;
-    padding: 0 22px 0 7px;
   }
 
   .search-submit {
@@ -373,7 +384,7 @@
     border-radius: 5px;
     color: var(--text-muted);
     background: transparent;
-    font-size: 10px;
+    font-size: 12px;
     text-decoration: none;
   }
 
@@ -389,13 +400,13 @@
     align-self: center;
     color: var(--text-faint);
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: 11px;
   }
 
   .machine-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 350px), 1fr));
-    gap: 10px;
+    gap: 14px;
   }
 
   .pagination {
@@ -404,7 +415,7 @@
     align-items: center;
     margin-top: 16px;
     color: var(--text-faint);
-    font-size: 10px;
+    font-size: 11px;
   }
 
   .pagination a,
@@ -430,28 +441,6 @@
     font-weight: 500;
   }
 
-  .empty {
-    display: grid;
-    max-width: 480px;
-    justify-items: start;
-    gap: 6px;
-    margin: 56px auto;
-    padding: 28px;
-    border: 1px dashed var(--border-strong);
-    border-radius: 6px;
-    color: var(--text-faint);
-    background: var(--surface);
-  }
-
-  .empty.compact {
-    margin-top: 24px;
-  }
-
-  .empty h2 {
-    color: var(--text);
-    font-size: 14px;
-  }
-
   @media (max-width: 680px) {
     .page-header {
       align-items: flex-start;
@@ -472,7 +461,7 @@
       width: 100%;
     }
 
-    .filters select {
+    .filters :global(.select-trigger) {
       max-width: none;
       flex: 1 1 140px;
     }

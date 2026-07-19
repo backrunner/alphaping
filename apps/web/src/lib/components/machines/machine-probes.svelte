@@ -4,6 +4,7 @@
 
   import ProbeVisuals from "$components/machines/probe-visuals.svelte";
   import StatusLabel from "$components/status/status-label.svelte";
+  import EmptyState from "$components/ui/empty-state/empty-state.svelte";
   import { formatRelativeTime } from "$lib/utils/format";
 
   let { tasks }: { tasks: readonly MachineProbeTask[] } = $props();
@@ -16,13 +17,12 @@
 </script>
 
 {#if tasks.length === 0}
-  <div class="empty" role="status">
-    <Activity size={20} />
-    <div>
-      <h2>No assigned probes</h2>
-      <p>This Agent has no visible service checks.</p>
-    </div>
-  </div>
+  <EmptyState
+    compact
+    icon={Activity}
+    title="No assigned probes"
+    description="This Agent has no visible service checks assigned to it."
+  />
 {:else}
   <section class="summary" aria-label="Agent probe summary">
     <div><span>Assigned</span><strong>{tasks.length}</strong></div>
@@ -83,25 +83,6 @@
     margin: 0;
   }
 
-  .empty {
-    display: flex;
-    min-height: 240px;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    color: var(--text-faint);
-  }
-
-  .empty h2 {
-    color: var(--text-muted);
-    font-size: 13px;
-  }
-
-  .empty p {
-    margin-top: 2px;
-    font-size: 11px;
-  }
-
   .summary {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 120px));
@@ -114,7 +95,7 @@
   .metrics span {
     display: block;
     color: var(--text-faint);
-    font-size: 9px;
+    font-size: 11px;
     font-weight: 650;
     text-transform: uppercase;
   }
@@ -172,7 +153,7 @@
 
   h2 {
     overflow: hidden;
-    font-size: 13px;
+    font-size: 14px;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -182,7 +163,7 @@
     gap: 8px;
     margin-top: 3px;
     color: var(--text-faint);
-    font-size: 10px;
+    font-size: 11px;
   }
 
   .identity code {
@@ -203,7 +184,7 @@
     display: block;
     margin-top: 3px;
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 600;
   }
 
@@ -213,7 +194,7 @@
     margin: 10px 0 0 37px;
     color: var(--text-faint);
     font-family: var(--font-mono);
-    font-size: 9px;
+    font-size: 11px;
   }
 
   footer span {
