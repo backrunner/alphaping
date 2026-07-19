@@ -3,6 +3,7 @@
     Activity,
     ArrowDown,
     ArrowUp,
+    ChartLine,
     CircleCheck,
     Clock3,
     Cpu,
@@ -14,9 +15,11 @@
   import type { DashboardMachine, MachineDetail } from "@alphaping/db";
 
   import HistoryPanel from "$components/machines/history-panel.svelte";
+  import type { MachineMetric } from "$components/machines/history-panel.svelte";
   import { formatBytes, formatPercent, formatRate } from "$lib/utils/format";
 
   let { detail, latest }: { detail: MachineDetail; latest: DashboardMachine } = $props();
+  let selectedMetric = $state<MachineMetric | null>(null);
 
   function formatTimestamp(value: number | null) {
     if (value === null) return "Never";
@@ -47,18 +50,39 @@
 
 <div class="metric-strip" aria-label="Current machine metrics">
   <div>
-    <span><Cpu size={13} />CPU</span><strong>{formatPercent(latest.cpuPermille)}</strong>
+    <span
+      ><Cpu size={13} />CPU<button
+        type="button"
+        title="View CPU history"
+        aria-label="View CPU history"
+        onclick={() => (selectedMetric = "cpu")}><ChartLine size={13} /></button
+      ></span
+    ><strong>{formatPercent(latest.cpuPermille)}</strong>
   </div>
   <div>
     <span><Activity size={13} />Load 1m</span><strong>{formatLoad(latest.load1mMilli)}</strong>
   </div>
   <div>
-    <span><MemoryStick size={13} />Memory</span>
+    <span
+      ><MemoryStick size={13} />Memory<button
+        type="button"
+        title="View memory history"
+        aria-label="View memory history"
+        onclick={() => (selectedMetric = "memory")}><ChartLine size={13} /></button
+      ></span
+    >
     <strong>{formatBytes(latest.memoryUsedBytes)}</strong>
     <small>of {formatBytes(latest.memoryTotalBytes)}</small>
   </div>
   <div>
-    <span><HardDrive size={13} />Storage</span>
+    <span
+      ><HardDrive size={13} />Storage<button
+        type="button"
+        title="View storage history"
+        aria-label="View storage history"
+        onclick={() => (selectedMetric = "storage")}><ChartLine size={13} /></button
+      ></span
+    >
     <strong>{formatBytes(latest.storageUsedBytes)}</strong>
     <small>of {formatBytes(latest.storageTotalBytes)}</small>
   </div>
@@ -66,7 +90,14 @@
     <span><Clock3 size={13} />Uptime</span><strong>{formatUptime(latest.uptimeSeconds)}</strong>
   </div>
   <div>
-    <span><ArrowDown size={13} />Download</span>
+    <span
+      ><ArrowDown size={13} />Download<button
+        type="button"
+        title="View network history"
+        aria-label="View network history"
+        onclick={() => (selectedMetric = "network")}><ChartLine size={13} /></button
+      ></span
+    >
     <strong>{formatRate(latest.networkRxBps)}</strong>
     <small>{formatBytes(latest.networkRxTotal)} total</small>
   </div>
@@ -86,7 +117,10 @@
   </div>
 {/if}
 
-<HistoryPanel endpoint={`/${detail.workspace.slug}/machines/${detail.machine.id}/metrics`} />
+<HistoryPanel
+  endpoint={`/${detail.workspace.slug}/machines/${detail.machine.id}/metrics`}
+  bind:selectedMetric
+/>
 
 <section class="details-section">
   <header>
@@ -202,6 +236,24 @@
     gap: 5px;
     color: var(--text-muted);
     font-size: 10px;
+  }
+
+  .metric-strip span button {
+    display: inline-grid;
+    width: 22px;
+    height: 22px;
+    margin-left: auto;
+    place-items: center;
+    border: 0;
+    border-radius: 6px;
+    color: var(--text-faint);
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .metric-strip span button:hover {
+    color: var(--accent);
+    background: var(--surface-subtle);
   }
 
   .metric-strip strong {

@@ -4,7 +4,12 @@
 
   import MachineHistoryCharts from "$components/machines/machine-history-charts.svelte";
 
-  let { endpoint }: { endpoint: string } = $props();
+  export type MachineMetric = "cpu" | "memory" | "storage" | "network";
+
+  let {
+    endpoint,
+    selectedMetric = $bindable<MachineMetric | null>(null),
+  }: { endpoint: string; selectedMetric?: MachineMetric | null } = $props();
 
   const ranges = [
     { id: "1h", label: "1 hour", milliseconds: 3_600_000, resolution: "raw" },
@@ -18,6 +23,14 @@
   let loadState = $state<"idle" | "loading" | "loaded" | "error">("idle");
   let points = $state<readonly MachineHistoryPoint[]>([]);
   let errorMessage = $state("");
+  let historyOpen = $state(false);
+
+  $effect(() => {
+    if (selectedMetric !== null) {
+      historyOpen = true;
+      if (loadState === "idle") void loadHistory();
+    }
+  });
 
   function isHistoryPoint(value: unknown): value is MachineHistoryPoint {
     if (!value || typeof value !== "object") return false;
@@ -104,7 +117,7 @@
   }
 </script>
 
-<details ontoggle={handleToggle}>
+<details bind:open={historyOpen} ontoggle={handleToggle}>
   <summary>
     <span><BarChart3 size={15} />History</span>
     <small>Load on demand</small>
@@ -133,7 +146,11 @@
     {:else if loadState === "loaded" && points.length === 0}
       <div class="state">No history is available for this range.</div>
     {:else if points.length > 0}
-      <MachineHistoryCharts {points} rangeLabel={selectedRange.label} />
+      <MachineHistoryCharts
+        {points}
+        rangeLabel={selectedRange.label}
+        activeMetric={selectedMetric}
+      />
     {/if}
   </div>
 </details>

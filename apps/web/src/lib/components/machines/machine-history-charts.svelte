@@ -3,12 +3,22 @@
 
   import { formatBytes } from "$lib/utils/format";
 
-  let { points, rangeLabel }: { points: readonly MachineHistoryPoint[]; rangeLabel: string } =
-    $props();
+  import type { MachineMetric } from "$components/machines/history-panel.svelte";
+
+  let {
+    points,
+    rangeLabel,
+    activeMetric = null,
+  }: {
+    points: readonly MachineHistoryPoint[];
+    rangeLabel: string;
+    activeMetric?: MachineMetric | null;
+  } = $props();
 
   const chartPoints = $derived(compactPoints(points));
   const usesThroughput = $derived(points.some((point) => point.networkRxBps !== null));
   const maximumMemory = $derived(Math.max(1, ...points.map((point) => point.memoryAverageBytes)));
+  const maximumStorage = $derived(Math.max(1, ...points.map((point) => point.storageMaxBytes)));
   const maximumNetwork = $derived(Math.max(1, ...chartPoints.map(networkValue)));
 
   function averageNullable(values: readonly (number | null)[]): number | null {
@@ -71,7 +81,7 @@
 </script>
 
 <div class="charts">
-  <section>
+  <section class:active={activeMetric === "cpu"}>
     <header><strong>CPU average</strong><span>{rangeLabel}</span></header>
     <div class="bars" aria-hidden="true">
       {#each chartPoints as point (point.bucketStart)}
@@ -80,7 +90,7 @@
       {/each}
     </div>
   </section>
-  <section>
+  <section class:active={activeMetric === "memory"}>
     <header><strong>Memory</strong><span>{formatBytes(maximumMemory)} peak</span></header>
     <div class="bars bars--memory" aria-hidden="true">
       {#each chartPoints as point (point.bucketStart)}
@@ -89,7 +99,16 @@
       {/each}
     </div>
   </section>
-  <section>
+  <section class:active={activeMetric === "storage"}>
+    <header><strong>Storage</strong><span>{formatBytes(maximumStorage)} peak</span></header>
+    <div class="bars bars--storage" aria-hidden="true">
+      {#each chartPoints as point (point.bucketStart)}
+        <i style={`--bar-height: ${Math.max(3, (point.storageMaxBytes / maximumStorage) * 100)}%`}
+        ></i>
+      {/each}
+    </div>
+  </section>
+  <section class:active={activeMetric === "network"}>
     <header>
       <strong>{usesThroughput ? "Network throughput" : "Network volume"}</strong><span
         >download + upload</span
@@ -106,13 +125,14 @@
 
 <table class="sr-only">
   <caption>Machine history values</caption>
-  <thead><tr><th>Time</th><th>CPU</th><th>Memory</th><th>Network</th></tr></thead>
+  <thead><tr><th>Time</th><th>CPU</th><th>Memory</th><th>Storage</th><th>Network</th></tr></thead>
   <tbody>
     {#each points as point (point.bucketStart)}
       <tr>
         <td>{formatBucket(point.bucketStart)}</td>
         <td>{(point.cpuAveragePermille / 10).toFixed(1)}%</td>
         <td>{formatBytes(point.memoryAverageBytes)}</td>
+        <td>{formatBytes(point.storageMaxBytes)}</td>
         <td>{formatBytes(networkValue(point))}{usesThroughput ? "/s" : ""}</td>
       </tr>
     {/each}
@@ -122,12 +142,20 @@
 <style>
   .charts {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 18px;
   }
 
   section {
     min-width: 0;
+    padding: 8px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-control);
+  }
+
+  section.active {
+    border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+    background: color-mix(in srgb, var(--accent) 5%, var(--surface));
   }
 
   header {
@@ -175,6 +203,10 @@
 
   .bars--network i {
     background: var(--status-healthy);
+  }
+
+  .bars--storage i {
+    background: var(--status-degraded);
   }
 
   .sr-only {
