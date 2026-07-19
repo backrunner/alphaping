@@ -153,7 +153,7 @@ Paid included                        25,000.000m/month
 
 #### 公开状态页读取
 
-公开状态页使用 Cache API 保存 6 小时故障 fallback，其中前 30 秒可直接作为 fresh response。Cloudflare Cache API 内容不会复制到其他数据中心，而且 Cache API 命中仍会执行 Worker，因此模型必须按活跃 edge location 和 route cache key 分别计算。当前路由最多接受 8 个 `servicePage` key；每个 live projection 都读取全部公开 machine/service current state，只有 25 个当前页 service 读取 24 小时 5 分钟时间桶。
+公开状态页使用 Cache API 保存不超过 5 分钟的故障 fallback，其中前 30 秒可直接作为 fresh response。Cloudflare Cache API 内容不会复制到其他数据中心，而且 Cache API 命中仍会执行 Worker，因此模型必须按活跃 edge location 和 route cache key 分别计算。当前路由最多接受 8 个 `servicePage` key；每个 live projection 都读取全部公开 machine/service current state，只有 25 个当前页 service 读取 24 小时 5 分钟时间桶。5 分钟也是 D1 故障期间公开 dashboard/resource policy 撤销的最大旧投影窗口。
 
 模型使用以下保守边界：
 
@@ -171,7 +171,7 @@ Paid included                        25,000.000m/month
 | 100+100，5 edge locations | 32.092b | 32.165b | 8.425m | 7.17 USD |
 | 100+100，20 edge locations | 128.370b | 128.442b | 18.793m | 106.08 USD |
 
-一个 location 的 30+30 模型在一个 30 秒窗口内最多读取 27,908 行，100+100 为 74,288 行；每月各有 86,400 个窗口。这里的 location 是“8 个分页 key 每 30 秒都至少收到一次请求的数据中心”，不是访问者人数。真实流量只访问实际分页时会更低，但跨区域流量、cache expiry burst 或蓄意轮询会更高。发布后必须用 D1 `meta.rows_read` 和 Worker Analytics 分别观测 live projection 与 fresh-cache hit，不能把 `6h` fallback TTL 当成全球共享的读取缓存。
+一个 location 的 30+30 模型在一个 30 秒窗口内最多读取 27,908 行，100+100 为 74,288 行；每月各有 86,400 个窗口。这里的 location 是“8 个分页 key 每 30 秒都至少收到一次请求的数据中心”，不是访问者人数。真实流量只访问实际分页时会更低，但跨区域流量、cache expiry burst 或蓄意轮询会更高。发布后必须用 D1 `meta.rows_read` 和 Worker Analytics 分别观测 live projection 与 fresh-cache hit，不能把 5 分钟 fallback TTL 当成全球共享的读取缓存或即时撤销机制。
 
 中央检查执行结束后按 check 主键验证 `config_revision,last_claimed_slot`，防止配置替换期间的在途旧结果覆盖 latest；30/100 个每分钟检查分别增加 1.296m/4.32m rows read/月，不增加 Worker request 或稳态 rows written。Agent command delivery 在每个 report 增加一次 `(agent_id,state,not_before)` 有界索引读取，空队列不产生写入。100 台 Agent 按每分钟一个 report 约增加 4.32m rows read/月，仍只占 Paid 25bn included reads 的 0.0173%。Agent 版本合并进既有 `last_seen_at` 更新，不增加稳态 D1 write；只有创建、实际投递和完成命令时才新增低频 writes。
 
@@ -440,7 +440,7 @@ D1 storage overage at 0.75 USD/GB       4.1048 USD/month
 - 单库持续出现 D1 overloaded、存储达 8 GB 或预测含 margin 的月写入超 40 million 时，启动按 workspace/resource hash 分片评估。分片提升容量和并发，但不会重置账户级 included usage。
 - 需要子分钟中央调度时才评估 Durable Objects alarms；一分钟以下 ICMP/HTTP/TCP 优先由 Agent 执行。
 - 10 秒 live update 由 Durable Objects WebSocket Hibernation 提供；D1 始终是 60 秒 durable latest/history 的权威回退。
-- 公开状态页 Cache API 是 per-data-center 缓存。100+100 在 5 个持续活跃 edge location 时已经产生约 7.17 USD D1 read overage；观测到更多 location、30 秒窗口内重复 live projection 或持续访问多个分页 key 时，必须提高 freshness TTL、合并分页快照刷新或引入可验证的全局 single-flight，不能假设 Cache API 自动跨区域去重。
+- 公开状态页 Cache API 是 per-data-center 缓存。100+100 在 5 个持续活跃 edge location 时已经产生约 7.17 USD D1 read overage；观测到更多 location、30 秒窗口内重复 live projection 或持续访问多个分页 key 时，必须提高 freshness TTL、合并分页快照刷新或引入可验证的全局 single-flight，不能假设 Cache API 自动跨区域去重。不能为了节省读取成本再次把 stale fallback 放宽到小时级，因为那会扩大公开策略撤销窗口。
 - 系统默认将“含 25% margin 的预测 D1 writes”软上限设为 40 million/月。超出前管理界面必须要求调 check/report 周期、关闭不需要的高分辨率 rollup，或显式接受 overage。单纯缩短保留期只降低 storage，稳态 INSERT/DELETE 频率不会下降。
 
 ## 12. 上线前成本验证

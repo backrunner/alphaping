@@ -217,6 +217,7 @@ Ingest 暴露不访问 D1 的 `GET|HEAD /healthz` liveness。数据库读写健�
 - TELEMETRY_DB 暂时失败或 transaction 回滚：不返回 ACK，整个 batch 由 Agent 使用同一 report ID 重试。
 - ACK 丢失：TELEMETRY_DB duplicate detection 后安全重放 ACK，不产生重复 telemetry。
 - Live Hub 故障：Agent 保持 SQLite 采集和 durable report，Dashboard 降级到 D1 latest/polling，界面标记 live 已中断而不误报 machine offline。
+- 公开状态页的 Cache API 快照按数据中心保存。D1 故障时只允许回退到最近 5 分钟快照并明确标记 stale；由于 Cache API 无法跨数据中心全局撤销，公开 dashboard/resource policy 的撤销窗口上限为 5 分钟，不能使用小时级旧快照。
 - Scheduler 重复执行：确定性 nominal slot 和条件 claim update 阻止重复逻辑副作用。
 - Web 配置已提交但 TELEMETRY_DB 同步失败：返回已成功的配置 mutation，保留同步 job 并记录 deferred 告警；Checks Worker 每分钟有界重试并覆盖 mutation 前已领取的迟到中央检查结果。
 - Web 读取失败：公开状态页可以返回带时间戳的最近快照，管理操作不得假成功。

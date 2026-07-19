@@ -7,7 +7,7 @@ import {
   type PublicStatusView,
 } from "$lib/public-status-view";
 
-export const PUBLIC_STATUS_SNAPSHOT_TTL_SECONDS = 6 * 60 * 60;
+export const PUBLIC_STATUS_SNAPSHOT_TTL_SECONDS = 5 * 60;
 export const PUBLIC_STATUS_FRESH_CACHE_TTL_SECONDS = 30;
 export const PUBLIC_STATUS_SNAPSHOT_CACHE = "alphaping-public-status-v2";
 

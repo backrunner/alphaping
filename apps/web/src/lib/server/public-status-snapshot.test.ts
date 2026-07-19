@@ -85,6 +85,13 @@ describe("public status snapshot", () => {
     ).toBeNull();
   });
 
+  it("caps the public policy revocation window at five minutes", () => {
+    expect(PUBLIC_STATUS_SNAPSHOT_TTL_SECONDS).toBe(5 * 60);
+    const serialized = JSON.stringify(buildPublicStatusSnapshot(page, now));
+    expect(parsePublicStatusSnapshot(serialized, "operations", now + 5 * 60_000)).not.toBeNull();
+    expect(parsePublicStatusSnapshot(serialized, "operations", now + 5 * 60_000 + 1)).toBeNull();
+  });
+
   it("does not extend announcement visibility while serving a stale snapshot", () => {
     const expiringPage = {
       ...page,

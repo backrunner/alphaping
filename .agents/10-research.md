@@ -33,7 +33,7 @@
 - Cache API 与 CDN Worker response cache 是两套独立机制；Cache API 命中仍会执行 Worker。
 - `cache.put()`/`cache.match()` 不支持 `stale-while-revalidate` 或 `stale-if-error`。
 
-影响：公开状态页的 30 秒快照必须按活跃 edge location 和分页 cache key 分别计 Worker request 与 D1 live projection。6 小时 fallback snapshot 提高控制面故障时的可用性，但不能当成全球共享的 6 小时 D1 读取缓存。
+影响：公开状态页的 30 秒快照必须按活跃 edge location 和分页 cache key 分别计 Worker request 与 D1 live projection。应用只允许使用不超过 5 分钟的 fallback snapshot；这保留短时控制面故障可用性，但不把旧公开策略当成实时授权，也不能当成全球共享的读取缓存。
 
 ### Workers limits
 
