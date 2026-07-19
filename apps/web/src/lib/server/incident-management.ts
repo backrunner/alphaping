@@ -13,6 +13,8 @@ import {
 type IncidentState = "investigating" | "identified" | "monitoring" | "resolved";
 type IncidentSeverity = "minor" | "major" | "critical";
 
+const MAX_INCIDENT_SERVICES = 20;
+
 interface IncidentResourceRow {
   resource_id: string;
 }
@@ -106,7 +108,9 @@ export async function createIncident(
 ): Promise<{ incidentId: string }> {
   const serviceIds = [...new Set(input.serviceIds)];
   if (serviceIds.length === 0) throw error(400, "Select at least one affected service");
-  if (serviceIds.length > 20) throw error(400, "An incident can affect at most 20 services");
+  if (serviceIds.length > MAX_INCIDENT_SERVICES) {
+    throw error(400, `An incident can affect at most ${MAX_INCIDENT_SERVICES} services`);
+  }
   if (!(["minor", "major", "critical"] as const).includes(input.severity)) {
     throw error(400, "Incident severity is invalid");
   }
@@ -218,10 +222,14 @@ export async function appendIncidentUpdate(
   const resources = await db
     .prepare(
       `SELECT resource_id FROM incident_resources
-     WHERE incident_id = ? AND resource_type = 'service'`,
+     WHERE incident_id = ? AND resource_type = 'service'
+     LIMIT ${MAX_INCIDENT_SERVICES + 1}`,
     )
     .bind(incidentId)
     .all<IncidentResourceRow>();
+  if (resources.results.length > MAX_INCIDENT_SERVICES) {
+    throw error(503, "Incident resource scope exceeds the supported limit");
+  }
   const canManageIncident = canAccessIncident(
     access.role,
     access.grants,

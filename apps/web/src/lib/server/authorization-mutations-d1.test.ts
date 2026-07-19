@@ -227,6 +227,37 @@ describe("final mutation authorization", () => {
     ).resolves.toEqual({ count: 0 });
   });
 
+  it("fails explicitly when an incident has more than 20 affected services", async () => {
+    const services = Array.from({ length: 20 }, (_, index) => `service-extra-${index + 1}`);
+    await database.batch(
+      services.flatMap((serviceId) => [
+        database.prepare("INSERT INTO services VALUES (?, 'workspace-1', NULL)").bind(serviceId),
+        database
+          .prepare(
+            `INSERT INTO resource_grants VALUES
+              ('workspace-1', 'user-1', 'service', ?, 'manage', 'allow')`,
+          )
+          .bind(serviceId),
+        database
+          .prepare("INSERT INTO incident_resources VALUES ('incident-1', 'service', ?, 'down')")
+          .bind(serviceId),
+      ]),
+    );
+
+    await expect(
+      appendIncidentUpdate(database, "operations", "user-1", "incident-1", {
+        state: "identified",
+        body: "The upstream is unavailable.",
+      }),
+    ).rejects.toMatchObject({ status: 503 });
+    await expect(
+      database.prepare("SELECT state FROM incidents WHERE id = 'incident-1'").first(),
+    ).resolves.toEqual({ state: "investigating" });
+    await expect(
+      database.prepare("SELECT COUNT(*) AS count FROM incident_updates").first(),
+    ).resolves.toEqual({ count: 0 });
+  });
+
   it("rejects announcements after administrator access is lost", async () => {
     await database.prepare("UPDATE memberships SET role = 'admin' WHERE user_id = 'user-1'").run();
     await expect(
