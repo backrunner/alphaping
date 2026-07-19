@@ -83,6 +83,80 @@ fn delivery_attempt_persists_sequence_and_retry_schedule_together() {
 }
 
 #[test]
+fn quarantined_delivery_is_preserved_without_blocking_newer_reports() {
+    let directory = tempdir().expect("temp directory");
+    let mut spool = Spool::open(directory.path().join("spool.db")).expect("open spool");
+    spool
+        .append_sample(&sample(60_000), 180_000)
+        .expect("append first sample");
+    let first_id = spool
+        .create_next_delivery(7, 2, 180_000)
+        .expect("create first delivery")
+        .expect("first delivery");
+    spool
+        .quarantine_delivery(&first_id, "server_rejected_payload")
+        .expect("quarantine delivery");
+    spool
+        .append_sample(&sample(120_000), 180_000)
+        .expect("append second sample");
+    let second_id = spool
+        .create_next_delivery(7, 2, 180_000)
+        .expect("create second delivery")
+        .expect("second delivery");
+
+    let due = spool
+        .due_delivery(180_000)
+        .expect("read newer delivery")
+        .expect("newer delivery remains sendable");
+    assert_eq!(due.report_id, second_id);
+    assert_eq!(spool.delivery_count().expect("count deliveries"), 2);
+    assert!(spool.acknowledge(&second_id).expect("ack newer delivery"));
+    assert_eq!(spool.delivery_count().expect("quarantine remains"), 1);
+    assert!(
+        spool
+            .due_delivery(i64::MAX)
+            .expect("read pending deliveries")
+            .is_none()
+    );
+}
+
+#[test]
+fn existing_spool_migrates_delivery_state_without_losing_rows() {
+    let directory = tempdir().expect("temp directory");
+    let path = directory.path().join("spool.db");
+    let connection = rusqlite::Connection::open(&path).expect("open legacy spool");
+    connection
+        .execute_batch(
+            "CREATE TABLE deliveries (
+               report_id BLOB PRIMARY KEY NOT NULL,
+               nominal_minute INTEGER NOT NULL UNIQUE,
+               payload BLOB NOT NULL,
+               payload_hash BLOB NOT NULL,
+               created_at INTEGER NOT NULL,
+               next_attempt_at INTEGER NOT NULL,
+               attempt_count INTEGER NOT NULL DEFAULT 0,
+               last_error_code TEXT
+             ) WITHOUT ROWID;
+             INSERT INTO deliveries
+               (report_id, nominal_minute, payload, payload_hash, created_at, next_attempt_at)
+             VALUES (x'01', 60000, x'02', x'03', 60000, 60000);",
+        )
+        .expect("create legacy delivery schema");
+    drop(connection);
+
+    let spool = Spool::open(&path).expect("migrate legacy spool");
+    let state: String = spool
+        .connection
+        .query_row(
+            "SELECT state FROM deliveries WHERE report_id = x'01'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("read migrated delivery");
+    assert_eq!(state, "pending");
+}
+
+#[test]
 fn more_than_24_hours_of_deliveries_survive_restart_and_recover_in_order() {
     const MINUTES: i64 = 24 * 60 + 1;
     const SAMPLES_PER_MINUTE: i64 = 6;

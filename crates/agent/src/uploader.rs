@@ -23,6 +23,8 @@ pub enum UploadError {
     Revoked,
     #[error("server returned a transient status")]
     ServerStatus,
+    #[error("server permanently rejected the report with status {0}")]
+    PermanentStatus(u16),
     #[error("response exceeded the protocol limit")]
     ResponseTooLarge,
     #[error("response protocol was invalid")]
@@ -99,11 +101,8 @@ impl Uploader {
             .body(envelope)
             .send()
             .await?;
-        if response.status().as_u16() == 401 || response.status().as_u16() == 403 {
-            return Err(UploadError::Revoked);
-        }
-        if !response.status().is_success() {
-            return Err(UploadError::ServerStatus);
+        if let Some(error) = response_status_error(response.status()) {
+            return Err(error);
         }
         if response
             .content_length()
@@ -118,6 +117,15 @@ impl Uploader {
             &delivery.report_id,
             blake3::hash(&delivery.payload).as_bytes(),
         )
+    }
+}
+
+fn response_status_error(status: reqwest::StatusCode) -> Option<UploadError> {
+    match status.as_u16() {
+        200..=299 => None,
+        401 | 403 => Some(UploadError::Revoked),
+        400 | 413 | 415 | 422 => Some(UploadError::PermanentStatus(status.as_u16())),
+        _ => Some(UploadError::ServerStatus),
     }
 }
 
@@ -247,7 +255,9 @@ mod tests {
         v1::{AckStatus, DurableAck, EncryptedEnvelope, EnvelopeHeader},
     };
 
-    use super::{EnvelopeCodec, UploadError, append_response_chunk, pq_client};
+    use super::{
+        EnvelopeCodec, UploadError, append_response_chunk, pq_client, response_status_error,
+    };
 
     #[test]
     fn pq_http_client_accepts_the_preconfigured_rustls_backend() {
@@ -350,5 +360,26 @@ mod tests {
             Err(UploadError::ResponseTooLarge)
         ));
         assert_eq!(body.len(), MAX_ENVELOPE_BYTES);
+    }
+
+    #[test]
+    fn only_stable_payload_statuses_are_permanent() {
+        for status in [400, 413, 415, 422] {
+            assert!(matches!(
+                response_status_error(reqwest::StatusCode::from_u16(status).expect("status")),
+                Some(UploadError::PermanentStatus(value)) if value == status
+            ));
+        }
+        for status in [408, 409, 425, 429, 500, 502, 503, 504] {
+            assert!(matches!(
+                response_status_error(reqwest::StatusCode::from_u16(status).expect("status")),
+                Some(UploadError::ServerStatus)
+            ));
+        }
+        assert!(matches!(
+            response_status_error(reqwest::StatusCode::UNAUTHORIZED),
+            Some(UploadError::Revoked)
+        ));
+        assert!(response_status_error(reqwest::StatusCode::OK).is_none());
     }
 }

@@ -118,6 +118,8 @@ impl Spool {
                created_at INTEGER NOT NULL,
                next_attempt_at INTEGER NOT NULL,
                attempt_count INTEGER NOT NULL DEFAULT 0,
+               state TEXT NOT NULL DEFAULT 'pending'
+                 CHECK (state IN ('pending', 'quarantined')),
                last_error_code TEXT,
                catalog_digest BLOB,
                catalog_included INTEGER NOT NULL DEFAULT 0
@@ -171,7 +173,12 @@ impl Spool {
                updated_at INTEGER NOT NULL
              ) WITHOUT ROWID;",
         )?;
-        ensure_delivery_catalog_columns(&connection)?;
+        ensure_delivery_columns(&connection)?;
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS deliveries_due_idx
+             ON deliveries (state, next_attempt_at, nominal_minute)",
+            [],
+        )?;
         connection.execute(
             "INSERT OR IGNORE INTO meta (key, value) VALUES ('transport_sequence', 0)",
             [],
@@ -436,7 +443,7 @@ impl Spool {
         self.connection
             .query_row(
                 "SELECT report_id, nominal_minute, payload, attempt_count
-                 FROM deliveries WHERE next_attempt_at <= ?
+                 FROM deliveries WHERE state = 'pending' AND next_attempt_at <= ?
                  ORDER BY nominal_minute LIMIT 1",
                 [now_ms],
                 |row| {
@@ -498,7 +505,8 @@ impl Spool {
         )?;
         let changed = transaction.execute(
             "UPDATE deliveries SET attempt_count = attempt_count + 1,
-             next_attempt_at = ?, last_error_code = NULL WHERE report_id = ?",
+             next_attempt_at = ?, last_error_code = NULL
+             WHERE report_id = ? AND state = 'pending'",
             params![next_attempt_at, report_id],
         )?;
         if changed != 1 {
@@ -567,8 +575,20 @@ impl Spool {
     ) -> Result<()> {
         let changed = self.connection.execute(
             "UPDATE deliveries SET next_attempt_at = ?, last_error_code = ?
-             WHERE report_id = ?",
+             WHERE report_id = ? AND state = 'pending'",
             params![next_attempt_at, error_code, report_id],
+        )?;
+        if changed != 1 {
+            bail!("Agent delivery is no longer pending");
+        }
+        Ok(())
+    }
+
+    pub fn quarantine_delivery(&self, report_id: &[u8], error_code: &str) -> Result<()> {
+        let changed = self.connection.execute(
+            "UPDATE deliveries SET state = 'quarantined', last_error_code = ?
+             WHERE report_id = ? AND state = 'pending'",
+            params![error_code, report_id],
         )?;
         if changed != 1 {
             bail!("Agent delivery is no longer pending");
@@ -583,7 +603,8 @@ impl Spool {
         self.connection
             .execute(
                 "UPDATE deliveries SET next_attempt_at = ? WHERE report_id IN (
-                   SELECT report_id FROM deliveries WHERE next_attempt_at > ?
+                   SELECT report_id FROM deliveries
+                   WHERE state = 'pending' AND next_attempt_at > ?
                    ORDER BY nominal_minute LIMIT ?
                  )",
                 params![retry_at, retry_at, limit],
@@ -653,7 +674,7 @@ impl Spool {
     }
 }
 
-fn ensure_delivery_catalog_columns(connection: &Connection) -> Result<()> {
+fn ensure_delivery_columns(connection: &Connection) -> Result<()> {
     let columns = {
         let mut statement = connection.prepare("PRAGMA table_info(deliveries)")?;
         statement
@@ -666,6 +687,13 @@ fn ensure_delivery_catalog_columns(connection: &Connection) -> Result<()> {
     if !columns.iter().any(|column| column == "catalog_included") {
         connection.execute(
             "ALTER TABLE deliveries ADD COLUMN catalog_included INTEGER NOT NULL DEFAULT 0",
+            [],
+        )?;
+    }
+    if !columns.iter().any(|column| column == "state") {
+        connection.execute(
+            "ALTER TABLE deliveries ADD COLUMN state TEXT NOT NULL DEFAULT 'pending'
+             CHECK (state IN ('pending', 'quarantined'))",
             [],
         )?;
     }

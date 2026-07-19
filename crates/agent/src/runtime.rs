@@ -24,7 +24,7 @@ use crate::{
     sampler::Sampler,
     spool::Spool,
     updater::{UpdateRequest, Updater},
-    uploader::Uploader,
+    uploader::{UploadError, Uploader},
 };
 
 struct RuntimeControl<'a> {
@@ -248,6 +248,14 @@ async fn upload_due_report(
                     error!(error = %error, "failed to apply authenticated Agent response");
                 }
             }
+        }
+        Err(UploadError::PermanentStatus(status)) => {
+            spool.quarantine_delivery(&delivery.report_id, "server_rejected_payload")?;
+            error!(
+                status,
+                nominal_minute_ms = delivery.nominal_minute_ms,
+                "durable report was quarantined after a permanent rejection"
+            );
         }
         Err(error) => {
             warn!(error = %error, retry_seconds = delay.as_secs(), "durable report upload failed");
