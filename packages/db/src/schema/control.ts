@@ -415,3 +415,127 @@ export const checkSecrets = sqliteTable(
   },
   (table) => [index("check_secrets_workspace_idx").on(table.workspaceId, table.id)],
 );
+
+export const notificationChannels = sqliteTable(
+  "notification_channels",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull(),
+    name: text("name").notNull(),
+    provider: text("provider", {
+      enum: ["resend", "smtp", "discord", "telegram", "slack", "bark"],
+    }).notNull(),
+    configCiphertext: blob("config_ciphertext", { mode: "buffer" }).notNull(),
+    configNonce: blob("config_nonce", { mode: "buffer" }).notNull(),
+    wrappingKeyId: text("wrapping_key_id").notNull().default("v1"),
+    configSummaryJson: text("config_summary_json").notNull().default("{}"),
+    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+    createdBy: text("created_by").notNull(),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [
+    index("notification_channels_workspace_idx").on(
+      table.workspaceId,
+      table.enabled,
+      table.provider,
+      table.name,
+      table.id,
+    ),
+  ],
+);
+
+export const notificationRules = sqliteTable(
+  "notification_rules",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull(),
+    resourceType: text("resource_type", { enum: ["machine", "service"] }).notNull(),
+    resourceId: text("resource_id").notNull(),
+    dimension: text("dimension", {
+      enum: ["availability", "resource", "recovery"],
+    }).notNull(),
+    channelId: text("channel_id").notNull(),
+    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+    createdBy: text("created_by").notNull(),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("notification_rules_channel_resource_uq").on(
+      table.channelId,
+      table.resourceType,
+      table.resourceId,
+      table.dimension,
+    ),
+    index("notification_rules_resource_idx").on(
+      table.workspaceId,
+      table.resourceType,
+      table.resourceId,
+      table.dimension,
+      table.enabled,
+      table.channelId,
+    ),
+  ],
+);
+
+export const notificationEventCursors = sqliteTable("notification_event_cursors", {
+  singleton: integer("singleton").primaryKey().default(1),
+  lastOccurredAt: integer("last_occurred_at").notNull().default(0),
+  lastEventId: blob("last_event_id", { mode: "buffer" }).notNull(),
+  lastResourceType: integer("last_resource_type").notNull().default(0),
+  lastResourcePk: integer("last_resource_pk").notNull().default(0),
+  updatedAt: integer("updated_at").notNull().default(0),
+});
+
+export const notificationDeliveries = sqliteTable(
+  "notification_deliveries",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull(),
+    channelId: text("channel_id").notNull(),
+    sourceWorkspacePk: integer("source_workspace_pk").notNull(),
+    sourceResourceType: integer("source_resource_type").notNull(),
+    sourceResourcePk: integer("source_resource_pk").notNull(),
+    sourceOccurredAt: integer("source_occurred_at").notNull(),
+    sourceEventId: text("source_event_id").notNull(),
+    dimension: text("dimension", {
+      enum: ["availability", "resource", "recovery"],
+    }).notNull(),
+    payloadJson: text("payload_json").notNull(),
+    state: text("state", { enum: ["pending", "delivering", "sent", "dead"] })
+      .notNull()
+      .default("pending"),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    nextAttemptAt: integer("next_attempt_at").notNull().default(0),
+    claimToken: text("claim_token"),
+    claimUntil: integer("claim_until"),
+    lastError: text("last_error"),
+    responseStatus: integer("response_status"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    sentAt: integer("sent_at"),
+  },
+  (table) => [
+    uniqueIndex("notification_deliveries_source_channel_uq").on(
+      table.channelId,
+      table.sourceWorkspacePk,
+      table.sourceResourceType,
+      table.sourceResourcePk,
+      table.sourceOccurredAt,
+      table.sourceEventId,
+    ),
+    index("notification_deliveries_claim_idx").on(
+      table.state,
+      table.nextAttemptAt,
+      table.claimUntil,
+      table.createdAt,
+      table.id,
+    ),
+    index("notification_deliveries_workspace_idx").on(
+      table.workspaceId,
+      table.createdAt,
+      table.id,
+    ),
+  ],
+);

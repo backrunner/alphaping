@@ -90,6 +90,10 @@
         {
           "file": "0022_machine_public_slug.sql",
           "sha256": "a5c2b528a5a3084e5e48b661f81d664056be95b645e29ab22f74d4e30054797a"
+        },
+        {
+          "file": "0023_notifications.sql",
+          "sha256": "e9f1c743cf3cdd3e6112dc35fcc078677dfa39cdde9201a77e90edd3e52ecae2"
         }
       ],
       "objects": [
@@ -224,6 +228,30 @@
           "name": "machines_workspace_public_slug_uq",
           "table": "machines",
           "sql": "CREATE UNIQUE INDEX machines_workspace_public_slug_uq\n  ON machines (workspace_id, public_slug)"
+        },
+        {
+          "type": "index",
+          "name": "notification_channels_workspace_idx",
+          "table": "notification_channels",
+          "sql": "CREATE INDEX notification_channels_workspace_idx\n  ON notification_channels (workspace_id, enabled, provider, name, id)"
+        },
+        {
+          "type": "index",
+          "name": "notification_deliveries_claim_idx",
+          "table": "notification_deliveries",
+          "sql": "CREATE INDEX notification_deliveries_claim_idx\n  ON notification_deliveries (state, next_attempt_at, claim_until, created_at, id)"
+        },
+        {
+          "type": "index",
+          "name": "notification_deliveries_workspace_idx",
+          "table": "notification_deliveries",
+          "sql": "CREATE INDEX notification_deliveries_workspace_idx\n  ON notification_deliveries (workspace_id, created_at DESC, id)"
+        },
+        {
+          "type": "index",
+          "name": "notification_rules_resource_idx",
+          "table": "notification_rules",
+          "sql": "CREATE INDEX notification_rules_resource_idx\n  ON notification_rules (workspace_id, resource_type, resource_id, dimension, enabled, channel_id)"
         },
         {
           "type": "index",
@@ -404,6 +432,30 @@
           "name": "memberships",
           "table": "memberships",
           "sql": "CREATE TABLE memberships (\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  user_id TEXT NOT NULL REFERENCES user (id) ON DELETE CASCADE,\n  role TEXT NOT NULL CHECK (role IN ('admin', 'member')),\n  status TEXT NOT NULL CHECK (status IN ('invited', 'active', 'suspended')),\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  PRIMARY KEY (workspace_id, user_id)\n) WITHOUT ROWID, STRICT"
+        },
+        {
+          "type": "table",
+          "name": "notification_channels",
+          "table": "notification_channels",
+          "sql": "CREATE TABLE notification_channels (\n  id TEXT PRIMARY KEY NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  name TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 80),\n  provider TEXT NOT NULL CHECK (provider IN (\n    'resend', 'smtp', 'discord', 'telegram', 'slack', 'bark'\n  )),\n  config_ciphertext BLOB NOT NULL,\n  config_nonce BLOB NOT NULL CHECK (length(config_nonce) = 12),\n  wrapping_key_id TEXT NOT NULL DEFAULT 'v1',\n  config_summary_json TEXT NOT NULL DEFAULT '{}',\n  enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),\n  created_by TEXT NOT NULL REFERENCES user (id),\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL\n) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "notification_deliveries",
+          "table": "notification_deliveries",
+          "sql": "CREATE TABLE notification_deliveries (\n  id TEXT PRIMARY KEY NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  channel_id TEXT NOT NULL REFERENCES notification_channels (id) ON DELETE CASCADE,\n  source_workspace_pk INTEGER NOT NULL,\n  source_resource_type INTEGER NOT NULL CHECK (source_resource_type IN (1, 2)),\n  source_resource_pk INTEGER NOT NULL,\n  source_occurred_at INTEGER NOT NULL,\n  source_event_id TEXT NOT NULL,\n  dimension TEXT NOT NULL CHECK (dimension IN ('availability', 'resource', 'recovery')),\n  payload_json TEXT NOT NULL,\n  state TEXT NOT NULL DEFAULT 'pending' CHECK (state IN (\n    'pending', 'delivering', 'sent', 'dead'\n  )),\n  attempt_count INTEGER NOT NULL DEFAULT 0,\n  next_attempt_at INTEGER NOT NULL DEFAULT 0,\n  claim_token TEXT,\n  claim_until INTEGER,\n  last_error TEXT,\n  response_status INTEGER,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  sent_at INTEGER,\n  UNIQUE (\n    channel_id,\n    source_workspace_pk,\n    source_resource_type,\n    source_resource_pk,\n    source_occurred_at,\n    source_event_id\n  )\n) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "notification_event_cursors",
+          "table": "notification_event_cursors",
+          "sql": "CREATE TABLE notification_event_cursors (\n  singleton INTEGER PRIMARY KEY NOT NULL DEFAULT 1 CHECK (singleton = 1),\n  last_occurred_at INTEGER NOT NULL DEFAULT 0,\n  last_event_id BLOB NOT NULL DEFAULT X'',\n  last_resource_type INTEGER NOT NULL DEFAULT 0,\n  last_resource_pk INTEGER NOT NULL DEFAULT 0,\n  updated_at INTEGER NOT NULL DEFAULT 0\n) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "notification_rules",
+          "table": "notification_rules",
+          "sql": "CREATE TABLE notification_rules (\n  id TEXT PRIMARY KEY NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  resource_type TEXT NOT NULL CHECK (resource_type IN ('machine', 'service')),\n  resource_id TEXT NOT NULL,\n  dimension TEXT NOT NULL CHECK (dimension IN ('availability', 'resource', 'recovery')),\n  channel_id TEXT NOT NULL REFERENCES notification_channels (id) ON DELETE CASCADE,\n  enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),\n  created_by TEXT NOT NULL REFERENCES user (id),\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  UNIQUE (channel_id, resource_type, resource_id, dimension)\n) STRICT"
         },
         {
           "type": "table",
@@ -679,6 +731,30 @@
         },
         {
           "type": "index",
+          "name": "notification_channels_workspace_idx",
+          "table": "notification_channels",
+          "sql": "CREATE INDEX notification_channels_workspace_idx\n  ON notification_channels (workspace_id, enabled, provider, name, id)"
+        },
+        {
+          "type": "index",
+          "name": "notification_deliveries_claim_idx",
+          "table": "notification_deliveries",
+          "sql": "CREATE INDEX notification_deliveries_claim_idx\n  ON notification_deliveries (state, next_attempt_at, claim_until, created_at, id)"
+        },
+        {
+          "type": "index",
+          "name": "notification_deliveries_workspace_idx",
+          "table": "notification_deliveries",
+          "sql": "CREATE INDEX notification_deliveries_workspace_idx\n  ON notification_deliveries (workspace_id, created_at DESC, id)"
+        },
+        {
+          "type": "index",
+          "name": "notification_rules_resource_idx",
+          "table": "notification_rules",
+          "sql": "CREATE INDEX notification_rules_resource_idx\n  ON notification_rules (workspace_id, resource_type, resource_id, dimension, enabled, channel_id)"
+        },
+        {
+          "type": "index",
           "name": "resource_grants_subject_idx",
           "table": "resource_grants",
           "sql": "CREATE INDEX resource_grants_subject_idx\n  ON resource_grants (workspace_id, subject_user_id, resource_type)"
@@ -916,6 +992,30 @@
           "name": "memberships",
           "table": "memberships",
           "sql": "CREATE TABLE memberships (\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  user_id TEXT NOT NULL REFERENCES user (id) ON DELETE CASCADE,\n  role TEXT NOT NULL CHECK (role IN ('admin', 'member')),\n  status TEXT NOT NULL CHECK (status IN ('invited', 'active', 'suspended')),\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  PRIMARY KEY (workspace_id, user_id)\n) WITHOUT ROWID, STRICT"
+        },
+        {
+          "type": "table",
+          "name": "notification_channels",
+          "table": "notification_channels",
+          "sql": "CREATE TABLE notification_channels (\n  id TEXT PRIMARY KEY NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  name TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 80),\n  provider TEXT NOT NULL CHECK (provider IN (\n    'resend', 'smtp', 'discord', 'telegram', 'slack', 'bark'\n  )),\n  config_ciphertext BLOB NOT NULL,\n  config_nonce BLOB NOT NULL CHECK (length(config_nonce) = 12),\n  wrapping_key_id TEXT NOT NULL DEFAULT 'v1',\n  config_summary_json TEXT NOT NULL DEFAULT '{}',\n  enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),\n  created_by TEXT NOT NULL REFERENCES user (id),\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL\n) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "notification_deliveries",
+          "table": "notification_deliveries",
+          "sql": "CREATE TABLE notification_deliveries (\n  id TEXT PRIMARY KEY NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  channel_id TEXT NOT NULL REFERENCES notification_channels (id) ON DELETE CASCADE,\n  source_workspace_pk INTEGER NOT NULL,\n  source_resource_type INTEGER NOT NULL CHECK (source_resource_type IN (1, 2)),\n  source_resource_pk INTEGER NOT NULL,\n  source_occurred_at INTEGER NOT NULL,\n  source_event_id TEXT NOT NULL,\n  dimension TEXT NOT NULL CHECK (dimension IN ('availability', 'resource', 'recovery')),\n  payload_json TEXT NOT NULL,\n  state TEXT NOT NULL DEFAULT 'pending' CHECK (state IN (\n    'pending', 'delivering', 'sent', 'dead'\n  )),\n  attempt_count INTEGER NOT NULL DEFAULT 0,\n  next_attempt_at INTEGER NOT NULL DEFAULT 0,\n  claim_token TEXT,\n  claim_until INTEGER,\n  last_error TEXT,\n  response_status INTEGER,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  sent_at INTEGER,\n  UNIQUE (\n    channel_id,\n    source_workspace_pk,\n    source_resource_type,\n    source_resource_pk,\n    source_occurred_at,\n    source_event_id\n  )\n) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "notification_event_cursors",
+          "table": "notification_event_cursors",
+          "sql": "CREATE TABLE notification_event_cursors (\n  singleton INTEGER PRIMARY KEY NOT NULL DEFAULT 1 CHECK (singleton = 1),\n  last_occurred_at INTEGER NOT NULL DEFAULT 0,\n  last_event_id BLOB NOT NULL DEFAULT X'',\n  last_resource_type INTEGER NOT NULL DEFAULT 0,\n  last_resource_pk INTEGER NOT NULL DEFAULT 0,\n  updated_at INTEGER NOT NULL DEFAULT 0\n) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "notification_rules",
+          "table": "notification_rules",
+          "sql": "CREATE TABLE notification_rules (\n  id TEXT PRIMARY KEY NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  resource_type TEXT NOT NULL CHECK (resource_type IN ('machine', 'service')),\n  resource_id TEXT NOT NULL,\n  dimension TEXT NOT NULL CHECK (dimension IN ('availability', 'resource', 'recovery')),\n  channel_id TEXT NOT NULL REFERENCES notification_channels (id) ON DELETE CASCADE,\n  enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),\n  created_by TEXT NOT NULL REFERENCES user (id),\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  UNIQUE (channel_id, resource_type, resource_id, dimension)\n) STRICT"
         },
         {
           "type": "table",
