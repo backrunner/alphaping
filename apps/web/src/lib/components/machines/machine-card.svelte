@@ -9,10 +9,14 @@
   const labels = $derived(Object.entries(machine.labels).slice(0, 2));
 </script>
 
-<article class="machine">
+<a
+  class="machine"
+  href={`/${workspaceSlug}/machines/${machine.id}`}
+  aria-label={`Open ${machine.name} machine details`}
+>
   <header class="machine__header">
     <div class="machine__identity">
-      <a href={`/${workspaceSlug}/machines/${machine.id}`} class="machine__name">{machine.name}</a>
+      <span class="machine__name">{machine.name}</span>
       <span class="machine__meta">
         {machine.platform ?? "Unregistered"}
         {#if machine.arch}
@@ -65,14 +69,31 @@
       <time>{formatRelativeTime(machine.observedAt)}</time>
     </div>
   </footer>
-</article>
+</a>
 
 <style>
   .machine {
+    display: block;
     min-width: 0;
     border: 1px solid var(--border);
     border-radius: 6px;
+    color: inherit;
     background: var(--surface);
+    text-decoration: none;
+    transition:
+      border-color 140ms ease,
+      box-shadow 140ms ease,
+      translate 140ms ease;
+  }
+
+  .machine:hover {
+    border-color: var(--border-strong);
+    box-shadow: 0 8px 22px rgb(16 24 40 / 0.08);
+    translate: 0 -1px;
+  }
+
+  .machine:focus-visible {
+    outline-offset: 3px;
   }
 
   .machine__header,
@@ -100,7 +121,7 @@
     white-space: nowrap;
   }
 
-  .machine__name:hover {
+  .machine:hover .machine__name {
     color: var(--accent);
   }
 
@@ -220,6 +241,12 @@
     .machine__footer {
       align-items: flex-start;
       flex-direction: column;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .machine {
+      transition: none;
     }
   }
 </style>
