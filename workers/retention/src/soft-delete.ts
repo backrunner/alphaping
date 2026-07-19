@@ -167,6 +167,15 @@ async function loadAgentPage(
   };
 }
 
+async function assertAgentCursor(db: D1Database, machineId: string, cursor: string): Promise<void> {
+  if (cursor === "") return;
+  const row = await db
+    .prepare("SELECT 1 AS present FROM agents WHERE id = ? AND machine_id = ?")
+    .bind(cursor, machineId)
+    .first<{ present: number }>();
+  if (!row) throw new Error("soft_delete_agent_cursor_invalid");
+}
+
 async function loadCheckPage(
   db: D1Database,
   policy: SoftDeletePolicy,
@@ -185,6 +194,26 @@ async function loadCheckPage(
     rows: page.results.slice(0, RELATED_RESOURCE_BATCH),
     hasMore: page.results.length > RELATED_RESOURCE_BATCH,
   };
+}
+
+async function assertCheckCursor(
+  db: D1Database,
+  policy: SoftDeletePolicy,
+  serviceId: string,
+  cursor: number,
+): Promise<void> {
+  if (!Number.isSafeInteger(cursor) || cursor < 0) {
+    throw new Error("soft_delete_check_cursor_invalid");
+  }
+  if (cursor === 0) return;
+  const row = await db
+    .prepare(
+      `SELECT 1 AS present FROM check_configs
+       WHERE workspace_id = ? AND service_id = ? AND telemetry_pk = ?`,
+    )
+    .bind(policy.workspace_id, serviceId, cursor)
+    .first<{ present: number }>();
+  if (!row) throw new Error("soft_delete_check_cursor_invalid");
 }
 
 function statementChanges(results: readonly D1Result[]): number {
@@ -262,6 +291,7 @@ async function finalizeMachines(
       continue;
     }
     const cursor = String(machine.related_cursor);
+    await assertAgentCursor(env.CONTROL_DB, machine.id, cursor);
     const agents = await loadAgentPage(env.CONTROL_DB, machine.id, cursor);
     const purge = await purgeMachineTelemetry(
       env.TELEMETRY_DB,
@@ -385,6 +415,7 @@ async function finalizeServices(
       continue;
     }
     const cursor = Number(service.related_cursor);
+    await assertCheckCursor(env.CONTROL_DB, policy, service.id, cursor);
     const checks = await loadCheckPage(env.CONTROL_DB, policy, service.id, cursor);
     const purge = await purgeServiceTelemetry(
       env.TELEMETRY_DB,

@@ -449,4 +449,42 @@ describe("soft-delete finalization", () => {
     await expect(count(env.CONTROL_DB, "check_secrets")).resolves.toBe(0);
     await expect(count(env.TELEMETRY_DB, "check_result_blocks_5m")).resolves.toBe(0);
   });
+
+  it("fails closed when a machine replay cursor no longer names a related Agent", async () => {
+    const deletedAt = now - 8 * DAY_MS;
+    await env.CONTROL_DB.batch([
+      env.CONTROL_DB.prepare(
+        "INSERT INTO machines VALUES ('machine-1', 1, 'workspace-1', ?, NULL, 'missing-agent')",
+      ).bind(deletedAt),
+      env.CONTROL_DB.prepare("INSERT INTO agents VALUES ('agent-1', 'machine-1', 1)"),
+    ]);
+    await env.TELEMETRY_DB.prepare("INSERT INTO agent_replay_state VALUES ('agent-1', 1)").run();
+
+    await expect(finalizeSoftDeletedResources(env, policy, now)).rejects.toThrow(
+      "soft_delete_agent_cursor_invalid",
+    );
+    await expect(count(env.CONTROL_DB, "machines")).resolves.toBe(1);
+    await expect(count(env.TELEMETRY_DB, "agent_replay_state")).resolves.toBe(1);
+  });
+
+  it("fails closed when a service telemetry cursor no longer names a related check", async () => {
+    const deletedAt = now - 8 * DAY_MS;
+    await env.CONTROL_DB.batch([
+      env.CONTROL_DB.prepare(
+        "INSERT INTO services VALUES ('service-1', 2, 'workspace-1', ?, NULL, 999)",
+      ).bind(deletedAt),
+      env.CONTROL_DB.prepare(
+        `INSERT INTO check_configs VALUES
+          ('check-1', 3, 'workspace-1', 'service-1', '{}', 1, NULL)`,
+      ),
+    ]);
+    await env.TELEMETRY_DB.prepare("INSERT INTO check_result_blocks_5m VALUES (3, 1, 1)").run();
+
+    await expect(finalizeSoftDeletedResources(env, policy, now)).rejects.toThrow(
+      "soft_delete_check_cursor_invalid",
+    );
+    await expect(count(env.CONTROL_DB, "services")).resolves.toBe(1);
+    await expect(count(env.CONTROL_DB, "check_configs")).resolves.toBe(1);
+    await expect(count(env.TELEMETRY_DB, "check_result_blocks_5m")).resolves.toBe(1);
+  });
 });
