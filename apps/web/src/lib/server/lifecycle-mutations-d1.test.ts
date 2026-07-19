@@ -20,7 +20,11 @@ import {
   softDeleteResource,
 } from "./resources.js";
 import { createWorkspaceInvitation, revokeWorkspaceInvitation } from "./workspace-invitations.js";
-import { restoreWorkspace, softDeleteWorkspace } from "./workspace-lifecycle.js";
+import {
+  listUserWorkspacePage,
+  restoreWorkspace,
+  softDeleteWorkspace,
+} from "./workspace-lifecycle.js";
 
 let miniflare: Miniflare;
 let database: D1Database;
@@ -423,5 +427,50 @@ describe("stale lifecycle mutations", () => {
       database.prepare("SELECT id, revoked_at FROM agent_enrollment_tokens ORDER BY id").all(),
     ).resolves.toMatchObject({ results: [{ id: "token-1", revoked_at: null }] });
     await expectNoAuditRows();
+  });
+});
+
+describe("workspace membership pagination", () => {
+  it("keeps memberships beyond the former collection limit addressable", async () => {
+    await database.batch([
+      database.prepare(
+        `WITH RECURSIVE sequence(value) AS (
+           VALUES (1) UNION ALL SELECT value + 1 FROM sequence WHERE value < 120
+         )
+         INSERT INTO workspaces
+           SELECT printf('workspace-%03d', value), printf('Workspace %03d', value),
+                  printf('workspace-%03d', value), 1,
+                  CASE WHEN value = 120 THEN 100 ELSE NULL END, NULL
+           FROM sequence`,
+      ),
+      database.prepare(
+        `WITH RECURSIVE sequence(value) AS (
+           VALUES (1) UNION ALL SELECT value + 1 FROM sequence WHERE value < 120
+         )
+         INSERT INTO memberships
+           SELECT printf('workspace-%03d', value), 'user-1',
+                  CASE WHEN value % 2 = 0 THEN 'admin' ELSE 'member' END, 'active', 1
+           FROM sequence`,
+      ),
+    ]);
+
+    const result = await listUserWorkspacePage(database, "user-1", { page: 999 });
+
+    expect(result).toMatchObject({
+      page: 3,
+      pageSize: 50,
+      pages: 3,
+      total: 121,
+      totalCapped: false,
+      activeCount: 120,
+      activeCountCapped: false,
+    });
+    expect(result.workspaces).toHaveLength(21);
+    expect(result.workspaces[0]).toMatchObject({ id: "workspace-100", role: "admin" });
+    expect(result.workspaces.at(-1)).toMatchObject({
+      id: "workspace-120",
+      deletedAt: 100,
+      recoverableUntil: 604_800_100,
+    });
   });
 });

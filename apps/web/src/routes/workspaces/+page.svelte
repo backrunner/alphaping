@@ -1,5 +1,14 @@
 <script lang="ts">
-  import { ArrowRight, Building2, Clock3, LogOut, Plus, RotateCcw } from "lucide-svelte";
+  import {
+    ArrowRight,
+    Building2,
+    ChevronLeft,
+    ChevronRight,
+    Clock3,
+    LogOut,
+    Plus,
+    RotateCcw,
+  } from "lucide-svelte";
 
   import Button from "$components/ui/button/button.svelte";
 
@@ -9,6 +18,11 @@
     if (value === null) return "";
     if (value <= data.now) return "Recovery window expired";
     return `Recoverable until ${new Date(value).toLocaleString()}`;
+  }
+
+  function paginationHref(value: number): string {
+    if (value <= 1) return "/workspaces";
+    return `/workspaces?page=${value}`;
   }
 </script>
 
@@ -30,7 +44,7 @@
       </div>
       <div class="workspace-count">
         <span
-          >{data.workspaces.filter((workspace) => workspace.deletedAt === null).length} active</span
+          >{data.workspaces.activeCount}{data.workspaces.activeCountCapped ? "+" : ""} active</span
         >
         <details class="create-workspace" open={form?.kind === "create"}>
           <summary><Plus size={13} />New workspace</summary>
@@ -84,7 +98,7 @@
       </p>{/if}
 
     <div class="rows">
-      {#each data.workspaces as workspace (workspace.id)}
+      {#each data.workspaces.workspaces as workspace (workspace.id)}
         <article class:deleted={workspace.deletedAt !== null}>
           <Building2 size={17} />
           <div class="identity">
@@ -111,6 +125,22 @@
         <p class="empty">No active workspace memberships are available.</p>
       {/each}
     </div>
+    {#if data.workspaces.pages > 1}
+      <nav class="pagination" aria-label="Workspace pages">
+        {#if data.workspaces.page > 1}
+          <a href={paginationHref(data.workspaces.page - 1)}><ChevronLeft size={14} />Previous</a>
+        {:else}<span><ChevronLeft size={14} />Previous</span>{/if}
+        <strong
+          >{(data.workspaces.page - 1) * data.workspaces.pageSize + 1}-{Math.min(
+            data.workspaces.page * data.workspaces.pageSize,
+            data.workspaces.total,
+          )} of {data.workspaces.total}{data.workspaces.totalCapped ? "+" : ""}</strong
+        >
+        {#if data.workspaces.page < data.workspaces.pages}
+          <a href={paginationHref(data.workspaces.page + 1)}>Next<ChevronRight size={14} /></a>
+        {:else}<span>Next<ChevronRight size={14} /></span>{/if}
+      </nav>
+    {/if}
   </section>
 </main>
 
@@ -344,6 +374,35 @@
 
   .empty {
     padding: 18px 0;
+  }
+
+  .pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding-top: 12px;
+    color: var(--text-faint);
+    font-size: 10px;
+  }
+
+  .pagination a,
+  .pagination span {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .pagination a {
+    color: var(--accent);
+    text-decoration: none;
+  }
+
+  .pagination strong {
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 500;
   }
 
   @media (max-width: 560px) {

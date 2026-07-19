@@ -2,18 +2,20 @@ import { error, fail, isHttpError, isRedirect, redirect } from "@sveltejs/kit";
 
 import {
   createWorkspace,
-  listUserWorkspaces,
+  listUserWorkspacePage,
   restoreWorkspace,
 } from "$lib/server/workspace-lifecycle";
 
 import type { Actions, PageServerLoad } from "./$types";
 
-export const load: PageServerLoad = async ({ locals, platform }) => {
+export const load: PageServerLoad = async ({ locals, platform, url }) => {
   if (!locals.session) throw redirect(303, "/login?returnTo=%2Fworkspaces");
   if (!platform) throw error(503, "Cloudflare bindings are unavailable");
   return {
     now: Date.now(),
-    workspaces: await listUserWorkspaces(platform.env.CONTROL_DB, locals.session.user.id),
+    workspaces: await listUserWorkspacePage(platform.env.CONTROL_DB, locals.session.user.id, {
+      page: Number(url.searchParams.get("page") ?? "1"),
+    }),
   };
 };
 

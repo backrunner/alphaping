@@ -139,6 +139,10 @@ interface WorkspaceMembershipRow {
   soft_delete_grace_days: number | null;
 }
 
+const WORKSPACE_PAGE_SIZE = 50;
+const WORKSPACE_MAX_PAGE = 100;
+const WORKSPACE_MAX_ENTRIES = WORKSPACE_PAGE_SIZE * WORKSPACE_MAX_PAGE;
+
 export interface WorkspaceMembershipSummary {
   id: string;
   name: string;
@@ -146,6 +150,35 @@ export interface WorkspaceMembershipSummary {
   role: "admin" | "member";
   deletedAt: number | null;
   recoverableUntil: number | null;
+}
+
+export interface WorkspaceMembershipPage {
+  workspaces: readonly WorkspaceMembershipSummary[];
+  page: number;
+  pageSize: number;
+  pages: number;
+  total: number;
+  totalCapped: boolean;
+  activeCount: number;
+  activeCountCapped: boolean;
+}
+
+export interface WorkspaceMembershipPageRequest {
+  page?: number;
+}
+
+function mapWorkspaceMembership(row: WorkspaceMembershipRow): WorkspaceMembershipSummary {
+  return {
+    id: row.id,
+    name: row.name,
+    slug: row.slug,
+    role: row.role,
+    deletedAt: row.deleted_at,
+    recoverableUntil:
+      row.deleted_at === null
+        ? null
+        : row.deleted_at + (row.soft_delete_grace_days ?? 7) * 86_400_000,
+  };
 }
 
 export async function listUserWorkspaces(
@@ -158,21 +191,59 @@ export async function listUserWorkspaces(
        FROM memberships m JOIN workspaces w ON w.id = m.workspace_id
        LEFT JOIN retention_policies p ON p.workspace_id = w.id
        WHERE m.user_id = ? AND m.status = 'active'
-       ORDER BY w.deleted_at IS NOT NULL, w.name LIMIT 200`,
+       ORDER BY w.deleted_at IS NOT NULL, w.name, w.id LIMIT 200`,
     )
     .bind(userId)
     .all<WorkspaceMembershipRow>();
-  return rows.results.map((row) => ({
-    id: row.id,
-    name: row.name,
-    slug: row.slug,
-    role: row.role,
-    deletedAt: row.deleted_at,
-    recoverableUntil:
-      row.deleted_at === null
-        ? null
-        : row.deleted_at + (row.soft_delete_grace_days ?? 7) * 86_400_000,
-  }));
+  return rows.results.map(mapWorkspaceMembership);
+}
+
+export async function listUserWorkspacePage(
+  db: D1Database,
+  userId: string,
+  request: WorkspaceMembershipPageRequest = {},
+): Promise<WorkspaceMembershipPage> {
+  const count = await db
+    .prepare(
+      `SELECT COUNT(*) AS count,
+              COALESCE(SUM(CASE WHEN deleted_at IS NULL THEN 1 ELSE 0 END), 0) AS active_count
+       FROM (
+         SELECT w.deleted_at
+         FROM memberships m JOIN workspaces w ON w.id = m.workspace_id
+         WHERE m.user_id = ? AND m.status = 'active'
+         ORDER BY w.deleted_at IS NOT NULL, w.name, w.id
+         LIMIT ?
+       )`,
+    )
+    .bind(userId, WORKSPACE_MAX_ENTRIES + 1)
+    .first<{ count: number; active_count: number }>();
+  if (!count) throw error(500, "Workspace list count is unavailable");
+  const totalCapped = count.count > WORKSPACE_MAX_ENTRIES;
+  const activeCountCapped = count.active_count > WORKSPACE_MAX_ENTRIES;
+  const total = Math.min(count.count, WORKSPACE_MAX_ENTRIES);
+  const pages = Math.max(1, Math.min(WORKSPACE_MAX_PAGE, Math.ceil(total / WORKSPACE_PAGE_SIZE)));
+  const requestedPage = Number.isInteger(request.page) ? Math.max(1, request.page ?? 1) : 1;
+  const page = Math.min(requestedPage, pages);
+  const rows = await db
+    .prepare(
+      `SELECT w.id, w.name, w.slug, m.role, w.deleted_at, p.soft_delete_grace_days
+       FROM memberships m JOIN workspaces w ON w.id = m.workspace_id
+       LEFT JOIN retention_policies p ON p.workspace_id = w.id
+       WHERE m.user_id = ? AND m.status = 'active'
+       ORDER BY w.deleted_at IS NOT NULL, w.name, w.id LIMIT ? OFFSET ?`,
+    )
+    .bind(userId, WORKSPACE_PAGE_SIZE, (page - 1) * WORKSPACE_PAGE_SIZE)
+    .all<WorkspaceMembershipRow>();
+  return {
+    workspaces: rows.results.map(mapWorkspaceMembership),
+    page,
+    pageSize: WORKSPACE_PAGE_SIZE,
+    pages,
+    total,
+    totalCapped,
+    activeCount: Math.min(count.active_count, WORKSPACE_MAX_ENTRIES),
+    activeCountCapped,
+  };
 }
 
 export async function softDeleteWorkspace(
