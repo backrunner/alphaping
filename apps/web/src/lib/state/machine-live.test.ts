@@ -1,8 +1,19 @@
 import { describe, expect, it } from "vitest";
 
-import { parseMachineLiveFallback, parseMachineLiveTicket } from "./machine-live.js";
+import {
+  liveReconnectCeiling,
+  parseMachineLiveFallback,
+  parseMachineLiveTicket,
+} from "./machine-live.js";
 
 describe("machine live browser boundaries", () => {
+  it("backs persistent outages off to the ticket refresh interval", () => {
+    expect([0, 1, 5, 8, 9, 20].map(liveReconnectCeiling)).toEqual([
+      1_000, 2_000, 32_000, 256_000, 300_000, 300_000,
+    ]);
+    expect(liveReconnectCeiling(-1)).toBe(300_000);
+  });
+
   it("accepts bounded tickets and durable projections", () => {
     expect(
       parseMachineLiveTicket(

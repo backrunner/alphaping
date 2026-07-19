@@ -9,7 +9,12 @@
   import { Radio } from "lucide-svelte";
   import { onMount } from "svelte";
 
-  import { parseMachineLiveFallback, parseMachineLiveTicket } from "$lib/state/machine-live";
+  import {
+    liveReconnectCeiling,
+    parseMachineLiveFallback,
+    parseMachineLiveTicket,
+    type MachineLiveTicket,
+  } from "$lib/state/machine-live";
 
   type LiveState = "idle" | "connecting" | "waiting" | "healthy" | "degraded";
   type Timer = ReturnType<typeof setTimeout>;
@@ -37,6 +42,7 @@
   let abortController: AbortController | null = null;
   let lifecycle = 0;
   let reconnectAttempt = 0;
+  let cachedTicket: MachineLiveTicket | null = null;
   function initialObservation() {
     return initialObservedAt ?? 0;
   }
@@ -109,10 +115,27 @@
 
   function scheduleReconnect(generation: number) {
     if (!active || document.visibilityState !== "visible" || generation !== lifecycle) return;
-    const ceiling = Math.min(30_000, 1_000 * 2 ** Math.min(reconnectAttempt, 5));
+    const ceiling = liveReconnectCeiling(reconnectAttempt);
     const delay = Math.round(ceiling / 2 + Math.random() * (ceiling / 2));
     reconnectAttempt += 1;
     reconnectTimer = setTimeout(() => void connect(), delay);
+  }
+
+  async function currentTicket(signal: AbortSignal): Promise<MachineLiveTicket> {
+    if (cachedTicket && cachedTicket.expiresAt > Date.now() + 10_000) return cachedTicket;
+    const response = await fetch(ticketEndpoint, { cache: "no-store", signal });
+    if (!response.ok) throw new Error("live_ticket_failed");
+    const ticketBody: unknown = await response.json();
+    if (
+      typeof ticketBody === "object" &&
+      ticketBody !== null &&
+      "available" in ticketBody &&
+      ticketBody.available === false
+    ) {
+      throw new Error("live_unavailable");
+    }
+    cachedTicket = parseMachineLiveTicket(ticketBody);
+    return cachedTicket;
   }
 
   async function connect() {
@@ -122,21 +145,7 @@
     abortController?.abort();
     abortController = new AbortController();
     try {
-      const response = await fetch(ticketEndpoint, {
-        cache: "no-store",
-        signal: abortController.signal,
-      });
-      if (!response.ok) throw new Error("live_ticket_failed");
-      const ticketBody: unknown = await response.json();
-      if (
-        typeof ticketBody === "object" &&
-        ticketBody !== null &&
-        "available" in ticketBody &&
-        ticketBody.available === false
-      ) {
-        throw new Error("live_unavailable");
-      }
-      const ticket = parseMachineLiveTicket(ticketBody);
+      const ticket = await currentTicket(abortController.signal);
       if (generation !== lifecycle || !active || document.visibilityState !== "visible") return;
       const connected = new WebSocket(ticket.url, [
         LIVE_PROTOCOL,
@@ -183,6 +192,7 @@
       };
       connected.onclose = () => {
         if (socket === connected) socket = null;
+        if (cachedTicket && cachedTicket.expiresAt <= Date.now() + 10_000) cachedTicket = null;
         if (demandTimer !== undefined) clearInterval(demandTimer);
         if (credentialTimer !== undefined) clearTimeout(credentialTimer);
         demandTimer = undefined;

@@ -7,6 +7,11 @@ export interface MachineLiveTicket {
   expiresAt: number;
 }
 
+export function liveReconnectCeiling(attempt: number): number {
+  if (!Number.isSafeInteger(attempt) || attempt < 0) return 300_000;
+  return Math.min(300_000, 1_000 * 2 ** Math.min(attempt, 9));
+}
+
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
