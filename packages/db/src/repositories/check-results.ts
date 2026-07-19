@@ -29,9 +29,10 @@ export function prepareCheckBlockWrite(input: CheckBlockWrite): {
         ${idColumn} = excluded.${idColumn},
         ${hashColumn} = excluded.${hashColumn},
         schema_version = excluded.schema_version
-      WHERE check_result_blocks_5m.${idColumn} IS NULL
+      WHERE check_result_blocks_5m.workspace_pk = excluded.workspace_pk
+        AND (check_result_blocks_5m.${idColumn} IS NULL
          OR (check_result_blocks_5m.${idColumn} = excluded.${idColumn}
-             AND check_result_blocks_5m.${hashColumn} = excluded.${hashColumn})`,
+             AND check_result_blocks_5m.${hashColumn} = excluded.${hashColumn}))`,
     values: [
       input.checkPk,
       input.workspacePk,

@@ -131,6 +131,33 @@ describe("central check revision fencing", () => {
     });
   });
 
+  it("does not overwrite a service latest row from another workspace", async () => {
+    await database
+      .prepare(
+        `INSERT INTO service_latest
+          (service_pk, workspace_pk, state, status_since, reason_code,
+           last_transition_at, updated_at)
+         VALUES (10, 2, 'down', 500, 'check_down', 500, 500)`,
+      )
+      .run();
+
+    await persistCheckResult(database, staleConfig, 60_000, 1_000, {
+      state: "healthy",
+      latencyMs: 10,
+      failureCode: null,
+      failureSummary: null,
+    });
+
+    await expect(
+      database
+        .prepare("SELECT workspace_pk, state FROM service_latest WHERE service_pk = 10")
+        .first(),
+    ).resolves.toEqual({ workspace_pk: 2, state: "down" });
+    await expect(
+      database.prepare("SELECT COUNT(*) AS count FROM state_events").first(),
+    ).resolves.toEqual({ count: 0 });
+  });
+
   it("does not let an old result overwrite a newer latest or service state", async () => {
     let injected = false;
     const racingDatabase = new Proxy(database, {

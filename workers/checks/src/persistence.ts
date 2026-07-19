@@ -130,7 +130,8 @@ function prepareRollupStatement(
          degraded_count = excluded.degraded_count,
          down_count = excluded.down_count,
          latency_avg_ms = excluded.latency_avg_ms,
-         latency_max_ms = excluded.latency_max_ms`,
+         latency_max_ms = excluded.latency_max_ms
+       WHERE ${table}.workspace_pk = excluded.workspace_pk`,
     )
     .bind(
       config.telemetry_pk,
@@ -156,9 +157,10 @@ async function prepareClosedRollups(
   const block = await db
     .prepare(
       `SELECT result_0, result_1, result_2, result_3
-       FROM check_result_blocks_5m WHERE check_pk = ? AND block_start = ?`,
+       FROM check_result_blocks_5m
+       WHERE workspace_pk = ? AND check_pk = ? AND block_start = ?`,
     )
-    .bind(config.telemetry_pk, fiveMinuteBucket)
+    .bind(config.workspace_telemetry_pk, config.telemetry_pk, fiveMinuteBucket)
     .first<BlockResultRow>();
   const fiveMinute = emptyRollup();
   if (block) {
@@ -180,10 +182,10 @@ async function prepareClosedRollups(
       `SELECT total_count, healthy_count, degraded_count, down_count,
               latency_avg_ms, latency_max_ms
        FROM check_rollups_5m
-       WHERE check_pk = ? AND bucket_start >= ? AND bucket_start < ?
+       WHERE workspace_pk = ? AND check_pk = ? AND bucket_start >= ? AND bucket_start < ?
        ORDER BY bucket_start`,
     )
-    .bind(config.telemetry_pk, hourStart, fiveMinuteBucket)
+    .bind(config.workspace_telemetry_pk, config.telemetry_pk, hourStart, fiveMinuteBucket)
     .all<StoredCheckRollup>();
   const hourly = emptyRollup();
   for (const stored of previous.results) addStoredRollup(hourly, stored);
@@ -268,7 +270,7 @@ const SERVICE_STATE_CTE = `WITH service_aggregate(rank) AS (
     WHEN state IN ('down', 'degraded') THEN 2
     WHEN state = 'healthy' THEN 1
     ELSE 0 END), 0)
-  FROM check_latest WHERE service_pk = ?
+  FROM check_latest WHERE workspace_pk = ? AND service_pk = ?
 ), next_service(state) AS (
   SELECT CASE
     WHEN ? > ? THEN 'maintenance'
@@ -294,9 +296,15 @@ function prepareServiceStateStatements(
   observedAt: number,
   resultId: ArrayBuffer,
 ): readonly D1PreparedStatement[] {
-  const inputBindings = [config.service_telemetry_pk, config.service_maintenance_until, observedAt];
+  const inputBindings = [
+    config.workspace_telemetry_pk,
+    config.service_telemetry_pk,
+    config.service_maintenance_until,
+    observedAt,
+  ];
   const currentResult = `SELECT 1 FROM check_latest
-                         WHERE check_pk = ? AND config_revision = ? AND result_id = ?`;
+                         WHERE workspace_pk = ? AND check_pk = ?
+                           AND config_revision = ? AND result_id = ?`;
   return [
     db
       .prepare(
@@ -307,8 +315,13 @@ function prepareServiceStateStatements(
          SELECT ?, 2, ?, ?, ?, COALESCE(previous.state, 'unknown'), next_service.state,
                 ${serviceReasonSql("next_service.state")}
          FROM next_service
-         LEFT JOIN service_latest previous ON previous.service_pk = ?
+         LEFT JOIN service_latest previous
+           ON previous.workspace_pk = ? AND previous.service_pk = ?
          WHERE EXISTS (${currentResult})
+           AND NOT EXISTS (
+             SELECT 1 FROM service_latest existing
+             WHERE existing.service_pk = ? AND existing.workspace_pk != ?
+           )
            AND COALESCE(previous.state, 'unknown') != next_service.state`,
       )
       .bind(
@@ -317,10 +330,14 @@ function prepareServiceStateStatements(
         config.service_telemetry_pk,
         observedAt,
         resultId,
+        config.workspace_telemetry_pk,
         config.service_telemetry_pk,
+        config.workspace_telemetry_pk,
         config.telemetry_pk,
         config.config_revision,
         resultId,
+        config.service_telemetry_pk,
+        config.workspace_telemetry_pk,
       ),
     db
       .prepare(
@@ -329,7 +346,7 @@ function prepareServiceStateStatements(
            last_transition_at, updated_at)
          SELECT ?, ?, event.current_state, ?, event.reason_code, ?, ?
          FROM state_events event
-         WHERE event.resource_type = 2 AND event.resource_pk = ?
+         WHERE event.workspace_pk = ? AND event.resource_type = 2 AND event.resource_pk = ?
            AND event.occurred_at = ? AND event.event_id = ?
            AND changes() = 1
          ON CONFLICT(service_pk) DO UPDATE SET
@@ -338,7 +355,8 @@ function prepareServiceStateStatements(
            status_since = excluded.status_since,
            reason_code = excluded.reason_code,
            last_transition_at = excluded.last_transition_at,
-           updated_at = excluded.updated_at`,
+           updated_at = excluded.updated_at
+         WHERE service_latest.workspace_pk = excluded.workspace_pk`,
       )
       .bind(
         config.service_telemetry_pk,
@@ -346,6 +364,7 @@ function prepareServiceStateStatements(
         observedAt,
         observedAt,
         observedAt,
+        config.workspace_telemetry_pk,
         config.service_telemetry_pk,
         observedAt,
         resultId,
@@ -359,7 +378,7 @@ function prepareServiceStateStatements(
          WHERE EXISTS (${currentResult})
            AND NOT EXISTS (
              SELECT 1 FROM state_events event
-             WHERE event.resource_type = 2 AND event.resource_pk = ?
+             WHERE event.workspace_pk = ? AND event.resource_type = 2 AND event.resource_pk = ?
                AND event.occurred_at = ? AND event.event_id = ?
            )`,
       )
@@ -369,9 +388,11 @@ function prepareServiceStateStatements(
         observedAt,
         observedAt,
         observedAt,
+        config.workspace_telemetry_pk,
         config.telemetry_pk,
         config.config_revision,
         resultId,
+        config.workspace_telemetry_pk,
         config.service_telemetry_pk,
         observedAt,
         resultId,
@@ -428,7 +449,8 @@ function prepareStatusBucket(
            WHEN status_buckets.state = 'maintenance' OR excluded.state = 'maintenance' THEN 'maintenance_window'
            WHEN status_buckets.state = 'down' OR excluded.state = 'down' THEN 'check_down'
            WHEN status_buckets.state = 'degraded' OR excluded.state = 'degraded' THEN 'check_degraded'
-           ELSE excluded.summary_code END`,
+           ELSE excluded.summary_code END
+       WHERE status_buckets.workspace_pk = excluded.workspace_pk`,
     )
     .bind(
       config.service_telemetry_pk,
@@ -480,9 +502,9 @@ export async function persistCheckResult(
       .prepare(
         `SELECT state, failure_code, failure_summary, consecutive_failures,
               consecutive_successes, config_revision, result_id
-       FROM check_latest WHERE check_pk = ?`,
+       FROM check_latest WHERE workspace_pk = ? AND check_pk = ?`,
       )
-      .bind(config.telemetry_pk)
+      .bind(config.workspace_telemetry_pk, config.telemetry_pk)
       .first<PreviousCheckLatest>(),
   ]);
   if (previousCheck !== null && previousCheck.config_revision > config.config_revision) return;
@@ -535,9 +557,10 @@ export async function persistCheckResult(
       critical = excluded.critical,
       config_revision = excluded.config_revision,
       result_id = excluded.result_id
-     WHERE excluded.config_revision > check_latest.config_revision
+     WHERE check_latest.workspace_pk = excluded.workspace_pk
+       AND (excluded.config_revision > check_latest.config_revision
         OR (excluded.config_revision = check_latest.config_revision
-            AND excluded.observed_at >= check_latest.observed_at)`,
+            AND excluded.observed_at >= check_latest.observed_at))`,
     )
     .bind(
       config.telemetry_pk,
