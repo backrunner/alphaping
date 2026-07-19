@@ -555,9 +555,39 @@ describe("Agent executor authorization", () => {
     ).resolves.toEqual([]);
 
     await setMemberAccess("manage");
+    await database.batch([
+      database.prepare("UPDATE machines SET name = 'ZZZ Edge node' WHERE id = 'machine-1'"),
+      database.prepare(
+        `WITH RECURSIVE sequence(value) AS (
+           VALUES (2) UNION ALL SELECT value + 1 FROM sequence WHERE value < 201
+         )
+         INSERT INTO machines
+           (id, workspace_id, name, desired_config_revision, updated_at, deleted_at)
+         SELECT printf('machine-%03d', value), 'workspace-1',
+                printf('Machine %03d', value), 1, 1, NULL FROM sequence`,
+      ),
+      database.prepare(
+        `WITH RECURSIVE sequence(value) AS (
+           VALUES (2) UNION ALL SELECT value + 1 FROM sequence WHERE value < 201
+         )
+         INSERT INTO agents (id, machine_id, workspace_id, status)
+         SELECT printf('agent-%03d', value), printf('machine-%03d', value),
+                'workspace-1', 'active' FROM sequence`,
+      ),
+    ]);
     await expect(
       listServiceCheckAgents(database, "operations", "user-1", "service-1"),
-    ).resolves.toEqual([{ id: "agent-1", name: "Edge node" }]);
+    ).resolves.toEqual([{ id: "agent-1", name: "ZZZ Edge node" }]);
+
+    await database
+      .prepare(
+        `DELETE FROM resource_grants
+         WHERE subject_user_id = 'user-1' AND resource_type = 'service'`,
+      )
+      .run();
+    await expect(
+      listServiceCheckAgents(database, "operations", "user-1", "service-1"),
+    ).resolves.toEqual([]);
   });
 
   it("requires machine manage permission before adding an Agent check", async () => {

@@ -489,20 +489,44 @@ export async function listServiceCheckAgents(
     .bind(serviceId, access.workspaceId)
     .first<{ id: string }>();
   if (!service) throw error(404, "Service not found");
+  const machineAuthorization = finalResourceCapabilityCondition(
+    access,
+    userId,
+    "machine",
+    "m.workspace_id",
+    "m.id",
+    "manage",
+  );
+  const serviceAuthorization = finalResourceCapabilityCondition(
+    access,
+    userId,
+    "service",
+    "current.workspace_id",
+    "current.id",
+    "manage",
+  );
   const agents = await db
     .prepare(
       `SELECT a.id, a.machine_id, m.name FROM agents a
        JOIN machines m ON m.id = a.machine_id
        WHERE a.workspace_id = ? AND a.status = 'active' AND m.deleted_at IS NULL
+         AND ${machineAuthorization.sql}
+         AND EXISTS (
+           SELECT 1 FROM services current
+           WHERE current.id = ? AND current.workspace_id = ? AND current.deleted_at IS NULL
+             AND ${serviceAuthorization.sql}
+         )
        ORDER BY m.name LIMIT 200`,
     )
-    .bind(access.workspaceId)
-    .all<{ id: string; machine_id: string; name: string }>();
-  return agents.results
-    .filter((agent) =>
-      canAccessResource(access.role, access.grants, "machine", agent.machine_id, "manage"),
+    .bind(
+      access.workspaceId,
+      ...machineAuthorization.binds,
+      serviceId,
+      access.workspaceId,
+      ...serviceAuthorization.binds,
     )
-    .map((agent) => ({ id: agent.id, name: agent.name }));
+    .all<{ id: string; machine_id: string; name: string }>();
+  return agents.results.map((agent) => ({ id: agent.id, name: agent.name }));
 }
 
 export async function addServiceCheck(
