@@ -32,9 +32,9 @@
     </div>
   {/if}
   <PublicAnnouncements announcements={data.announcements} />
+  <PublicIncidentList incidents={data.incidents} />
   <PublicMachineList machines={data.machines} />
   <PublicServiceList services={data.services} pagination={data.servicePagination} />
-  <PublicIncidentList incidents={data.incidents} />
   <footer>
     <span
       >{data.stale ? "Snapshot captured" : "Updated"}
