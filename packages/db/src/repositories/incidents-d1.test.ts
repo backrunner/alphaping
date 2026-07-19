@@ -157,3 +157,64 @@ describe("incident center announcement visibility", () => {
     ]);
   });
 });
+
+describe("incident center collection bounds", () => {
+  it("batches 100 incident relations while preserving the latest 500 updates globally", async () => {
+    await database.batch([
+      database.prepare(
+        `WITH RECURSIVE sequence(value) AS (
+             VALUES (1) UNION ALL SELECT value + 1 FROM sequence WHERE value < 100
+           )
+           INSERT INTO services (id, workspace_id, name, deleted_at)
+           SELECT printf('service-%03d', value), 'workspace-1',
+                  printf('Service %03d', value), NULL FROM sequence`,
+      ),
+      database
+        .prepare(
+          `WITH RECURSIVE sequence(value) AS (
+             VALUES (1) UNION ALL SELECT value + 1 FROM sequence WHERE value < 100
+           )
+           INSERT INTO incidents
+             (id, workspace_id, title, summary, severity, state, starts_at,
+              resolved_at, created_at, deleted_at)
+           SELECT printf('incident-%03d', value), 'workspace-1',
+                  printf('Incident %03d', value), 'Collection bound', 'minor',
+                  'monitoring', ? - value, NULL, ? - value, NULL FROM sequence`,
+        )
+        .bind(now, now),
+      database.prepare(
+        `WITH RECURSIVE sequence(value) AS (
+             VALUES (1) UNION ALL SELECT value + 1 FROM sequence WHERE value < 100
+           )
+           INSERT INTO incident_resources (incident_id, resource_type, resource_id, impact)
+           SELECT printf('incident-%03d', value), 'service',
+                  printf('service-%03d', value), 'degraded' FROM sequence`,
+      ),
+      database
+        .prepare(
+          `WITH RECURSIVE sequence(value) AS (
+             VALUES (1) UNION ALL SELECT value + 1 FROM sequence WHERE value < 600
+           )
+           INSERT INTO incident_updates
+             (id, incident_id, state, body, published_at, created_at)
+           SELECT printf('update-%03d', value),
+                  printf('incident-%03d', ((value - 1) % 100) + 1),
+                  'monitoring', printf('Update %03d', value), NULL,
+                  ? - (600 - value) FROM sequence`,
+        )
+        .bind(now),
+    ]);
+
+    const center = await loadIncidentCenter(database, "operations", "admin-1", now);
+    const updateIds = center.incidents.flatMap((incident) =>
+      incident.updates.map((update) => update.id),
+    );
+
+    expect(center.incidents).toHaveLength(100);
+    expect(center.incidents.every((incident) => incident.affectedServices.length === 1)).toBe(true);
+    expect(updateIds).toHaveLength(500);
+    expect(updateIds).toContain("update-600");
+    expect(updateIds).not.toContain("update-100");
+    expect(center.incidents.every((incident) => incident.updates.length === 5)).toBe(true);
+  });
+});

@@ -6,6 +6,8 @@ import {
   type WorkspaceRole,
 } from "@alphaping/authz";
 
+import { queryInBatches } from "./d1-query-batches.js";
+
 interface WorkspaceRow {
   id: string;
   name: string;
@@ -151,30 +153,34 @@ export async function loadIncidentCenter(
       .all<IncidentRow>()
   ).results;
   const incidentIds = incidents.map((incident) => incident.id);
-  const [resources, updates] =
-    incidentIds.length === 0
-      ? [{ results: [] as IncidentResourceRow[] }, { results: [] as IncidentUpdateRow[] }]
-      : await Promise.all([
-          db
-            .prepare(
-              `SELECT incident_id, resource_id, impact FROM incident_resources
-           WHERE resource_type = 'service' AND incident_id IN (${placeholders(incidentIds.length)})`,
-            )
-            .bind(...incidentIds)
-            .all<IncidentResourceRow>(),
-          db
-            .prepare(
-              `SELECT id, incident_id, state, body, published_at, created_at
-           FROM incident_updates WHERE incident_id IN (${placeholders(incidentIds.length)})
+  const [resources, updateCandidates] = await Promise.all([
+    queryInBatches<IncidentResourceRow, string>(db, incidentIds, (batch) =>
+      db
+        .prepare(
+          `SELECT incident_id, resource_id, impact FROM incident_resources
+           WHERE resource_type = 'service' AND incident_id IN (${placeholders(batch.length)})`,
+        )
+        .bind(...batch),
+    ),
+    queryInBatches<IncidentUpdateRow, string>(db, incidentIds, (batch) =>
+      db
+        .prepare(
+          `SELECT id, incident_id, state, body, published_at, created_at
+           FROM incident_updates WHERE incident_id IN (${placeholders(batch.length)})
            ORDER BY COALESCE(published_at, created_at) DESC LIMIT 500`,
-            )
-            .bind(...incidentIds)
-            .all<IncidentUpdateRow>(),
-        ]);
+        )
+        .bind(...batch),
+    ),
+  ]);
+  const updates = updateCandidates
+    .sort(
+      (left, right) =>
+        (right.published_at ?? right.created_at) - (left.published_at ?? left.created_at) ||
+        left.id.localeCompare(right.id),
+    )
+    .slice(0, 500);
   const visibleIncidents = incidents.flatMap((incident) => {
-    const incidentResources = resources.results.filter(
-      (resource) => resource.incident_id === incident.id,
-    );
+    const incidentResources = resources.filter((resource) => resource.incident_id === incident.id);
     const visibleResources = incidentResources.filter((resource) =>
       serviceNameById.has(resource.resource_id),
     );
@@ -210,7 +216,7 @@ export async function loadIncidentCenter(
           name: serviceNameById.get(resource.resource_id) ?? "Service",
           impact: resource.impact,
         })),
-        updates: updates.results
+        updates: updates
           .filter((update) => update.incident_id === incident.id)
           .map((update) => ({
             id: update.id,
