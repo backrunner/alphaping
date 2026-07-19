@@ -205,6 +205,15 @@ TCP 检查支持：
 - 公告支持 `starts_at` 和 `expires_at`。超过 `expires_at` 后查询层立即不可见，清理 Worker 稍后物理删除。
 - 支持 scheduled maintenance，并在状态胶囊中显示维护状态。
 
+### 8.5 通知
+
+- 管理员可以创建 Resend、SMTP HTTPS relay、Discord、Telegram、Slack 和 Bark 通知渠道；凭据必须加密保存且不可回显。
+- 通知规则按 machine/service、异常维度和渠道绑定。机器维度至少覆盖 availability、resource threshold 和 recovery；服务覆盖 availability 和 recovery。
+- 状态转换先形成不可变 telemetry event，再由独立通知 Worker 异步投递，不能阻塞 Agent durable ACK、检查结果事务或页面请求。
+- 同一状态事件与同一渠道最多发送一次。失败使用有界指数退避，最终失败可在管理页诊断和重试。
+- 维护窗口不发送普通异常通知；恢复通知可按规则启用。删除、停用渠道或规则必须立即阻止尚未认领的新投递。
+- Cloudflare Worker 不直接连接任意 SMTP 端口；SMTP 通过部署者控制的 HTTPS relay 接入，Resend 使用官方 HTTPS API。
+
 ## 9. 动态导航与 Dashboard
 
 - workspace 只配置机器监控时，不显示服务监控顶层入口。

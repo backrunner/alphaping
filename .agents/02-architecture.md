@@ -85,10 +85,11 @@ Turbo 负责 JavaScript/TypeScript 任务图，并通过每个 Rust deployable �
 | `live` | TypeScript | `workers/live` | Agent/browser WebSocket | 无权威存储；DO socket attachment 只保存连接身份/session |
 | `checks` | TypeScript | `workers/checks` | Cron 每分钟 | CONTROL_DB `last_claimed_slot`，TELEMETRY_DB check result/rollup 与机器离线事件 |
 | `retention` | TypeScript | `workers/retention` | Cron | TELEMETRY_DB 分批删除、cursor、run log |
+| `notifications` | TypeScript | `workers/notifications` | Cron 每分钟 | CONTROL_DB notification outbox、claim、retry 与 delivery result；TELEMETRY_DB event read-only |
 
 Ingest 暴露不访问 D1 的 `GET|HEAD /healthz` liveness。数据库读写健康由独立的合成 enrollment/report smoke test 判断，避免健康检查增加 D1 请求或因依赖抖动触发级联重启。
 
-可选的 notification Worker 延后到 V1.x，不在 V1 提前创建空服务。
+Notification Worker 只消费已经持久化的 `state_events`，不参与 ingest/checks 的权威事务。它以跨 D1 cursor 加 deterministic delivery key 实现至少一次发现、最多一次 per-channel/event 外部发送；跨 D1 不宣称原子性。
 
 ## 5. Cloudflare 绑定
 
@@ -105,6 +106,7 @@ Ingest 暴露不访问 D1 的 `GET|HEAD /healthz` liveness。数据库读写健�
 - Worker 间同步调用优先使用 service binding，不通过公开 URL。
 - `web` 不直接调用 ingest；它只签发短时 viewer ticket 并连接 live hub。
 - `checks` Worker 直接读取 CONTROL_DB due tasks，以最多 5 并发执行后写入 TELEMETRY_DB，不通过 web API 回写。
+- `notifications` 只读取 TELEMETRY_DB 状态事件，配置、密文、规则、cursor 和 delivery outbox 归属 CONTROL_DB。
 - `web`、`ingest` 和 `live` 需要公开路由。Checks/retention 关闭 `workers_dev` 和 preview URL。
 
 ### 5.3 Wrangler 配置

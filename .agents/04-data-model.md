@@ -106,7 +106,7 @@ Better Auth 核心表由其 schema 生成并纳入统一 migration：
 
 ### `machines`
 
-- `id`, `workspace_id`, `name`, `description`
+- `id`, `workspace_id`, `public_slug`, `name`, `description`
 - `expected_host`, `labels_json`
 - `sampling_interval_seconds`
 - `report_interval_seconds`
@@ -119,6 +119,8 @@ Better Auth 核心表由其 schema 生成并纳入统一 migration：
 - `purge_agent_cursor`，Retention 已确认清理完 replay state 的最后一个历史 Agent ID
 
 索引：`workspace_id,deleted_at`。不要给每次报告都会变化的字段建立多余索引。
+
+`public_slug` 是与内部 machine ID 无关的随机稳定标识，只用于显式公开的 guest resource URL。
 
 ### `agent_enrollment_tokens`
 
@@ -425,6 +427,30 @@ Checks Worker 只在五分钟 block 闭合时写一次 service bucket。同一�
 查询必须包含时间窗口和 visibility。
 
 ## 10. 保留和审计
+
+### `notification_channels`
+
+- `id`, `workspace_id`, `name`, `kind`, `enabled`
+- `config_nonce`, `config_ciphertext`，AES-GCM 加密且 AAD 绑定 workspace/channel
+- `created_by`, `created_at`, `updated_at`, `deleted_at`
+
+### `notification_rules`
+
+- `id`, `workspace_id`, `resource_type`, `resource_id`, `dimension`, `channel_id`
+- `send_recovery`, `enabled`, `created_by`, `created_at`, `updated_at`
+- 唯一 `(workspace_id,resource_type,resource_id,dimension,channel_id)`
+
+### `notification_event_cursors`
+
+- 每 workspace 保存 `occurred_at,resource_type,resource_pk,event_id_hex` 复合 cursor。
+- 首个渠道创建时从当前时间初始化，不追发创建前的历史状态事件。
+
+### `notification_deliveries`
+
+- deterministic `id`, `workspace_id`, `channel_id`, `event_id_hex`
+- `resource_type`, `resource_id`, `dimension`, `previous_state`, `current_state`, `reason_code`, `occurred_at`
+- `state`, `attempt_count`, `next_attempt_at`, `claim_until`, `last_error_code`, `sent_at`
+- 唯一 `(channel_id,event_id_hex)`，due index 只服务 bounded retry scan。
 
 ### `retention_policies`
 

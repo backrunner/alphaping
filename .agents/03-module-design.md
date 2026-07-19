@@ -240,6 +240,15 @@ src/
 
 每个 workspace lease 内还使用结构化 JSON tree 检查 `check_configs.secret_refs_json`，每轮最多删除 50 个创建超过 24 小时且没有任何当前引用的 `check_secrets`。清理在 soft-delete 收敛之后执行；malformed 引用按空对象处理，不能阻断该 workspace 的 retention。
 
+## 10.1 `workers/notifications`
+
+- Cron 每分钟按 workspace cursor 有界扫描 TELEMETRY_DB `state_events`，CONTROL_DB 负责资源映射、规则、渠道和 delivery outbox。
+- 跨 D1 cursor 只在 delivery 持久化后推进；重复扫描由 `channel_id + event_id` deterministic key 去重。
+- delivery 使用条件 claim、短 lease、最多 6 次尝试和有界指数退避。外部请求有 10 秒绝对 timeout，不读取无界 response body。
+- 渠道配置使用 `NOTIFICATION_SECRET_WRAPPING_KEY` 的 AES-256-GCM envelope；AAD 绑定 workspace/channel，Web 只返回非敏感摘要。
+- Provider adapter 支持 Resend、SMTP HTTPS relay、Discord、Telegram、Slack 和 Bark。禁止在日志中记录 token、完整 webhook URL、收件人或消息正文。
+- 单次 Cron 最多发现 100 个 event、发送 50 个 delivery、并发不超过 5；更高规模再评估 Queue，不在默认小规模路径增加三次 Queue operation。
+
 ## 11. `crates/agent`
 
 ```text

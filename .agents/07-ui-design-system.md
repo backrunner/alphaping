@@ -111,14 +111,14 @@ shadcn-svelte 和 Bits UI 是同一套组件体系的 source/primitives 层，�
 
 ## 7. Shape、border 和 elevation
 
-- Card radius：6 px。
-- Input/menu/dialog radius：6 px。
+- Card radius：10 px，重复资源 hover 可使用 1 px translate 和轻阴影。
+- Input/menu radius：8 px，dialog/panel radius：12 px。
 - Tooltip radius：4 px。
 - Button radius：5 px。
 - Status capsule、tag、segmented control item 可以使用 full pill。
-- 禁止 12-24 px 大圆角卡片。
+- 紧凑控制台不使用超过 12 px 的普通卡片圆角。
 - 默认使用 1 px border 表达分组。
-- 阴影只用于 popover、menu、dialog 和拖浮层，不给普通 dashboard card 加浮夸阴影。
+- Popover、menu、dialog 使用明确 elevation；可点击资源卡允许低对比静态阴影和 hover elevation，页面 section 不做浮卡。
 - 禁止 card inside card。卡片内部用 grid、divider 和 spacing 分组。
 
 ## 8. Layer tokens

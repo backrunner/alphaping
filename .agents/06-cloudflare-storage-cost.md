@@ -448,6 +448,10 @@ D1 storage overage at 0.75 USD/GB       4.1048 USD/month
 
 ## 11. 性能和扩展门槛
 
+- Notification Worker 默认每分钟一个 Cron invocation，每月约 43,200 Workers requests；无新事件时每个有通知配置的 workspace 只做一次有界 event cursor read。每个状态转换最多生成“匹配渠道数”条 CONTROL_DB delivery 写入，但同一 channel/event 去重。
+- 100 machine + 100 service 基线按每资源每天 2 次状态转换、平均 2 个渠道估算约 24,000 delivery/月，外部请求和 D1 writes 远低于 included margin。禁止对每个 sample/check result 发送通知或写 delivery。
+- SMTP 使用 HTTPS relay，不增加 Hyperdrive 或出站 TCP 连接；当月 delivery 超过 100,000 或单 Cron backlog 连续增长时再评估 Queue batching，并重新计算每消息三次 Queue operation。
+
 - `CONTROL_DB` 与 `TELEMETRY_DB` 分库，避免 retention/补报影响登录和配置管理。
 - V1 每个 workspace 最多保留 200 个 active service 和 1,000 个 active-service check；写入路径分别最多读取 200/1,000 条候选来原子复核容量，避免集合查询静默截断和无预算的调度增长。该读取只发生在低频配置 mutation，不进入稳态账本。
 - Dashboard 只在展开图表时查历史，时间范围与 resource ID 始终走主键。

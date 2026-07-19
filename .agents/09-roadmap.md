@@ -152,7 +152,7 @@
 
 ## 10. V1.x 后续候选
 
-- Email、Webhook、Slack、Telegram 等通知渠道。
+- Email、Webhook、Slack、Telegram 等通知渠道。（已提前进入当前实现：Resend、SMTP HTTPS relay、Discord、Telegram、Slack、Bark。）
 - Durable Objects 子分钟中央调度。
 - 多地域专用探针网络。
 - Kubernetes/CRI 集群级监控。
