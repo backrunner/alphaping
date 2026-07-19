@@ -19,6 +19,7 @@
   <RetentionSettingsForm
     retention={data.settings.retention}
     estimatedStorageGb={data.settings.estimatedStorageGb}
+    estimatedStorageCapped={data.settings.estimatedStorageCapped}
   />
   <WorkspaceDangerZone name={data.shell.workspace.name} slug={data.workspace} />
 </main>

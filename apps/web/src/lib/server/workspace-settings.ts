@@ -12,6 +12,7 @@ export type DashboardVisibility = "private" | "authenticated" | "public";
 export type ProjectionProfile = "summary" | "detailed";
 
 const PUBLIC_RESOURCE_PAGE_SIZE = 50;
+const STORAGE_ESTIMATE_RESOURCE_LIMIT = 1_000;
 
 interface DashboardRow {
   id: string;
@@ -60,6 +61,7 @@ export interface WorkspaceSettingsPanel {
   resourcePagination: PublicResourcePagination;
   retention: RetentionSettings;
   estimatedStorageGb: number;
+  estimatedStorageCapped: boolean;
 }
 
 export interface PublicResourcePagination {
@@ -182,10 +184,21 @@ export async function loadWorkspaceSettingsPanel(
     db
       .prepare(
         `SELECT
-           (SELECT COUNT(*) FROM machines WHERE workspace_id = ? AND deleted_at IS NULL) AS machines,
-           (SELECT COUNT(*) FROM check_configs WHERE workspace_id = ? AND enabled = 1) AS checks`,
+           (SELECT COUNT(*) FROM (
+              SELECT 1 FROM machines
+              WHERE workspace_id = ? AND deleted_at IS NULL LIMIT ?
+            )) AS machines,
+           (SELECT COUNT(*) FROM (
+              SELECT 1 FROM check_configs
+              WHERE workspace_id = ? AND enabled = 1 LIMIT ?
+            )) AS checks`,
       )
-      .bind(access.workspaceId, access.workspaceId)
+      .bind(
+        access.workspaceId,
+        STORAGE_ESTIMATE_RESOURCE_LIMIT + 1,
+        access.workspaceId,
+        STORAGE_ESTIMATE_RESOURCE_LIMIT + 1,
+      )
       .first<{ machines: number; checks: number }>(),
   ]);
   if (!dashboard || !retention || !counts) throw error(500, "Workspace settings are incomplete");
@@ -234,10 +247,13 @@ export async function loadWorkspaceSettingsPanel(
     },
     retention: retentionSettings,
     estimatedStorageGb: estimateTelemetryStorageGb({
-      machineCount: counts.machines,
-      checkCount: counts.checks,
+      machineCount: Math.min(counts.machines, STORAGE_ESTIMATE_RESOURCE_LIMIT),
+      checkCount: Math.min(counts.checks, STORAGE_ESTIMATE_RESOURCE_LIMIT),
       retention: retentionSettings,
     }),
+    estimatedStorageCapped:
+      counts.machines > STORAGE_ESTIMATE_RESOURCE_LIMIT ||
+      counts.checks > STORAGE_ESTIMATE_RESOURCE_LIMIT,
   };
 }
 

@@ -2,6 +2,7 @@ import { Miniflare } from "miniflare";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
+  estimateTelemetryStorageGb,
   loadWorkspaceSettingsPanel,
   updateDashboardVisibility,
   updateResourcePublicPolicy,
@@ -233,5 +234,29 @@ describe("workspace public resource pagination", () => {
 
     expect(panel.resources.map((resource) => resource.id)).toEqual(["machine-1"]);
     expect(panel.resourcePagination).toEqual({ previousCursor: null, nextCursor: null });
+  });
+});
+
+describe("workspace storage estimate bounds", () => {
+  it("marks estimates as minimums after the modeled resource limit", async () => {
+    await database
+      .prepare(
+        `WITH RECURSIVE sequence(value) AS (
+           SELECT 1 UNION ALL SELECT value + 1 FROM sequence WHERE value < 1001
+         )
+         INSERT INTO check_configs (id, workspace_id, enabled)
+         SELECT printf('check-%04d', value), 'workspace-1', 1 FROM sequence`,
+      )
+      .run();
+
+    const panel = await loadWorkspaceSettingsPanel(database, "operations", "admin-1");
+    expect(panel.estimatedStorageCapped).toBe(true);
+    expect(panel.estimatedStorageGb).toBe(
+      estimateTelemetryStorageGb({
+        machineCount: 1,
+        checkCount: 1_000,
+        retention: panel.retention,
+      }),
+    );
   });
 });

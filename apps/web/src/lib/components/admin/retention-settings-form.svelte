@@ -7,7 +7,12 @@
   let {
     retention,
     estimatedStorageGb,
-  }: { retention: RetentionSettings; estimatedStorageGb: number } = $props();
+    estimatedStorageCapped,
+  }: {
+    retention: RetentionSettings;
+    estimatedStorageGb: number;
+    estimatedStorageCapped: boolean;
+  } = $props();
 </script>
 
 <section aria-labelledby="retention-title">
@@ -17,7 +22,14 @@
       <p>Workspace history windows</p>
     </div>
     <div class="estimate">
-      <strong>{estimatedStorageGb.toFixed(2)} GB</strong><span>estimated telemetry storage</span>
+      <strong
+        >{#if estimatedStorageCapped}&ge;
+        {/if}{estimatedStorageGb.toFixed(2)} GB</strong
+      ><span
+        >{estimatedStorageCapped
+          ? "minimum estimated telemetry storage"
+          : "estimated telemetry storage"}</span
+      >
     </div>
   </header>
   <form method="POST" action="?/retention">
