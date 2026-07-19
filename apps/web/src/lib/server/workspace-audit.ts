@@ -4,6 +4,7 @@ import { requireWorkspaceAdmin } from "./workspace-admin.js";
 
 const PAGE_SIZE = 50;
 const MAX_PAGE = 100;
+const MAX_ENTRIES = PAGE_SIZE * MAX_PAGE;
 
 interface AuditRow {
   id: string;
@@ -32,6 +33,7 @@ export interface WorkspaceAuditPage {
   page: number;
   pages: number;
   total: number;
+  totalCapped: boolean;
 }
 
 export async function loadWorkspaceAuditPage(
@@ -43,11 +45,17 @@ export async function loadWorkspaceAuditPage(
   const page = Number.isInteger(requestedPage) ? Math.min(MAX_PAGE, Math.max(1, requestedPage)) : 1;
   const access = await requireWorkspaceAdmin(db, workspaceSlug, userId);
   const count = await db
-    .prepare(`SELECT COUNT(*) AS count FROM audit_logs WHERE workspace_id = ?`)
-    .bind(access.workspaceId)
+    .prepare(
+      `SELECT COUNT(*) AS count FROM (
+         SELECT 1 FROM audit_logs WHERE workspace_id = ? LIMIT ?
+       )`,
+    )
+    .bind(access.workspaceId, MAX_ENTRIES + 1)
     .first<{ count: number }>();
   if (!count) throw error(500, "Audit log count is unavailable");
-  const pages = Math.max(1, Math.min(MAX_PAGE, Math.ceil(count.count / PAGE_SIZE)));
+  const totalCapped = count.count > MAX_ENTRIES;
+  const total = Math.min(count.count, MAX_ENTRIES);
+  const pages = Math.max(1, Math.min(MAX_PAGE, Math.ceil(total / PAGE_SIZE)));
   const selectedPage = Math.min(page, pages);
   const rows = await db
     .prepare(
@@ -74,6 +82,7 @@ export async function loadWorkspaceAuditPage(
     })),
     page: selectedPage,
     pages,
-    total: count.count,
+    total,
+    totalCapped,
   };
 }

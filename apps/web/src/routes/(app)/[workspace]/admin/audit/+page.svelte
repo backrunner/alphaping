@@ -23,7 +23,8 @@
       <h2>Audit log</h2>
       <p>Immutable workspace configuration and access changes.</p>
     </div>
-    <span><FileClock size={13} />{data.audit.total} entries</span>
+    <span><FileClock size={13} />{data.audit.total}{data.audit.totalCapped ? "+" : ""} entries</span
+    >
   </header>
 
   <div class="table" role="table" aria-label="Workspace audit log">
