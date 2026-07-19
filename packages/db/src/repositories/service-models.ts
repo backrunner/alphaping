@@ -165,10 +165,17 @@ export interface ServiceCollection {
   services: readonly ServiceSummary[];
 }
 
+export interface ServiceCheckPagination {
+  page: number;
+  pages: number;
+  total: number;
+}
+
 export interface ServiceDetail {
   workspace: ServiceCollection["workspace"];
   service: ServiceSummary & { maintenanceUntil: number | null; createdAt: number };
   checks: readonly ServiceCheckSummary[];
+  checkPagination: ServiceCheckPagination;
   events: readonly {
     occurredAt: number;
     previousState: MonitorState;

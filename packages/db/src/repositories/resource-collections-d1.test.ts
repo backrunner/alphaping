@@ -74,6 +74,13 @@ beforeEach(async () => {
       )`,
     ),
     controlDb.prepare(
+      `CREATE TABLE check_assertions (
+        id TEXT PRIMARY KEY, check_id TEXT NOT NULL, sort_order INTEGER NOT NULL,
+        source TEXT NOT NULL, operator TEXT NOT NULL, selector TEXT,
+        expected_json TEXT NOT NULL, severity TEXT NOT NULL
+      )`,
+    ),
+    controlDb.prepare(
       `CREATE TABLE incidents (
         id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, state TEXT NOT NULL,
         starts_at INTEGER NOT NULL, deleted_at INTEGER
@@ -206,6 +213,20 @@ describe("authorized resource collection bounds", () => {
   });
 
   it("loads an authorized service detail by ID beyond the collection limit", async () => {
+    await controlDb.batch(
+      Array.from({ length: 51 }, (_, index) =>
+        controlDb
+          .prepare(
+            `INSERT INTO check_configs
+             (id, telemetry_pk, workspace_id, service_id, name, kind, executor_kind,
+              executor_agent_id, enabled, interval_seconds, timeout_ms, retry_count, critical,
+              request_json, secret_refs_json, failure_confirmations, recovery_confirmations, created_at)
+             VALUES (?, ?, 'workspace-1', 'service-501', ?, 'http', 'cloudflare', NULL,
+                     1, 60, 5000, 0, 0, '{"url":"https://example.com"}', '{}', 1, 1, ?)`,
+          )
+          .bind(`check-${index + 1}`, 2000 + index, `Check ${index + 1}`, index + 1),
+      ),
+    );
     const detail = await loadServiceDetail(
       controlDb,
       telemetryDb,
@@ -216,5 +237,28 @@ describe("authorized resource collection bounds", () => {
 
     expect(detail.service.id).toBe("service-501");
     expect(detail.service.canManage).toBe(false);
+    expect(detail.checks).toHaveLength(50);
+    expect(detail.checkPagination).toEqual({ page: 1, pages: 2, total: 51 });
+
+    await controlDb
+      .prepare(
+        `INSERT INTO check_assertions
+         VALUES ('assertion-51', 'check-51', 0, 'body', 'contains', NULL, '"ready"', 'down')`,
+      )
+      .run();
+
+    const secondPage = await loadServiceDetail(
+      controlDb,
+      telemetryDb,
+      "operations",
+      "admin-1",
+      "service-501",
+      Date.now(),
+      { checkPage: 2 },
+    );
+    expect(secondPage.checks).toHaveLength(1);
+    expect(secondPage.checks[0]?.id).toBe("check-51");
+    expect(secondPage.checks[0]?.editConfiguration?.assertions).toHaveLength(1);
+    expect(secondPage.checkPagination.page).toBe(2);
   });
 });

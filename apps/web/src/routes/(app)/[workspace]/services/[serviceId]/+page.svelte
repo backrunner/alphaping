@@ -113,9 +113,12 @@
   <ServiceHistoryPanel endpoint={`/${data.workspace.slug}/services/${data.service.id}/history`} />
   <ServiceCheckList
     checks={data.checks}
+    checkPagination={data.checkPagination}
+    activeCheckCount={data.service.checkCount}
     canManage={data.service.canManage}
     result={form ?? null}
     historyBase={`/${data.workspace.slug}/services/${data.service.id}/checks`}
+    pageBase={`/${data.workspace.slug}/services/${data.service.id}`}
   />
   {#if data.service.canManage}
     <ServiceCheckForm

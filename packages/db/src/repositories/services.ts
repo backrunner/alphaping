@@ -33,6 +33,15 @@ function placeholders(length: number): string {
   return Array.from({ length }, () => "?").join(", ");
 }
 
+const CHECK_PAGE_SIZE = 50;
+const MAX_ASSERTIONS_PER_CHECK = 20;
+
+function requestedCheckPage(value: number | undefined, total: number): number {
+  const pages = Math.max(1, Math.ceil(total / CHECK_PAGE_SIZE));
+  if (!Number.isSafeInteger(value) || value === undefined || value < 1) return 1;
+  return Math.min(value, pages);
+}
+
 function normalizeState(state: string): MonitorState {
   if (state === "healthy" || state === "degraded" || state === "down" || state === "maintenance")
     return state;
@@ -508,14 +517,19 @@ export async function loadServiceDetail(
   userId: string,
   serviceId: string,
   now = Date.now(),
+  options: { checkPage?: number } = {},
 ): Promise<ServiceDetail> {
   const access = await loadWorkspaceAccess(controlDb, workspaceSlug, userId);
   const service = await loadServiceRow(controlDb, access, userId, serviceId);
   if (!service) throw new ServiceNotFoundError();
   const canManage = service.can_manage === 1;
   const checks = await loadCheckRows(controlDb, access, userId, service.id);
+  const page = requestedCheckPage(options.checkPage, checks.length);
+  const pages = Math.max(1, Math.ceil(checks.length / CHECK_PAGE_SIZE));
+  const visibleChecks = checks.slice((page - 1) * CHECK_PAGE_SIZE, page * CHECK_PAGE_SIZE);
+  const visibleCheckIds = visibleChecks.map((check) => check.id);
   const assertions =
-    canManage && checks.length > 0
+    canManage && visibleCheckIds.length > 0
       ? (
           await controlDb
             .prepare(
@@ -523,12 +537,21 @@ export async function loadServiceDetail(
                FROM check_assertions a
                JOIN check_configs c ON c.id = a.check_id
                WHERE c.workspace_id = ? AND c.service_id = ?
-               ORDER BY a.check_id, a.sort_order LIMIT 400`,
+                 AND c.id IN (${placeholders(visibleCheckIds.length)})
+               ORDER BY a.check_id, a.sort_order LIMIT ?`,
             )
-            .bind(access.workspace.id, service.id)
+            .bind(
+              access.workspace.id,
+              service.id,
+              ...visibleCheckIds,
+              visibleChecks.length * MAX_ASSERTIONS_PER_CHECK + 1,
+            )
             .all<CheckAssertionRow>()
         ).results
       : [];
+  if (assertions.length > visibleChecks.length * MAX_ASSERTIONS_PER_CHECK) {
+    throw new Error("service assertion collection exceeds the supported limit");
+  }
   const telemetry = await loadTelemetry(
     telemetryDb,
     access.workspace.telemetry_pk,
@@ -570,7 +593,7 @@ export async function loadServiceDetail(
       maintenanceUntil: service.maintenance_until,
       createdAt: service.created_at,
     },
-    checks: checks.map((check) => {
+    checks: visibleChecks.map((check) => {
       const latest = latestByCheck.get(check.telemetry_pk);
       const target = sanitizedTarget(check);
       const state = latest ? normalizeState(latest.state) : "unknown";
@@ -598,6 +621,7 @@ export async function loadServiceDetail(
         editConfiguration: canManage ? editConfiguration(check, assertions) : null,
       };
     }),
+    checkPagination: { page, pages, total: checks.length },
     events: events.results.map((event) => ({
       occurredAt: event.occurred_at,
       previousState: normalizeState(event.previous_state),

@@ -25,6 +25,8 @@ export const load: PageServerLoad = async ({ locals, params, platform, url }) =>
       params.workspace,
       locals.session.user.id,
       params.serviceId,
+      Date.now(),
+      { checkPage: Number(url.searchParams.get("checkPage") ?? "1") },
     );
     return {
       ...detail,

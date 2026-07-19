@@ -1,6 +1,15 @@
 <script lang="ts">
   import type { ServiceCheckSummary } from "@alphaping/db";
-  import { Radio, Save, Settings2, ShieldAlert, TimerReset, Trash2 } from "lucide-svelte";
+  import {
+    ChevronLeft,
+    ChevronRight,
+    Radio,
+    Save,
+    Settings2,
+    ShieldAlert,
+    TimerReset,
+    Trash2,
+  } from "lucide-svelte";
 
   import CheckConfigurationEditor from "$components/services/check-configuration-editor.svelte";
   import CheckHistoryPanel from "$components/services/check-history-panel.svelte";
@@ -9,13 +18,19 @@
 
   let {
     checks,
+    checkPagination,
+    activeCheckCount,
     canManage,
     result,
     historyBase,
+    pageBase,
   }: {
     checks: readonly ServiceCheckSummary[];
+    checkPagination: { page: number; pages: number; total: number };
+    activeCheckCount: number;
     canManage: boolean;
     historyBase: string;
+    pageBase: string;
     result: {
       kind?: string;
       checkId?: string;
@@ -30,9 +45,7 @@
   <header>
     <div>
       <h2>Checks</h2>
-      <span
-        >{checks.filter((check) => check.enabled).length} active / {checks.length} configured</span
-      >
+      <span>{activeCheckCount} active / {checkPagination.total} configured</span>
     </div>
   </header>
   {#if result?.kind === "checkPolicy" && result.deleted}
@@ -158,11 +171,58 @@
       {/each}
     </div>
   {:else}<p>No checks are configured for this service.</p>{/if}
+  {#if checkPagination.pages > 1}
+    <nav class="pagination" aria-label="Service check pages">
+      {#if checkPagination.page > 1}
+        <a href={`${pageBase}?checkPage=${checkPagination.page - 1}`}
+          ><ChevronLeft size={13} />Previous</a
+        >
+      {:else}<span><ChevronLeft size={13} />Previous</span>{/if}
+      <strong>Page {checkPagination.page} of {checkPagination.pages}</strong>
+      {#if checkPagination.page < checkPagination.pages}
+        <a href={`${pageBase}?checkPage=${checkPagination.page + 1}`}
+          >Next<ChevronRight size={13} /></a
+        >
+      {:else}<span>Next<ChevronRight size={13} /></span>{/if}
+    </nav>
+  {/if}
 </section>
 
 <style>
   section {
     margin-top: 24px;
+  }
+
+  .pagination {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    margin-top: 12px;
+    color: var(--text-faint);
+    font-size: 10px;
+  }
+
+  .pagination a,
+  .pagination span {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .pagination a {
+    color: var(--accent);
+    text-decoration: none;
+  }
+
+  .pagination a:last-child,
+  .pagination span:last-child {
+    justify-self: end;
+  }
+
+  .pagination strong {
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-weight: 500;
   }
   header {
     margin-bottom: 10px;
