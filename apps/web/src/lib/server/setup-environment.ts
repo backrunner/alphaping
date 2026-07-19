@@ -25,6 +25,7 @@ export interface SetupEnvironmentSnapshot {
   setupToken: string;
   enrollmentTokenPepper: string;
   checkSecretWrappingKey: string;
+  notificationSecretWrappingKey: string;
   liveTicketSecret: string;
   ingestOrigin: string;
   liveOrigin: string;
@@ -37,6 +38,7 @@ const CONTROL_TABLES = [
   "dashboards",
   "installations",
   "memberships",
+  "notification_channels",
   "retention_policies",
   "telemetry_resource_sequences",
   "user",
@@ -131,12 +133,14 @@ export function evaluateSetupEnvironment(
       detail:
         configuredHexSecret(snapshot.enrollmentTokenPepper) &&
         configuredHexSecret(snapshot.checkSecretWrappingKey) &&
+        configuredHexSecret(snapshot.notificationSecretWrappingKey) &&
         configuredTextSecret(snapshot.liveTicketSecret)
-          ? "Enrollment, check, and live channel secrets are configured"
-          : "Enrollment, check, or live channel secrets are missing",
+          ? "Enrollment, check, notification, and live channel secrets are configured"
+          : "Enrollment, check, notification, or live channel secrets are missing",
       ready:
         configuredHexSecret(snapshot.enrollmentTokenPepper) &&
         configuredHexSecret(snapshot.checkSecretWrappingKey) &&
+        configuredHexSecret(snapshot.notificationSecretWrappingKey) &&
         configuredTextSecret(snapshot.liveTicketSecret),
     },
     {
@@ -180,6 +184,7 @@ export async function inspectSetupEnvironment(env: Env): Promise<SetupEnvironmen
     setupToken: env.SETUP_TOKEN,
     enrollmentTokenPepper: env.ENROLLMENT_TOKEN_PEPPER,
     checkSecretWrappingKey: env.CHECK_SECRET_WRAPPING_KEY,
+    notificationSecretWrappingKey: env.NOTIFICATION_SECRET_WRAPPING_KEY,
     liveTicketSecret: env.LIVE_TICKET_SECRET,
     ingestOrigin: env.INGEST_ORIGIN,
     liveOrigin: env.LIVE_ORIGIN,

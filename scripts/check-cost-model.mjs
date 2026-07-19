@@ -29,6 +29,9 @@ const PUBLIC_STATUS_INCIDENT_LIMIT = 20;
 const PUBLIC_STATUS_INCIDENT_SERVICE_LIMIT = 20;
 const PUBLIC_STATUS_INCIDENT_UPDATES_PER_INCIDENT_LIMIT = 20;
 const PUBLIC_STATUS_ANNOUNCEMENT_LIMIT = 20;
+const NOTIFICATION_RUNS = MONTH_MINUTES;
+const NOTIFICATION_EVENTS_PER_RESOURCE_MONTH = 8;
+const NOTIFICATION_CHANNELS_PER_RESOURCE = 3;
 const PUBLIC_STATUS_BUCKETS_PER_SERVICE = (24 * 60) / 5 + 1;
 const D1_IN_BATCH_SIZE = 90;
 const TYPICAL_CONTAINER_COUNT = 10;
@@ -156,6 +159,20 @@ function publicStatusLedger(
   };
 }
 
+function notificationLedger(machines, checks) {
+  const resources = Math.max(0, machines) + Math.max(0, checks);
+  const events = resources * NOTIFICATION_EVENTS_PER_RESOURCE_MONTH;
+  const deliveries = events * NOTIFICATION_CHANNELS_PER_RESOURCE;
+  return {
+    runs: NOTIFICATION_RUNS,
+    events,
+    deliveries,
+    readRows: NOTIFICATION_RUNS * 2 + events * 3,
+    writes: NOTIFICATION_RUNS + deliveries * 3,
+    workerRequests: NOTIFICATION_RUNS,
+  };
+}
+
 export function estimateScale(
   machines,
   checks,
@@ -171,12 +188,14 @@ export function estimateScale(
     catalogChangesPerDay *
     30 *
     (Math.min(MAX_CONTAINER_COUNT, containersPerMachine) * 2 + 1);
+  const notifications = notificationLedger(machines, checks);
   const knownWrites =
     machines * writesPerMachine() +
     checks * writesPerCheck() +
     catalogWrites +
     CHECK_SCHEDULER_CURSOR_WRITES +
-    FIXED_RETENTION_WRITES;
+    FIXED_RETENTION_WRITES +
+    notifications.writes;
   const budgetedWrites = knownWrites * IMPLEMENTATION_MARGIN;
   const publicStatus = publicStatusLedger(
     machines,
@@ -190,7 +209,8 @@ export function estimateScale(
     checks * MONTH_MINUTES * 2 +
     machines * MONTH_MINUTES * 5 +
     machines * MONTH_MINUTES * 2 +
-    5_000_000;
+    5_000_000 +
+    notifications.readRows;
   const modeledReads = controlPlaneReads + publicStatus.readRows;
   const machineStorageGb =
     MACHINE_NON_RAW_STORAGE_GB +
@@ -202,7 +222,8 @@ export function estimateScale(
     MONTH_MINUTES +
     DASHBOARD_REQUESTS +
     live.workerRequests +
-    publicStatus.workerRequests;
+    publicStatus.workerRequests +
+    notifications.workerRequests;
   const d1WriteOverage =
     (Math.max(0, budgetedWrites - D1_INCLUDED_WRITES) / 1_000_000) * D1_WRITE_PRICE_PER_MILLION;
   const d1ReadOverage =
@@ -230,6 +251,12 @@ export function estimateScale(
     publicStatusLiveProjections: publicStatus.liveProjections,
     publicStatusReadRows: publicStatus.readRows,
     publicStatusWorkerRequests: publicStatus.workerRequests,
+    notificationRuns: notifications.runs,
+    notificationEvents: notifications.events,
+    notificationDeliveries: notifications.deliveries,
+    notificationReadRows: notifications.readRows,
+    notificationWrites: notifications.writes,
+    notificationWorkerRequests: notifications.workerRequests,
     knownWrites,
     budgetedWrites,
     modeledReads,
@@ -266,6 +293,8 @@ console.table(
     budgetedWrites: millions(scale.budgetedWrites),
     modeledReads: millions(scale.modeledReads),
     publicStatusReads: millions(scale.publicStatusReadRows),
+    notificationWrites: millions(scale.notificationWrites),
+    notificationRequests: millions(scale.notificationWorkerRequests),
     storage: `${scale.storageGb.toFixed(3)} GB`,
     requests: millions(scale.workersRequests),
     liveDoRequests: millions(scale.durableObjectRequests),
@@ -282,27 +311,37 @@ if (
 ) {
   throw new Error("100 machines + 100 checks no longer fit the Cloudflare Paid baseline");
 }
-if (baseline.workersRequests !== 5_660_194 || baseline.durableObjectRequests !== 483_642) {
+if (baseline.workersRequests !== 5_703_394 || baseline.durableObjectRequests !== 483_642) {
   throw new Error(
     `live request ledger drifted: ${baseline.workersRequests} Worker / ${baseline.durableObjectRequests} DO requests`,
   );
 }
 if (
-  baseline.controlPlaneReads !== 72_680_000 ||
+  baseline.controlPlaneReads !== 72_771_200 ||
   baseline.publicStatusRouteCacheKeys !== 8 ||
   baseline.publicStatusRowsPerRefreshWindow !== 74_288 ||
   baseline.publicStatusLiveProjections !== 691_200 ||
   baseline.publicStatusReadRows !== 6_418_483_200 ||
-  baseline.modeledReads !== 6_491_163_200
+  baseline.modeledReads !== 6_491_254_400
 ) {
   throw new Error(`D1 read ledger drifted: ${baseline.modeledReads}`);
+}
+if (
+  baseline.notificationRuns !== 43_200 ||
+  baseline.notificationEvents !== 1_600 ||
+  baseline.notificationDeliveries !== 4_800 ||
+  baseline.notificationReadRows !== 91_200 ||
+  baseline.notificationWrites !== 57_600 ||
+  baseline.notificationWorkerRequests !== 43_200
+) {
+  throw new Error("notification delivery ledger drifted");
 }
 const regionalPublicStatus = estimateScale(100, 100, {
   publicStatusActiveEdgeLocations: 5,
 });
 if (
   regionalPublicStatus.publicStatusReadRows !== 32_092_416_000 ||
-  regionalPublicStatus.workersRequests !== 8_424_994 ||
+  regionalPublicStatus.workersRequests !== 8_468_194 ||
   regionalPublicStatus.platformOverage < 7.16 ||
   regionalPublicStatus.platformOverage > 7.17
 ) {
@@ -314,7 +353,7 @@ const publicStatusRefreshBurst = estimateScale(100, 100, {
 if (
   publicStatusRefreshBurst.publicStatusReadRows !== 12_836_966_400 ||
   publicStatusRefreshBurst.publicStatusWorkerRequests !== 1_382_400 ||
-  publicStatusRefreshBurst.modeledReads !== 12_909_646_400
+  publicStatusRefreshBurst.modeledReads !== 12_909_737_600
 ) {
   throw new Error("public status refresh burst ledger drifted");
 }

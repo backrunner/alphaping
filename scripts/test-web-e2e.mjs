@@ -144,6 +144,8 @@ try {
             "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
           CHECK_SECRET_WRAPPING_KEY:
             "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+          NOTIFICATION_SECRET_WRAPPING_KEY:
+            "123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0",
           LIVE_TICKET_SECRET: "e2e-live-ticket-secret-that-is-at-least-32-bytes-long",
           INGEST_ORIGIN: "https://ingest.example.com",
           LIVE_ORIGIN: "wss://live.example.com",

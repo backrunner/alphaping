@@ -3,3 +3,4 @@ SETUP_TOKEN=replace-with-at-least-32-random-bytes
 ENROLLMENT_TOKEN_PEPPER=replace-with-the-same-32-byte-hex-secret-as-ingest
 CHECK_SECRET_WRAPPING_KEY=replace-with-the-same-32-byte-hex-secret-as-checks
 LIVE_TICKET_SECRET=replace-with-the-same-32-byte-secret-as-ingest-and-live
+NOTIFICATION_SECRET_WRAPPING_KEY=replace-with-the-same-32-byte-hex-secret-as-notifications

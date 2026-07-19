@@ -1,0 +1,1 @@
+NOTIFICATION_SECRET_WRAPPING_KEY=replace-with-the-same-32-byte-hex-secret-as-web
