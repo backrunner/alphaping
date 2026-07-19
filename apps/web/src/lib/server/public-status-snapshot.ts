@@ -407,6 +407,37 @@ export function publicStatusSnapshotFreshMaxAge(cachedAt: number, now: number): 
   return remainingMs < 0 ? null : Math.ceil(remainingMs / 1_000);
 }
 
+async function readBoundedSnapshotText(response: Response): Promise<string> {
+  const declaredLength = response.headers.get("content-length");
+  if (
+    declaredLength !== null &&
+    /^\d+$/.test(declaredLength) &&
+    Number(declaredLength) > MAX_SNAPSHOT_BYTES
+  ) {
+    throw new Error("public_status_snapshot_too_large");
+  }
+  if (response.body === null) return "";
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let bytes = 0;
+  let text = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > MAX_SNAPSHOT_BYTES) {
+        throw new Error("public_status_snapshot_too_large");
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    return text + decoder.decode();
+  } finally {
+    await reader.cancel().catch(() => undefined);
+    reader.releaseLock();
+  }
+}
+
 export async function writePublicStatusSnapshot(
   cache: Cache,
   origin: string,
@@ -415,11 +446,16 @@ export async function writePublicStatusSnapshot(
   servicePage = page.servicePagination.page,
 ): Promise<void> {
   const snapshot = buildPublicStatusSnapshot(page, cachedAt);
+  const serialized = JSON.stringify(snapshot);
+  if (new TextEncoder().encode(serialized).byteLength > MAX_SNAPSHOT_BYTES) {
+    throw new Error("public_status_snapshot_too_large");
+  }
   await cache.put(
     publicStatusSnapshotKey(origin, page.workspace.slug, servicePage),
-    Response.json(snapshot, {
+    new Response(serialized, {
       headers: {
         "cache-control": `public, max-age=${PUBLIC_STATUS_SNAPSHOT_TTL_SECONDS}`,
+        "content-type": "application/json",
       },
     }),
   );
@@ -434,5 +470,9 @@ export async function readPublicStatusSnapshot(
 ): Promise<{ page: PublicStatusView; cachedAt: number } | null> {
   const response = await cache.match(publicStatusSnapshotKey(origin, workspaceSlug, servicePage));
   if (!response) return null;
-  return parsePublicStatusSnapshot(await response.text(), workspaceSlug, now);
+  try {
+    return parsePublicStatusSnapshot(await readBoundedSnapshotText(response), workspaceSlug, now);
+  } catch {
+    return null;
+  }
 }

@@ -7,6 +7,7 @@ import {
   PUBLIC_STATUS_SNAPSHOT_TTL_SECONDS,
   publicStatusSnapshotKey,
   publicStatusSnapshotFreshMaxAge,
+  readPublicStatusSnapshot,
 } from "./public-status-snapshot.js";
 
 const now = 1_752_580_800_000;
@@ -114,5 +115,29 @@ describe("public status snapshot", () => {
     expect(
       parsePublicStatusSnapshot(serialized, "operations", now + 1_000)?.page.announcements,
     ).toEqual([]);
+  });
+
+  it("stops reading an oversized cache response at the snapshot byte limit", async () => {
+    let pulls = 0;
+    let canceled = false;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls += 1;
+        controller.enqueue(new Uint8Array(64 * 1024));
+        if (pulls === 100) controller.close();
+      },
+      cancel() {
+        canceled = true;
+      },
+    });
+    const cache = {
+      match: async () => new Response(body),
+    } as unknown as Cache;
+
+    await expect(
+      readPublicStatusSnapshot(cache, "https://status.example.test", "operations", now),
+    ).resolves.toBeNull();
+    expect(pulls).toBeLessThan(100);
+    expect(canceled).toBe(true);
   });
 });
