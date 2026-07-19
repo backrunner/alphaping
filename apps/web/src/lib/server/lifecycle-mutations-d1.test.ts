@@ -214,6 +214,23 @@ describe("stale lifecycle mutations", () => {
     await expectNoAuditRows();
   });
 
+  it("rejects workspace deletion after the actor loses administrator access", async () => {
+    const stale = mutateBeforeBatch(
+      database,
+      "UPDATE memberships SET role = 'member' WHERE workspace_id = 'workspace-1' AND user_id = 'user-1'",
+    );
+
+    await expect(
+      softDeleteWorkspace(stale, "operations", "user-1", "operations"),
+    ).rejects.toMatchObject({ status: 409 });
+    await expect(
+      database
+        .prepare("SELECT deleted_at FROM workspaces WHERE id = 'workspace-1'")
+        .first<{ deleted_at: number | null }>(),
+    ).resolves.toEqual({ deleted_at: null });
+    await expectNoAuditRows();
+  });
+
   it("rejects workspace restoration after another request restores it", async () => {
     const deletedAt = Date.now() - 1_000;
     await database
@@ -228,6 +245,28 @@ describe("stale lifecycle mutations", () => {
     await expect(restoreWorkspace(stale, "workspace-1", "user-1")).rejects.toMatchObject({
       status: 409,
     });
+    await expectNoAuditRows();
+  });
+
+  it("rejects workspace restoration after the actor loses administrator access", async () => {
+    const deletedAt = Date.now() - 1_000;
+    await database
+      .prepare("UPDATE workspaces SET deleted_at = ? WHERE id = 'workspace-1'")
+      .bind(deletedAt)
+      .run();
+    const stale = mutateBeforeBatch(
+      database,
+      "UPDATE memberships SET role = 'member' WHERE workspace_id = 'workspace-1' AND user_id = 'user-1'",
+    );
+
+    await expect(restoreWorkspace(stale, "workspace-1", "user-1")).rejects.toMatchObject({
+      status: 409,
+    });
+    await expect(
+      database
+        .prepare("SELECT deleted_at FROM workspaces WHERE id = 'workspace-1'")
+        .first<{ deleted_at: number | null }>(),
+    ).resolves.toEqual({ deleted_at: deletedAt });
     await expectNoAuditRows();
   });
 

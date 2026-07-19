@@ -203,9 +203,15 @@ export async function softDeleteWorkspace(
   const [updateResult] = await db.batch([
     db
       .prepare(
-        `UPDATE workspaces SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL`,
+        `UPDATE workspaces SET deleted_at = ?, updated_at = ?
+         WHERE id = ? AND deleted_at IS NULL
+           AND EXISTS (
+             SELECT 1 FROM memberships actor
+             WHERE actor.workspace_id = workspaces.id AND actor.user_id = ?
+               AND actor.role = 'admin' AND actor.status = 'active'
+           )`,
       )
-      .bind(now, now, workspace.id),
+      .bind(now, now, workspace.id, actorUserId),
     await prepareAuditStatement(db, {
       workspaceId: workspace.id,
       actorUserId,
@@ -261,9 +267,14 @@ export async function restoreWorkspace(
     db
       .prepare(
         `UPDATE workspaces SET deleted_at = NULL, updated_at = ?
-         WHERE id = ? AND deleted_at = ? AND purge_started_at IS NULL`,
+         WHERE id = ? AND deleted_at = ? AND purge_started_at IS NULL
+           AND EXISTS (
+             SELECT 1 FROM memberships actor
+             WHERE actor.workspace_id = workspaces.id AND actor.user_id = ?
+               AND actor.role = 'admin' AND actor.status = 'active'
+           )`,
       )
-      .bind(now, workspace.id, workspace.deleted_at),
+      .bind(now, workspace.id, workspace.deleted_at, actorUserId),
     await prepareAuditStatement(db, {
       workspaceId: workspace.id,
       actorUserId,
