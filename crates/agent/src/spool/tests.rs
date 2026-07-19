@@ -18,6 +18,117 @@ fn sample(observed_at_ms: i64) -> MetricSample {
     }
 }
 
+fn sample_count(spool: &Spool) -> u64 {
+    spool
+        .connection
+        .query_row("SELECT COUNT(*) FROM samples", [], |row| row.get(0))
+        .expect("count samples")
+}
+
+fn storage_pages(spool: &Spool) -> (u64, u64, u64) {
+    let page_count = spool
+        .connection
+        .query_row("PRAGMA page_count", [], |row| row.get(0))
+        .expect("page count");
+    let free_pages = spool
+        .connection
+        .query_row("PRAGMA freelist_count", [], |row| row.get(0))
+        .expect("free page count");
+    let page_size = spool
+        .connection
+        .query_row("PRAGMA page_size", [], |row| row.get(0))
+        .expect("page size");
+    (page_count, free_pages, page_size)
+}
+
+#[test]
+fn capacity_pressure_preserves_recent_unassigned_samples() {
+    let directory = tempdir().expect("temp directory");
+    let mut spool = Spool::open(directory.path().join("spool.db")).expect("open spool");
+    let now = 10 * 86_400_000_i64;
+    for index in 0..30 {
+        spool
+            .append_sample(&sample(now - 300_000 + index * 10_000), now)
+            .expect("append recent sample");
+    }
+    let (pages, free_pages, page_size) = storage_pages(&spool);
+    let live_bytes = pages.saturating_sub(free_pages).saturating_mul(page_size);
+    let max_bytes = live_bytes.saturating_mul(5) / 4;
+
+    let outcome = spool
+        .enforce_capacity(max_bytes, now)
+        .expect("enforce capacity");
+    assert_eq!(outcome.compacted_samples, 0);
+    assert_eq!(outcome.dropped_samples, 0);
+    assert_eq!(sample_count(&spool), 30);
+}
+
+#[test]
+fn capacity_pressure_compacts_old_samples_to_one_per_minute() {
+    let directory = tempdir().expect("temp directory");
+    let mut spool = Spool::open(directory.path().join("spool.db")).expect("open spool");
+    let now = 10 * 86_400_000_i64;
+    let start = now - 2 * 86_400_000;
+    for index in 0..60 {
+        spool
+            .append_sample(&sample(start + index * 10_000), now)
+            .expect("append old sample");
+    }
+    let (pages, free_pages, page_size) = storage_pages(&spool);
+    let live_bytes = pages.saturating_sub(free_pages).saturating_mul(page_size);
+    let max_bytes = live_bytes.saturating_mul(4) / 3;
+
+    let outcome = spool
+        .enforce_capacity(max_bytes, now)
+        .expect("enforce capacity");
+    assert_eq!(outcome.compacted_samples, 50);
+    assert_eq!(outcome.dropped_samples, 0);
+    assert_eq!(sample_count(&spool), 10);
+}
+
+#[test]
+fn free_sqlite_pages_do_not_keep_the_spool_under_pressure() {
+    let directory = tempdir().expect("temp directory");
+    let mut spool = Spool::open(directory.path().join("spool.db")).expect("open spool");
+    spool
+        .connection
+        .execute_batch(
+            "WITH RECURSIVE sequence(value) AS (
+               VALUES (1) UNION ALL SELECT value + 1 FROM sequence WHERE value < 256
+             )
+             INSERT INTO samples (sample_bucket, observed_at, payload, created_at)
+             SELECT value, value, zeroblob(8192), value FROM sequence;
+             DELETE FROM samples;",
+        )
+        .expect("create reusable SQLite pages");
+    let now = 10 * 86_400_000_i64;
+    spool
+        .append_sample(&sample(now), now)
+        .expect("append fresh sample");
+    let (pages, free_pages, page_size) = storage_pages(&spool);
+    assert!(free_pages > 0);
+    let live_bytes = pages.saturating_sub(free_pages).saturating_mul(page_size);
+    let max_bytes = live_bytes.saturating_mul(5) / 3;
+
+    let outcome = spool
+        .enforce_capacity(max_bytes, now)
+        .expect("enforce recovered capacity");
+    assert_eq!(outcome.compacted_samples, 0);
+    assert_eq!(outcome.dropped_samples, 0);
+    assert_eq!(sample_count(&spool), 1);
+}
+
+#[test]
+fn new_spools_enable_incremental_vacuum() {
+    let directory = tempdir().expect("temp directory");
+    let spool = Spool::open(directory.path().join("spool.db")).expect("open spool");
+    let mode: u32 = spool
+        .connection
+        .query_row("PRAGMA auto_vacuum", [], |row| row.get(0))
+        .expect("read auto vacuum mode");
+    assert_eq!(mode, 2);
+}
+
 #[test]
 fn ack_is_the_only_path_that_removes_a_delivery() {
     let directory = tempdir().expect("temp directory");

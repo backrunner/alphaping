@@ -106,9 +106,13 @@ pub async fn run(
                 {
                     warn!(error = %error, "live snapshot was dropped");
                 }
-                let dropped = spool.enforce_capacity(config.max_spool_bytes, now)?;
-                if dropped > 0 {
-                    warn!(dropped_samples = dropped, "spool pressure compacted unassigned samples");
+                let capacity = spool.enforce_capacity(config.max_spool_bytes, now)?;
+                if capacity.compacted_samples > 0 || capacity.dropped_samples > 0 {
+                    warn!(
+                        compacted_samples = capacity.compacted_samples,
+                        dropped_samples = capacity.dropped_samples,
+                        "spool pressure reduced unassigned samples"
+                    );
                 }
             }
             _ = report_tick.tick() => {

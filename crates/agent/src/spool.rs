@@ -85,10 +85,13 @@ impl Spool {
 
     fn from_connection(connection: Connection, path: PathBuf) -> Result<Self> {
         connection.execute_batch(
-            "PRAGMA journal_mode = WAL;
+            "PRAGMA auto_vacuum = INCREMENTAL;
+             PRAGMA journal_mode = WAL;
              PRAGMA synchronous = FULL;
              PRAGMA foreign_keys = ON;
              PRAGMA busy_timeout = 5000;
+             PRAGMA temp_store = MEMORY;
+             PRAGMA wal_autocheckpoint = 1000;
              CREATE TABLE IF NOT EXISTS meta (
                key TEXT PRIMARY KEY NOT NULL,
                value INTEGER NOT NULL
@@ -129,6 +132,8 @@ impl Spool {
                sample_id INTEGER NOT NULL REFERENCES samples(id) ON DELETE RESTRICT,
                PRIMARY KEY (report_id, sample_id)
              ) WITHOUT ROWID;
+             CREATE INDEX IF NOT EXISTS delivery_samples_sample_idx
+               ON delivery_samples (sample_id);
              CREATE TABLE IF NOT EXISTS probe_config (
                singleton INTEGER PRIMARY KEY NOT NULL CHECK (singleton = 1),
                revision INTEGER NOT NULL,
