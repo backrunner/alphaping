@@ -1,24 +1,40 @@
 <script lang="ts">
-  import { Copy, RotateCcw, Save, UserPlus } from "lucide-svelte";
+  import { page } from "$app/state";
+  import { ChevronLeft, ChevronRight, Copy, RotateCcw, Save, UserPlus } from "lucide-svelte";
+  import { SvelteURLSearchParams } from "svelte/reactivity";
 
   import type {
     WorkspaceAccessInvitation,
     WorkspaceAccessMember,
+    WorkspaceAccessPagination,
   } from "$lib/server/workspace-access";
   import Button from "$components/ui/button/button.svelte";
 
   let {
     members,
     invitations,
+    memberPagination,
+    invitationPagination,
     invitationUrl,
     invitationExpiresAt,
   }: {
     members: readonly WorkspaceAccessMember[];
     invitations: readonly WorkspaceAccessInvitation[];
+    memberPagination: WorkspaceAccessPagination;
+    invitationPagination: WorkspaceAccessPagination;
     invitationUrl: string | null;
     invitationExpiresAt: number | null;
   } = $props();
   let copied = $state(false);
+
+  function paginationHref(name: "memberPage" | "invitationPage", value: number): string {
+    const params = new SvelteURLSearchParams(page.url.searchParams);
+    if (value <= 1) params.delete(name);
+    else params.set(name, String(value));
+    if (name === "memberPage") params.delete("member");
+    const query = params.toString();
+    return `${page.url.pathname}${query ? `?${query}` : ""}`;
+  }
 
   async function copyInvitation(): Promise<void> {
     if (!invitationUrl) return;
@@ -32,7 +48,9 @@
   <header class="section-header">
     <div>
       <h2 id="members-title">Members</h2>
-      <p>{members.length} workspace accounts</p>
+      <p>
+        {memberPagination.total}{memberPagination.totalCapped ? "+" : ""} workspace accounts
+      </p>
     </div>
   </header>
 
@@ -118,9 +136,29 @@
     </table>
   </div>
 
-  {#if invitations.length > 0}
+  {#if memberPagination.pages > 1}
+    <nav class="pagination" aria-label="Workspace member pages">
+      {#if memberPagination.page > 1}
+        <a href={paginationHref("memberPage", memberPagination.page - 1)}
+          ><ChevronLeft size={13} />Previous</a
+        >
+      {:else}<span><ChevronLeft size={13} />Previous</span>{/if}
+      <strong>Page {memberPagination.page} of {memberPagination.pages}</strong>
+      {#if memberPagination.page < memberPagination.pages}
+        <a href={paginationHref("memberPage", memberPagination.page + 1)}
+          >Next<ChevronRight size={13} /></a
+        >
+      {:else}<span>Next<ChevronRight size={13} /></span>{/if}
+    </nav>
+  {/if}
+
+  {#if invitationPagination.total > 0}
     <div class="pending">
-      <h3>Pending invitations</h3>
+      <h3>
+        Pending invitations · {invitationPagination.total}{invitationPagination.totalCapped
+          ? "+"
+          : ""}
+      </h3>
       {#each invitations as invitation (invitation.id)}
         <div class="pending__row">
           <div>
@@ -138,6 +176,21 @@
           </form>
         </div>
       {/each}
+      {#if invitationPagination.pages > 1}
+        <nav class="pagination" aria-label="Pending invitation pages">
+          {#if invitationPagination.page > 1}
+            <a href={paginationHref("invitationPage", invitationPagination.page - 1)}
+              ><ChevronLeft size={13} />Previous</a
+            >
+          {:else}<span><ChevronLeft size={13} />Previous</span>{/if}
+          <strong>Page {invitationPagination.page} of {invitationPagination.pages}</strong>
+          {#if invitationPagination.page < invitationPagination.pages}
+            <a href={paginationHref("invitationPage", invitationPagination.page + 1)}
+              >Next<ChevronRight size={13} /></a
+            >
+          {:else}<span>Next<ChevronRight size={13} /></span>{/if}
+        </nav>
+      {/if}
     </div>
   {/if}
 </section>
@@ -311,6 +364,45 @@
     padding: 6px 8px;
     border-top: 1px solid var(--border);
     font-size: 11px;
+  }
+
+  .pagination,
+  .pagination a,
+  .pagination span {
+    display: flex;
+    align-items: center;
+  }
+
+  .pagination {
+    min-height: 36px;
+    justify-content: space-between;
+    gap: 12px;
+    color: var(--text-muted);
+    font-size: 10px;
+  }
+
+  .pagination a,
+  .pagination span {
+    min-width: 68px;
+    gap: 4px;
+  }
+
+  .pagination a:last-child,
+  .pagination span:last-child {
+    justify-content: flex-end;
+  }
+
+  .pagination a {
+    color: var(--text-muted);
+    text-decoration: none;
+  }
+
+  .pagination a:hover {
+    color: var(--text);
+  }
+
+  .pagination span {
+    color: var(--text-faint);
   }
 
   .sr-only {

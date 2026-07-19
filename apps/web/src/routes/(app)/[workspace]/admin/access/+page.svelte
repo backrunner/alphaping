@@ -16,14 +16,16 @@
   <AccessMemberTable
     members={data.access.members}
     invitations={data.access.invitations}
+    memberPagination={data.access.memberPagination}
+    invitationPagination={data.access.invitationPagination}
     {invitationUrl}
     {invitationExpiresAt}
   />
   <ResourceAccessTable
-    workspace={data.workspace}
     members={data.access.members}
     selectedMemberId={data.access.selectedMemberId}
     resources={data.access.resources}
+    pagination={data.access.resourcePagination}
   />
 </main>
 

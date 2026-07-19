@@ -28,7 +28,12 @@ export const load: PageServerLoad = async ({ locals, params, platform, url }) =>
       platform.env.CONTROL_DB,
       params.workspace,
       locals.session.user.id,
-      url.searchParams.get("member"),
+      {
+        memberId: url.searchParams.get("member"),
+        memberPage: Number(url.searchParams.get("memberPage") ?? "1"),
+        invitationPage: Number(url.searchParams.get("invitationPage") ?? "1"),
+        resourcePage: Number(url.searchParams.get("resourcePage") ?? "1"),
+      },
     ),
   };
 };

@@ -159,6 +159,8 @@ Service check 的 Agent executor 选择器同样先在 D1 内复核当前 servic
 
 Admin audit pagination 只统计最多 `50 * 100 + 1` 条 workspace 日志，并把第 100 页的 `OFFSET` 固定在 4,950 行以内；超过 5,000 条时 UI 显示下界 `5,000+`，不会因多年 audit 保留期对整张日志表执行无界 `COUNT(*)`。该低频读取仍包含在 `Retention/history/admin reserve`。
 
+Admin access pagination 对 member、pending invitation 和 machine/service/container 三组数据分别只统计最多 `50 * 100 + 1` 条，并把每组第 100 页的 `OFFSET` 固定在 4,950 行以内。Resource grant 只读取当前 50 个 resource ID，不再把所选成员的全部 grant 返回到 Worker；三组低频读取仍包含在 `Retention/history/admin reserve`。
+
 #### 公开状态页读取
 
 公开状态页使用 Cache API 保存不超过 5 分钟的故障 fallback，其中前 30 秒可直接作为 fresh response。Cloudflare Cache API 内容不会复制到其他数据中心，而且 Cache API 命中仍会执行 Worker，因此模型必须按活跃 edge location 和 route cache key 分别计算。当前路由最多接受 8 个 `servicePage` key；每个 live projection 都读取全部公开 machine/service current state，只有 25 个当前页 service 读取 24 小时 5 分钟时间桶。5 分钟也是 D1 故障期间公开 dashboard/resource policy 撤销的最大旧投影窗口。

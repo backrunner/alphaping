@@ -1,23 +1,42 @@
 <script lang="ts">
-  import { Save, ShieldCheck } from "lucide-svelte";
+  import { page } from "$app/state";
+  import { ChevronLeft, ChevronRight, Save, ShieldCheck } from "lucide-svelte";
+  import { SvelteURLSearchParams } from "svelte/reactivity";
 
   import type {
     WorkspaceAccessMember,
+    WorkspaceAccessPagination,
     WorkspaceAccessResource,
   } from "$lib/server/workspace-access";
 
   let {
-    workspace,
     members,
     selectedMemberId,
     resources,
+    pagination,
   }: {
-    workspace: string;
     members: readonly WorkspaceAccessMember[];
     selectedMemberId: string | null;
     resources: readonly WorkspaceAccessResource[];
+    pagination: WorkspaceAccessPagination;
   } = $props();
   const selectable = $derived(members.filter((member) => member.role === "member"));
+
+  function memberHref(memberId: string): string {
+    const params = new SvelteURLSearchParams(page.url.searchParams);
+    params.set("member", memberId);
+    params.delete("resourcePage");
+    const query = params.toString();
+    return `${page.url.pathname}${query ? `?${query}` : ""}`;
+  }
+
+  function paginationHref(value: number): string {
+    const params = new SvelteURLSearchParams(page.url.searchParams);
+    if (value <= 1) params.delete("resourcePage");
+    else params.set("resourcePage", String(value));
+    const query = params.toString();
+    return `${page.url.pathname}${query ? `?${query}` : ""}`;
+  }
 </script>
 
 <section aria-labelledby="resource-access-title">
@@ -29,10 +48,7 @@
     {#if selectable.length > 0}
       <label
         ><span>Member</span><select
-          onchange={(event) =>
-            location.assign(
-              `/${workspace}/admin/access?member=${encodeURIComponent(event.currentTarget.value)}`,
-            )}
+          onchange={(event) => location.assign(memberHref(event.currentTarget.value))}
         >
           {#each selectable as member (member.id)}<option
               value={member.id}
@@ -95,6 +111,21 @@
         </tbody>
       </table>
     </div>
+    {#if pagination.pages > 1}
+      <nav class="pagination" aria-label="Workspace resource pages">
+        {#if pagination.page > 1}
+          <a href={paginationHref(pagination.page - 1)}><ChevronLeft size={13} />Previous</a>
+        {:else}<span><ChevronLeft size={13} />Previous</span>{/if}
+        <strong>
+          Page {pagination.page} of {pagination.pages} · {pagination.total}{pagination.totalCapped
+            ? "+"
+            : ""} resources
+        </strong>
+        {#if pagination.page < pagination.pages}
+          <a href={paginationHref(pagination.page + 1)}>Next<ChevronRight size={13} /></a>
+        {:else}<span>Next<ChevronRight size={13} /></span>{/if}
+      </nav>
+    {/if}
   {/if}
 </section>
 
@@ -216,6 +247,45 @@
   form button:hover {
     color: var(--text);
     border-color: var(--border-strong);
+  }
+
+  .pagination,
+  .pagination a,
+  .pagination span {
+    display: flex;
+    align-items: center;
+  }
+
+  .pagination {
+    min-height: 36px;
+    justify-content: space-between;
+    gap: 12px;
+    color: var(--text-muted);
+    font-size: 10px;
+  }
+
+  .pagination a,
+  .pagination span {
+    min-width: 68px;
+    gap: 4px;
+  }
+
+  .pagination a:last-child,
+  .pagination span:last-child {
+    justify-content: flex-end;
+  }
+
+  .pagination a {
+    color: var(--text-muted);
+    text-decoration: none;
+  }
+
+  .pagination a:hover {
+    color: var(--text);
+  }
+
+  .pagination span {
+    color: var(--text-faint);
   }
 
   .empty {

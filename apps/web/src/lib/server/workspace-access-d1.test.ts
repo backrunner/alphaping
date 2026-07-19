@@ -1,7 +1,11 @@
 import { Miniflare } from "miniflare";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { setMemberResourcePermission, updateWorkspaceMembership } from "./workspace-access.js";
+import {
+  loadWorkspaceAccessPanel,
+  setMemberResourcePermission,
+  updateWorkspaceMembership,
+} from "./workspace-access.js";
 
 let miniflare: Miniflare;
 let database: D1Database;
@@ -17,6 +21,22 @@ beforeEach(async () => {
   await database.batch([
     database.prepare(
       `CREATE TABLE machines (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        deleted_at INTEGER
+      )`,
+    ),
+    database.prepare(
+      `CREATE TABLE services (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        deleted_at INTEGER
+      )`,
+    ),
+    database.prepare(
+      `CREATE TABLE containers (
         id TEXT PRIMARY KEY,
         workspace_id TEXT NOT NULL,
         name TEXT NOT NULL,
@@ -42,6 +62,25 @@ beforeEach(async () => {
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
         PRIMARY KEY (workspace_id, user_id)
+      )`,
+    ),
+    database.prepare(
+      `CREATE TABLE user (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        email TEXT NOT NULL
+      )`,
+    ),
+    database.prepare(
+      `CREATE TABLE workspace_invitations (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        email TEXT NOT NULL,
+        role TEXT NOT NULL,
+        expires_at INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        accepted_at INTEGER,
+        revoked_at INTEGER
       )`,
     ),
     database.prepare(
@@ -80,6 +119,12 @@ beforeEach(async () => {
         ('workspace-1', 'admin-a', 'admin', 'active', 1, 1),
         ('workspace-1', 'admin-b', 'admin', 'active', 1, 1),
         ('workspace-1', 'member-a', 'member', 'active', 1, 1)`,
+    ),
+    database.prepare(
+      `INSERT INTO user VALUES
+        ('admin-a', 'Admin A', 'admin-a@example.com'),
+        ('admin-b', 'Admin B', 'admin-b@example.com'),
+        ('member-a', 'Member A', 'member-a@example.com')`,
     ),
     database.prepare(`INSERT INTO machines VALUES ('machine-1', 'workspace-1', 'Edge', NULL)`),
   ]);
@@ -208,5 +253,75 @@ describe("resource permission authorization", () => {
     await expect(
       database.prepare("SELECT COUNT(*) AS count FROM audit_logs").first<{ count: number }>(),
     ).resolves.toEqual({ count: 0 });
+  });
+});
+
+describe("workspace access pagination", () => {
+  it("keeps later members, invitations, and resources addressable", async () => {
+    await database.batch([
+      database.prepare(
+        `WITH RECURSIVE sequence(value) AS (
+           VALUES (1) UNION ALL SELECT value + 1 FROM sequence WHERE value < 120
+         )
+         INSERT INTO user
+           SELECT printf('member-%03d', value), printf('Member %03d', value),
+                  printf('member-%03d@example.com', value)
+           FROM sequence`,
+      ),
+      database.prepare(
+        `WITH RECURSIVE sequence(value) AS (
+           VALUES (1) UNION ALL SELECT value + 1 FROM sequence WHERE value < 120
+         )
+         INSERT INTO memberships
+           SELECT 'workspace-1', printf('member-%03d', value), 'member', 'active', value, value
+           FROM sequence`,
+      ),
+      database.prepare(
+        `WITH RECURSIVE sequence(value) AS (
+           VALUES (1) UNION ALL SELECT value + 1 FROM sequence WHERE value < 120
+         )
+         INSERT INTO workspace_invitations
+           SELECT printf('invite-%03d', value), 'workspace-1',
+                  printf('invite-%03d@example.com', value), 'member', 5000 + value, value,
+                  NULL, NULL
+           FROM sequence`,
+      ),
+      database.prepare(
+        `WITH RECURSIVE sequence(value) AS (
+           VALUES (1) UNION ALL SELECT value + 1 FROM sequence WHERE value < 220
+         )
+         INSERT INTO machines
+           SELECT printf('machine-%03d', value), 'workspace-1', printf('Machine %03d', value), NULL
+           FROM sequence`,
+      ),
+      database.prepare(
+        `INSERT INTO resource_grants
+           (id, workspace_id, subject_user_id, resource_type, resource_id, capability, effect,
+            created_by, created_at)
+         VALUES
+           ('grant-machine-220', 'workspace-1', 'member-120', 'machine', 'machine-220',
+            'manage', 'allow', 'admin-a', 1)`,
+      ),
+    ]);
+
+    const panel = await loadWorkspaceAccessPanel(database, "operations", "admin-a", {
+      memberId: "member-120",
+      memberPage: 3,
+      invitationPage: 3,
+      resourcePage: 5,
+      now: 1_000,
+    });
+
+    expect(panel.memberPagination).toMatchObject({ page: 3, pages: 3, total: 123 });
+    expect(panel.invitationPagination).toMatchObject({ page: 3, pages: 3, total: 120 });
+    expect(panel.resourcePagination).toMatchObject({ page: 5, pages: 5, total: 221 });
+    expect(panel.members.some((member) => member.id === "member-120")).toBe(true);
+    expect(panel.invitations).toHaveLength(20);
+    expect(panel.resources).toContainEqual({
+      id: "machine-220",
+      type: "machine",
+      name: "Machine 220",
+      permission: "manage",
+    });
   });
 });

@@ -9,6 +9,10 @@ import {
 
 export type ResourcePermission = "none" | "view" | "manage" | "deny";
 
+const PAGE_SIZE = 50;
+const MAX_PAGE = 100;
+const MAX_ENTRIES = PAGE_SIZE * MAX_PAGE;
+
 interface MemberRow {
   user_id: string;
   name: string;
@@ -70,6 +74,34 @@ export interface WorkspaceAccessPanel {
   invitations: readonly WorkspaceAccessInvitation[];
   selectedMemberId: string | null;
   resources: readonly WorkspaceAccessResource[];
+  memberPagination: WorkspaceAccessPagination;
+  invitationPagination: WorkspaceAccessPagination;
+  resourcePagination: WorkspaceAccessPagination;
+}
+
+export interface WorkspaceAccessPagination {
+  page: number;
+  pages: number;
+  total: number;
+  totalCapped: boolean;
+}
+
+export interface WorkspaceAccessRequest {
+  memberId?: string | null;
+  memberPage?: number;
+  invitationPage?: number;
+  resourcePage?: number;
+  now?: number;
+}
+
+function pagination(count: number, requestedPage: number | undefined): WorkspaceAccessPagination {
+  const requested = Number.isInteger(requestedPage)
+    ? Math.min(MAX_PAGE, Math.max(1, requestedPage ?? 1))
+    : 1;
+  const totalCapped = count > MAX_ENTRIES;
+  const total = Math.min(count, MAX_ENTRIES);
+  const pages = Math.max(1, Math.min(MAX_PAGE, Math.ceil(total / PAGE_SIZE)));
+  return { page: Math.min(requested, pages), pages, total, totalCapped };
 }
 
 export function permissionFromGrants(grants: readonly GrantRow[]): ResourcePermission {
@@ -87,27 +119,67 @@ export async function loadWorkspaceAccessPanel(
   db: D1Database,
   workspaceSlug: string,
   userId: string,
-  requestedMemberId: string | null,
-  now = Date.now(),
+  request: WorkspaceAccessRequest = {},
 ): Promise<WorkspaceAccessPanel> {
   const access = await requireWorkspaceAdmin(db, workspaceSlug, userId);
+  const [memberCount, invitationCount, resourceCount] = await Promise.all([
+    db
+      .prepare(
+        `SELECT COUNT(*) AS count FROM (
+           SELECT 1 FROM memberships m JOIN user u ON u.id = m.user_id
+           WHERE m.workspace_id = ? AND m.status IN ('active', 'suspended') LIMIT ?
+         )`,
+      )
+      .bind(access.workspaceId, MAX_ENTRIES + 1)
+      .first<{ count: number }>(),
+    db
+      .prepare(
+        `SELECT COUNT(*) AS count FROM (
+           SELECT 1 FROM workspace_invitations
+           WHERE workspace_id = ? AND accepted_at IS NULL AND revoked_at IS NULL LIMIT ?
+         )`,
+      )
+      .bind(access.workspaceId, MAX_ENTRIES + 1)
+      .first<{ count: number }>(),
+    db
+      .prepare(
+        `SELECT COUNT(*) AS count FROM (
+           SELECT 1 FROM (
+             SELECT id FROM machines WHERE workspace_id = ? AND deleted_at IS NULL
+             UNION ALL
+             SELECT id FROM services WHERE workspace_id = ? AND deleted_at IS NULL
+             UNION ALL
+             SELECT id FROM containers WHERE workspace_id = ? AND deleted_at IS NULL
+           ) LIMIT ?
+         )`,
+      )
+      .bind(access.workspaceId, access.workspaceId, access.workspaceId, MAX_ENTRIES + 1)
+      .first<{ count: number }>(),
+  ]);
+  if (!memberCount || !invitationCount || !resourceCount) {
+    throw error(500, "Workspace access counts are unavailable");
+  }
+  const memberPagination = pagination(memberCount.count, request.memberPage);
+  const invitationPagination = pagination(invitationCount.count, request.invitationPage);
+  const resourcePagination = pagination(resourceCount.count, request.resourcePage);
   const [memberRows, invitationRows, resourceRows] = await Promise.all([
     db
       .prepare(
         `SELECT m.user_id, u.name, u.email, m.role, m.status, m.created_at
          FROM memberships m JOIN user u ON u.id = m.user_id
          WHERE m.workspace_id = ? AND m.status IN ('active', 'suspended')
-         ORDER BY CASE m.role WHEN 'admin' THEN 0 ELSE 1 END, u.name, u.email LIMIT 100`,
+         ORDER BY CASE m.role WHEN 'admin' THEN 0 ELSE 1 END, u.name, u.email, m.user_id
+         LIMIT ? OFFSET ?`,
       )
-      .bind(access.workspaceId)
+      .bind(access.workspaceId, PAGE_SIZE, (memberPagination.page - 1) * PAGE_SIZE)
       .all<MemberRow>(),
     db
       .prepare(
         `SELECT id, email, role, expires_at, created_at FROM workspace_invitations
          WHERE workspace_id = ? AND accepted_at IS NULL AND revoked_at IS NULL
-         ORDER BY created_at DESC LIMIT 100`,
+         ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`,
       )
-      .bind(access.workspaceId)
+      .bind(access.workspaceId, PAGE_SIZE, (invitationPagination.page - 1) * PAGE_SIZE)
       .all<InvitationRow>(),
     db
       .prepare(
@@ -120,9 +192,15 @@ export async function loadWorkspaceAccessPanel(
            UNION ALL
            SELECT 'container' AS resource_type, id AS resource_id, name FROM containers
            WHERE workspace_id = ? AND deleted_at IS NULL
-         ) ORDER BY resource_type, name LIMIT 200`,
+         ) ORDER BY resource_type, name, resource_id LIMIT ? OFFSET ?`,
       )
-      .bind(access.workspaceId, access.workspaceId, access.workspaceId)
+      .bind(
+        access.workspaceId,
+        access.workspaceId,
+        access.workspaceId,
+        PAGE_SIZE,
+        (resourcePagination.page - 1) * PAGE_SIZE,
+      )
       .all<ResourceRow>(),
   ]);
   const members = memberRows.results.map<WorkspaceAccessMember>((member) => ({
@@ -135,19 +213,29 @@ export async function loadWorkspaceAccessPanel(
     current: member.user_id === userId,
   }));
   const selectableMembers = members.filter((member) => member.role === "member");
-  const selectedMemberId = selectableMembers.some((member) => member.id === requestedMemberId)
-    ? requestedMemberId
+  const selectedMemberId = selectableMembers.some((member) => member.id === request.memberId)
+    ? (request.memberId ?? null)
     : (selectableMembers[0]?.id ?? null);
-  const grantRows = selectedMemberId
-    ? await db
-        .prepare(
-          `SELECT resource_type, resource_id, capability, effect FROM resource_grants
+  const resourceIds = resourceRows.results.map((resource) => resource.resource_id);
+  const grantRows =
+    selectedMemberId && resourceIds.length > 0
+      ? await db
+          .prepare(
+            `SELECT resource_type, resource_id, capability, effect FROM resource_grants
            WHERE workspace_id = ? AND subject_user_id = ?
-             AND resource_type IN ('machine', 'service', 'container')`,
-        )
-        .bind(access.workspaceId, selectedMemberId)
-        .all<GrantRow>()
-    : { results: [] as GrantRow[] };
+             AND resource_type IN ('machine', 'service', 'container')
+             AND resource_id IN (${resourceIds.map(() => "?").join(", ")})`,
+          )
+          .bind(access.workspaceId, selectedMemberId, ...resourceIds)
+          .all<GrantRow>()
+      : { results: [] as GrantRow[] };
+  const grantsByResource = new Map<string, GrantRow[]>();
+  for (const grant of grantRows.results) {
+    const key = `${grant.resource_type}:${grant.resource_id}`;
+    const grants = grantsByResource.get(key) ?? [];
+    grants.push(grant);
+    grantsByResource.set(key, grants);
+  }
   return {
     members,
     invitations: invitationRows.results.map((invitation) => ({
@@ -156,7 +244,7 @@ export async function loadWorkspaceAccessPanel(
       role: invitation.role,
       expiresAt: invitation.expires_at,
       createdAt: invitation.created_at,
-      expired: invitation.expires_at <= now,
+      expired: invitation.expires_at <= (request.now ?? Date.now()),
     })),
     selectedMemberId,
     resources: resourceRows.results.map((resource) => ({
@@ -164,13 +252,12 @@ export async function loadWorkspaceAccessPanel(
       type: resource.resource_type,
       name: resource.name,
       permission: permissionFromGrants(
-        grantRows.results.filter(
-          (grant) =>
-            grant.resource_type === resource.resource_type &&
-            grant.resource_id === resource.resource_id,
-        ),
+        grantsByResource.get(`${resource.resource_type}:${resource.resource_id}`) ?? [],
       ),
     })),
+    memberPagination,
+    invitationPagination,
+    resourcePagination,
   };
 }
 
