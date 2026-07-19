@@ -13,6 +13,7 @@ const TELEMETRY_PK_BASE = 1_000_000;
 const SERVICE_TELEMETRY_PK_BASE = 2_000_000;
 const CHECK_TELEMETRY_PK_BASE = 3_000_000;
 const SERVICE_DETAIL_CHECK_TARGET = 101;
+const SERVICE_DETAIL_CHECK_PAGE_SIZE = 50;
 const SERVICE_DETAIL_CHECK_PK_BASE = 4_000_000;
 
 function onlyRow(rows, label) {
@@ -79,8 +80,10 @@ async function fetchServiceCollection(baseUrl, adminCookie) {
   return html;
 }
 
-async function fetchServiceDetail(baseUrl, adminCookie, serviceId) {
-  const response = await fetch(`${baseUrl}/operations/services/${serviceId}`, {
+async function fetchServiceDetail(baseUrl, adminCookie, serviceId, checkPage = 1) {
+  const url = new URL(`/operations/services/${serviceId}`, baseUrl);
+  url.searchParams.set("checkPage", String(checkPage));
+  const response = await fetch(url, {
     headers: { cookie: adminCookie },
   });
   const html = await response.text();
@@ -368,7 +371,12 @@ export async function runWebPerformanceE2e({
   }
   const detailService = serviceRows.find((service) => service.id === "performance-service-001");
   if (!detailService) throw new Error("performance service detail fixture is missing");
-  const serviceDetail = await fetchServiceDetail(baseUrl, adminCookie, detailService.id);
+  const serviceDetail = await fetchServiceDetail(
+    baseUrl,
+    adminCookie,
+    detailService.id,
+    Math.ceil(SERVICE_DETAIL_CHECK_TARGET / SERVICE_DETAIL_CHECK_PAGE_SIZE),
+  );
   if (
     !serviceDetail.includes(`Scale check ${String(SERVICE_DETAIL_CHECK_TARGET).padStart(3, "0")}`)
   ) {
