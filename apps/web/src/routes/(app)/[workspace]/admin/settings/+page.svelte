@@ -14,6 +14,7 @@
     workspace={data.workspace}
     visibility={data.settings.dashboardVisibility}
     resources={data.settings.resources}
+    resourcePagination={data.settings.resourcePagination}
   />
   <RetentionSettingsForm
     retention={data.settings.retention}

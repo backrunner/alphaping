@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { ExternalLink, Save } from "lucide-svelte";
+  import { page } from "$app/state";
+  import { ChevronLeft, ChevronRight, ExternalLink, Save, ShieldCheck } from "lucide-svelte";
+  import { SvelteURLSearchParams } from "svelte/reactivity";
 
   import type { DashboardVisibility, PublicResourceSetting } from "$lib/server/workspace-settings";
   import Button from "$components/ui/button/button.svelte";
@@ -8,11 +10,31 @@
     workspace,
     visibility,
     resources,
+    resourcePagination,
   }: {
     workspace: string;
     visibility: DashboardVisibility;
     resources: readonly PublicResourceSetting[];
+    resourcePagination: {
+      previousCursor: string | null;
+      nextCursor: string | null;
+    };
   } = $props();
+
+  function actionHref(action: string): string {
+    const params = new SvelteURLSearchParams(page.url.searchParams);
+    for (const key of params.keys()) if (key.startsWith("/")) params.delete(key);
+    const query = params.toString();
+    return `?/${action}${query ? `&${query}` : ""}`;
+  }
+
+  function paginationHref(cursor: string, direction: "after" | "before"): string {
+    const params = new SvelteURLSearchParams(page.url.searchParams);
+    params.set("resourceCursor", cursor);
+    params.set("resourceDirection", direction);
+    const query = params.toString();
+    return `${page.url.pathname}?${query}`;
+  }
 </script>
 
 <section aria-labelledby="visibility-title">
@@ -25,7 +47,7 @@
         >Open status page <ExternalLink size={12} /></a
       >{/if}
   </header>
-  <form class="visibility-form" method="POST" action="?/visibility">
+  <form class="visibility-form" method="POST" action={actionHref("visibility")}>
     <label
       ><input
         type="radio"
@@ -55,48 +77,73 @@
 
   <div class="resource-heading">
     <h3>Public resources</h3>
-    <span>{resources.filter((resource) => resource.effect === "allow").length} visible</span>
+    <span
+      >{resources.filter((resource) => resource.effect === "allow").length} visible on this page</span
+    >
   </div>
-  <div class="table-wrap">
-    <table>
-      <thead
-        ><tr
-          ><th>Resource</th><th>Type</th><th>Guest access</th><th>Projection</th><th
-            ><span class="sr-only">Action</span></th
-          ></tr
-        ></thead
+  {#if resources.length === 0}
+    <div class="empty" role="status">
+      <ShieldCheck size={18} /><strong>No resources on this page</strong><span
+        >The resource list changed or this page is empty.</span
       >
-      <tbody>
-        {#each resources as resource (`${resource.type}:${resource.id}`)}
-          <tr>
-            <td><strong>{resource.name}</strong></td>
-            <td><span class="type">{resource.type}</span></td>
-            <td colspan="3">
-              <form method="POST" action="?/publicResource">
-                <input type="hidden" name="resourceId" value={resource.id} />
-                <input type="hidden" name="resourceType" value={resource.type} />
-                <select name="effect" aria-label={`Guest access for ${resource.name}`}>
-                  <option value="deny" selected={resource.effect === "deny"}>Hidden</option>
-                  <option value="allow" selected={resource.effect === "allow"}>Visible</option>
-                </select>
-                <select name="projectionProfile" aria-label={`Projection for ${resource.name}`}>
-                  <option value="summary" selected={resource.projectionProfile === "summary"}
-                    >Summary</option
+    </div>
+  {:else}
+    <div class="table-wrap">
+      <table>
+        <thead
+          ><tr
+            ><th>Resource</th><th>Type</th><th>Guest access</th><th>Projection</th><th
+              ><span class="sr-only">Action</span></th
+            ></tr
+          ></thead
+        >
+        <tbody>
+          {#each resources as resource (`${resource.type}:${resource.id}`)}
+            <tr>
+              <td><strong>{resource.name}</strong></td>
+              <td><span class="type">{resource.type}</span></td>
+              <td colspan="3">
+                <form method="POST" action={actionHref("publicResource")}>
+                  <input type="hidden" name="resourceId" value={resource.id} />
+                  <input type="hidden" name="resourceType" value={resource.type} />
+                  <select name="effect" aria-label={`Guest access for ${resource.name}`}>
+                    <option value="deny" selected={resource.effect === "deny"}>Hidden</option>
+                    <option value="allow" selected={resource.effect === "allow"}>Visible</option>
+                  </select>
+                  <select name="projectionProfile" aria-label={`Projection for ${resource.name}`}>
+                    <option value="summary" selected={resource.projectionProfile === "summary"}
+                      >Summary</option
+                    >
+                    <option value="detailed" selected={resource.projectionProfile === "detailed"}
+                      >Detailed</option
+                    >
+                  </select>
+                  <button aria-label={`Save public access for ${resource.name}`} type="submit"
+                    ><Save size={14} /></button
                   >
-                  <option value="detailed" selected={resource.projectionProfile === "detailed"}
-                    >Detailed</option
-                  >
-                </select>
-                <button aria-label={`Save public access for ${resource.name}`}
-                  ><Save size={14} /></button
-                >
-              </form>
-            </td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-  </div>
+                </form>
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
+  {/if}
+  {#if resourcePagination.previousCursor || resourcePagination.nextCursor}
+    <nav class="pagination" aria-label="Public resource pages">
+      {#if resourcePagination.previousCursor}
+        <a href={paginationHref(resourcePagination.previousCursor, "before")}
+          ><ChevronLeft size={13} />Previous</a
+        >
+      {:else}<span><ChevronLeft size={13} />Previous</span>{/if}
+      <strong>Showing {resources.length} resources</strong>
+      {#if resourcePagination.nextCursor}
+        <a href={paginationHref(resourcePagination.nextCursor, "after")}
+          >Next<ChevronRight size={13} /></a
+        >
+      {:else}<span>Next<ChevronRight size={13} /></span>{/if}
+    </nav>
+  {/if}
 </section>
 
 <style>
@@ -193,6 +240,68 @@
   .table-wrap {
     overflow-x: auto;
     border-top: 1px solid var(--border);
+  }
+
+  .empty {
+    display: grid;
+    min-height: 120px;
+    place-items: center;
+    align-content: center;
+    gap: 4px;
+    color: var(--text-faint);
+    text-align: center;
+  }
+
+  .empty strong {
+    color: var(--text-muted);
+    font-size: 11px;
+  }
+
+  .empty span {
+    font-size: 10px;
+  }
+
+  .pagination,
+  .pagination a,
+  .pagination span {
+    display: flex;
+    align-items: center;
+  }
+
+  .pagination {
+    min-height: 36px;
+    justify-content: space-between;
+    gap: 12px;
+    color: var(--text-muted);
+    font-size: 10px;
+  }
+
+  .pagination a,
+  .pagination span {
+    min-width: 68px;
+    gap: 4px;
+  }
+
+  .pagination a:last-child,
+  .pagination span:last-child {
+    justify-content: flex-end;
+  }
+
+  .pagination a {
+    color: var(--text-muted);
+    text-decoration: none;
+  }
+
+  .pagination a:hover {
+    color: var(--text);
+  }
+
+  .pagination span {
+    color: var(--text-faint);
+  }
+
+  .pagination strong {
+    font-weight: 500;
   }
 
   table {

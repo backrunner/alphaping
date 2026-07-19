@@ -11,6 +11,8 @@ import { finalAdminCondition } from "./monitoring-access.js";
 export type DashboardVisibility = "private" | "authenticated" | "public";
 export type ProjectionProfile = "summary" | "detailed";
 
+const PUBLIC_RESOURCE_PAGE_SIZE = 50;
+
 interface DashboardRow {
   id: string;
   visibility: DashboardVisibility;
@@ -55,8 +57,51 @@ export interface PublicResourceSetting {
 export interface WorkspaceSettingsPanel {
   dashboardVisibility: DashboardVisibility;
   resources: readonly PublicResourceSetting[];
+  resourcePagination: PublicResourcePagination;
   retention: RetentionSettings;
   estimatedStorageGb: number;
+}
+
+export interface PublicResourcePagination {
+  previousCursor: string | null;
+  nextCursor: string | null;
+}
+
+export interface WorkspaceSettingsRequest {
+  resourceCursor?: string | null;
+  resourceDirection?: "after" | "before";
+}
+
+interface PublicResourceCursor {
+  type: WorkspaceResourceType;
+  name: string;
+  id: string;
+}
+
+function encodePublicResourceCursor(resource: PublicResourceRow): string {
+  return JSON.stringify([resource.resource_type, resource.name, resource.resource_id]);
+}
+
+function parsePublicResourceCursor(value: string | null | undefined): PublicResourceCursor | null {
+  if (!value || value.length > 1_024) return null;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!Array.isArray(parsed) || parsed.length !== 3) return null;
+    const [type, name, id] = parsed;
+    if (
+      !(type === "machine" || type === "service" || type === "container") ||
+      typeof name !== "string" ||
+      name.length > 512 ||
+      typeof id !== "string" ||
+      id.length === 0 ||
+      id.length > 512
+    ) {
+      return null;
+    }
+    return { type, name, id };
+  } catch {
+    return null;
+  }
 }
 
 export function estimateTelemetryStorageGb(input: {
@@ -79,8 +124,14 @@ export async function loadWorkspaceSettingsPanel(
   db: D1Database,
   workspaceSlug: string,
   userId: string,
+  request: WorkspaceSettingsRequest = {},
 ): Promise<WorkspaceSettingsPanel> {
   const access = await requireWorkspaceAdmin(db, workspaceSlug, userId);
+  const resourceCursor = parsePublicResourceCursor(request.resourceCursor);
+  const resourceDirection =
+    resourceCursor && request.resourceDirection === "before" ? "before" : "after";
+  const comparison = resourceDirection === "before" ? "<" : ">";
+  const ordering = resourceDirection === "before" ? "DESC" : "ASC";
   const [dashboard, resources, retention, counts] = await Promise.all([
     db
       .prepare(
@@ -104,9 +155,21 @@ export async function loadWorkspaceSettingsPanel(
          ) r
          LEFT JOIN resource_public_policies p
            ON p.workspace_id = ? AND p.resource_type = r.resource_type AND p.resource_id = r.resource_id
-         ORDER BY r.resource_type, r.name LIMIT 300`,
+         WHERE (? IS NULL OR (r.resource_type, r.name, r.resource_id) ${comparison} (?, ?, ?))
+         ORDER BY r.resource_type ${ordering}, r.name ${ordering}, r.resource_id ${ordering}
+         LIMIT ?`,
       )
-      .bind(access.workspaceId, access.workspaceId, access.workspaceId, access.workspaceId)
+      .bind(
+        access.workspaceId,
+        access.workspaceId,
+        access.workspaceId,
+        access.workspaceId,
+        resourceCursor?.type ?? null,
+        resourceCursor?.type ?? null,
+        resourceCursor?.name ?? null,
+        resourceCursor?.id ?? null,
+        PUBLIC_RESOURCE_PAGE_SIZE + 1,
+      )
       .all<PublicResourceRow>(),
     db
       .prepare(
@@ -126,6 +189,11 @@ export async function loadWorkspaceSettingsPanel(
       .first<{ machines: number; checks: number }>(),
   ]);
   if (!dashboard || !retention || !counts) throw error(500, "Workspace settings are incomplete");
+  const hasMoreResources = resources.results.length > PUBLIC_RESOURCE_PAGE_SIZE;
+  const pageResources = resources.results.slice(0, PUBLIC_RESOURCE_PAGE_SIZE);
+  if (resourceDirection === "before") pageResources.reverse();
+  const firstResource = pageResources[0];
+  const lastResource = pageResources.at(-1);
   const retentionSettings: RetentionSettings = {
     rawDays: retention.raw_days,
     rollup5mDays: retention.rollup_5m_days,
@@ -137,13 +205,33 @@ export async function loadWorkspaceSettingsPanel(
   };
   return {
     dashboardVisibility: dashboard.visibility,
-    resources: resources.results.map((resource) => ({
+    resources: pageResources.map((resource) => ({
       id: resource.resource_id,
       type: resource.resource_type,
       name: resource.name,
       effect: resource.effect ?? "deny",
       projectionProfile: resource.projection_profile ?? "summary",
     })),
+    resourcePagination: {
+      previousCursor:
+        resourceDirection === "before"
+          ? hasMoreResources && firstResource
+            ? encodePublicResourceCursor(firstResource)
+            : null
+          : resourceCursor
+            ? firstResource
+              ? encodePublicResourceCursor(firstResource)
+              : (request.resourceCursor ?? null)
+            : null,
+      nextCursor:
+        resourceDirection === "before"
+          ? lastResource
+            ? encodePublicResourceCursor(lastResource)
+            : (request.resourceCursor ?? null)
+          : hasMoreResources && lastResource
+            ? encodePublicResourceCursor(lastResource)
+            : null,
+    },
     retention: retentionSettings,
     estimatedStorageGb: estimateTelemetryStorageGb({
       machineCount: counts.machines,

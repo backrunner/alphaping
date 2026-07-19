@@ -18,7 +18,7 @@ function settingsFailure(cause: unknown, kind: string) {
   return fail(status, { kind, message });
 }
 
-export const load: PageServerLoad = async ({ locals, params, platform }) => {
+export const load: PageServerLoad = async ({ locals, params, platform, url }) => {
   if (!locals.session) throw redirect(303, "/login");
   if (!platform) throw error(503, "Cloudflare bindings are unavailable");
   return {
@@ -27,6 +27,11 @@ export const load: PageServerLoad = async ({ locals, params, platform }) => {
       platform.env.CONTROL_DB,
       params.workspace,
       locals.session.user.id,
+      {
+        resourceCursor: url.searchParams.get("resourceCursor"),
+        resourceDirection:
+          url.searchParams.get("resourceDirection") === "before" ? "before" : "after",
+      },
     ),
   };
 };

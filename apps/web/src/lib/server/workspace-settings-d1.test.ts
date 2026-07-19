@@ -2,6 +2,7 @@ import { Miniflare } from "miniflare";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
+  loadWorkspaceSettingsPanel,
   updateDashboardVisibility,
   updateResourcePublicPolicy,
   updateRetentionSettings,
@@ -53,6 +54,21 @@ beforeEach(async () => {
     database.prepare(
       `CREATE TABLE machines (
         id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, name TEXT NOT NULL, deleted_at INTEGER
+      )`,
+    ),
+    database.prepare(
+      `CREATE TABLE services (
+        id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, name TEXT NOT NULL, deleted_at INTEGER
+      )`,
+    ),
+    database.prepare(
+      `CREATE TABLE containers (
+        id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, name TEXT NOT NULL, deleted_at INTEGER
+      )`,
+    ),
+    database.prepare(
+      `CREATE TABLE check_configs (
+        id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, enabled INTEGER NOT NULL
       )`,
     ),
     database.prepare(
@@ -167,5 +183,55 @@ describe("workspace settings authorization", () => {
         .first(),
     ).resolves.toEqual({ raw_days: 7 });
     await expectNoAuditRows();
+  });
+});
+
+describe("workspace public resource pagination", () => {
+  it("keeps every resource reachable without a fixed result cap", async () => {
+    await database
+      .prepare(
+        `WITH RECURSIVE sequence(value) AS (
+           SELECT 2 UNION ALL SELECT value + 1 FROM sequence WHERE value < 75
+         )
+         INSERT INTO machines (id, workspace_id, name, deleted_at)
+         SELECT printf('machine-%03d', value), 'workspace-1', printf('Machine %03d', value), NULL
+         FROM sequence`,
+      )
+      .run();
+
+    const firstPage = await loadWorkspaceSettingsPanel(database, "operations", "admin-1");
+    expect(firstPage.resources).toHaveLength(50);
+    expect(firstPage.resourcePagination).toMatchObject({ previousCursor: null });
+    expect(firstPage.resourcePagination.nextCursor).not.toBeNull();
+
+    const secondPage = await loadWorkspaceSettingsPanel(database, "operations", "admin-1", {
+      resourceCursor: firstPage.resourcePagination.nextCursor,
+      resourceDirection: "after",
+    });
+    expect(secondPage.resources).toHaveLength(25);
+    expect(secondPage.resources.at(-1)?.id).toBe("machine-075");
+    expect(secondPage.resourcePagination.nextCursor).toBeNull();
+    expect(secondPage.resourcePagination.previousCursor).not.toBeNull();
+    expect(secondPage.resources.map((resource) => resource.id)).not.toContain(
+      firstPage.resources.at(-1)?.id,
+    );
+
+    const previousPage = await loadWorkspaceSettingsPanel(database, "operations", "admin-1", {
+      resourceCursor: secondPage.resourcePagination.previousCursor,
+      resourceDirection: "before",
+    });
+    expect(previousPage.resources.map((resource) => resource.id)).toEqual(
+      firstPage.resources.map((resource) => resource.id),
+    );
+  });
+
+  it("ignores malformed public resource cursors", async () => {
+    const panel = await loadWorkspaceSettingsPanel(database, "operations", "admin-1", {
+      resourceCursor: JSON.stringify(["machine", "Edge"]),
+      resourceDirection: "before",
+    });
+
+    expect(panel.resources.map((resource) => resource.id)).toEqual(["machine-1"]);
+    expect(panel.resourcePagination).toEqual({ previousCursor: null, nextCursor: null });
   });
 });
