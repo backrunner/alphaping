@@ -104,6 +104,27 @@ export interface PublicStatusPage {
   updatedAt: number | null;
 }
 
+export type PublicStatusOverallState = "healthy" | "degraded" | "down" | "maintenance" | "unknown";
+
+export interface PublicStatusServicePagination {
+  page: number;
+  pageSize: number;
+  pageCount: number;
+  total: number;
+  from: number;
+  to: number;
+}
+
+export interface PaginatedPublicStatusPage extends PublicStatusPage {
+  overallState: PublicStatusOverallState;
+  servicePagination: PublicStatusServicePagination;
+}
+
+export interface PublicStatusPageOptions {
+  servicePage?: number;
+  servicePageSize?: number;
+}
+
 export class PublicStatusNotFoundError extends Error {}
 
 function placeholders(length: number): string {
@@ -114,12 +135,50 @@ function compareText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
+export function buildPublicStatusServicePage<T>(
+  services: readonly T[],
+  requestedPage: number,
+  requestedPageSize: number,
+): { services: readonly T[]; pagination: PublicStatusServicePagination } {
+  const pageSize =
+    Number.isSafeInteger(requestedPageSize) && requestedPageSize > 0
+      ? Math.min(requestedPageSize, 200)
+      : 200;
+  const total = services.length;
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const page =
+    Number.isSafeInteger(requestedPage) && requestedPage > 0
+      ? Math.min(requestedPage, pageCount)
+      : 1;
+  const offset = (page - 1) * pageSize;
+  const to = Math.min(offset + pageSize, total);
+  return {
+    services: services.slice(offset, to),
+    pagination: {
+      page,
+      pageSize,
+      pageCount,
+      total,
+      from: total === 0 ? 0 : offset + 1,
+      to,
+    },
+  };
+}
+
+export function summarizePublicStatusState(states: readonly string[]): PublicStatusOverallState {
+  if (states.some((state) => state === "down" || state === "offline")) return "down";
+  if (states.some((state) => state === "degraded")) return "degraded";
+  if (states.some((state) => state === "maintenance")) return "maintenance";
+  return states.length > 0 && states.every((state) => state === "healthy") ? "healthy" : "unknown";
+}
+
 export async function loadPublicStatusPage(
   controlDb: D1Database,
   telemetryDb: D1Database,
   workspaceSlug: string,
   now = Date.now(),
-): Promise<PublicStatusPage> {
+  options: PublicStatusPageOptions = {},
+): Promise<PaginatedPublicStatusPage> {
   const workspace = await controlDb
     .prepare(
       `SELECT w.id, w.name, w.slug, w.telemetry_pk, d.id AS dashboard_id,
@@ -213,7 +272,14 @@ export async function loadPublicStatusPage(
       .bind(workspace.id, workspace.dashboard_id)
       .all<PublicServiceRow>()
   ).results;
+  const servicePage = buildPublicStatusServicePage(
+    services,
+    options.servicePage ?? 1,
+    options.servicePageSize ?? 200,
+  );
+  const pagedServices = servicePage.services;
   const servicePks = services.map((service) => service.telemetry_pk);
+  const pagedServicePks = pagedServices.map((service) => service.telemetry_pk);
   const serviceIds = services.map((service) => service.id);
   const checks = await queryInBatches<CheckIdentityRow, string>(controlDb, serviceIds, (batch) =>
     controlDb
@@ -243,7 +309,7 @@ export async function loadPublicStatusPage(
         )
         .bind(workspace.telemetry_pk, ...batch),
     ),
-    queryInBatches<PublicStatusBucketRow, number>(telemetryDb, servicePks, (batch) =>
+    queryInBatches<PublicStatusBucketRow, number>(telemetryDb, pagedServicePks, (batch) =>
       telemetryDb
         .prepare(
           `SELECT resource_pk, bucket_start, state, availability_permille,
@@ -273,7 +339,7 @@ export async function loadPublicStatusPage(
     serviceBuckets.push(bucket);
     bucketsByService.set(bucket.resource_pk, serviceBuckets);
   }
-  const publicServices = services.map((service) =>
+  const publicServices = pagedServices.map((service) =>
     projectPublicStatusService({
       service,
       latest: latestByService.get(service.telemetry_pk),
@@ -384,5 +450,10 @@ export async function loadPublicStatusPage(
       expiresAt: announcement.expires_at,
     })),
     updatedAt,
+    overallState: summarizePublicStatusState([
+      ...publicMachines.map((machine) => machine.state),
+      ...services.map((service) => latestByService.get(service.telemetry_pk)?.state ?? "unknown"),
+    ]),
+    servicePagination: servicePage.pagination,
   };
 }

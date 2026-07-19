@@ -1,8 +1,55 @@
 import { describe, expect, it } from "vitest";
 
-import { projectPublicStatusMachine, projectPublicStatusService } from "./public-status.js";
+import {
+  buildPublicStatusServicePage,
+  projectPublicStatusMachine,
+  projectPublicStatusService,
+  summarizePublicStatusState,
+} from "./public-status.js";
 
 describe("public status projection", () => {
+  it("bounds service details to the requested page and clamps excessive pages", () => {
+    const services = Array.from({ length: 30 }, (_, index) => `Service ${index + 1}`);
+    const first = buildPublicStatusServicePage(services, 1, 25);
+    expect(first.services).toHaveLength(25);
+    expect(first.services.at(-1)).toBe("Service 25");
+    expect(first.pagination).toEqual({
+      page: 1,
+      pageSize: 25,
+      pageCount: 2,
+      total: 30,
+      from: 1,
+      to: 25,
+    });
+
+    const excessive = buildPublicStatusServicePage(services, 8, 25);
+    expect(excessive.services).toEqual([
+      "Service 26",
+      "Service 27",
+      "Service 28",
+      "Service 29",
+      "Service 30",
+    ]);
+    expect(excessive.pagination).toMatchObject({ page: 2, from: 26, to: 30 });
+
+    expect(buildPublicStatusServicePage([], 3, 25).pagination).toEqual({
+      page: 1,
+      pageSize: 25,
+      pageCount: 1,
+      total: 0,
+      from: 0,
+      to: 0,
+    });
+  });
+
+  it("summarizes all resource states with failure precedence", () => {
+    expect(summarizePublicStatusState([])).toBe("unknown");
+    expect(summarizePublicStatusState(["healthy", "healthy"])).toBe("healthy");
+    expect(summarizePublicStatusState(["healthy", "unknown"])).toBe("unknown");
+    expect(summarizePublicStatusState(["maintenance", "degraded"])).toBe("degraded");
+    expect(summarizePublicStatusState(["maintenance", "offline"])).toBe("down");
+  });
+
   it("contains only public service status fields", () => {
     const projected = projectPublicStatusService({
       service: {
