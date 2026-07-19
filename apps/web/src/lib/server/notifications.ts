@@ -4,13 +4,7 @@ import { error } from "@sveltejs/kit";
 import { finalAdminCondition } from "./monitoring-access.js";
 import { prepareAuditStatement, requireWorkspaceAdmin } from "./workspace-admin.js";
 
-export type NotificationProvider =
-  | "resend"
-  | "smtp"
-  | "discord"
-  | "telegram"
-  | "slack"
-  | "bark";
+export type NotificationProvider = "resend" | "smtp" | "discord" | "telegram" | "slack" | "bark";
 export type NotificationDimension = "availability" | "resource" | "recovery";
 export type NotificationResourceType = "machine" | "service";
 
@@ -210,7 +204,9 @@ function summaryForConfig(
     const recipients = config.recipients as readonly string[];
     const from = String(config.from);
     return {
-      senderDomain: from.includes("@") ? from.slice(from.lastIndexOf("@") + 1).replace(/>$/, "") : "configured",
+      senderDomain: from.includes("@")
+        ? from.slice(from.lastIndexOf("@") + 1).replace(/>$/, "")
+        : "configured",
       recipientCount: recipients.length,
       ...(selectedProvider === "smtp"
         ? { relayHost: new URL(String(config.relayUrl)).hostname }
@@ -354,7 +350,8 @@ export async function createNotificationChannel(
     onlyIfPreviousStatementChanged: true,
   });
   const result = await db.batch([insert, audit]);
-  if ((result[0]?.meta.changes ?? 0) !== 1) throw error(409, "Notification channel could not be created");
+  if ((result[0]?.meta.changes ?? 0) !== 1)
+    throw error(409, "Notification channel could not be created");
   return id;
 }
 
@@ -373,7 +370,14 @@ export async function updateNotificationChannel(
       `UPDATE notification_channels SET name = ?, enabled = ?, updated_at = ?
        WHERE id = ? AND workspace_id = ? AND ${authorization.sql}`,
     )
-    .bind(name, input.enabled ? 1 : 0, now, input.channelId, access.workspaceId, ...authorization.binds);
+    .bind(
+      name,
+      input.enabled ? 1 : 0,
+      now,
+      input.channelId,
+      access.workspaceId,
+      ...authorization.binds,
+    );
   const audit = await prepareAuditStatement(db, {
     workspaceId: access.workspaceId,
     actorUserId: userId,
@@ -492,7 +496,8 @@ export async function createNotificationRule(
     onlyIfPreviousStatementChanged: true,
   });
   const result = await db.batch([mutation, audit]);
-  if ((result[0]?.meta.changes ?? 0) !== 1) throw error(409, "Notification rule could not be created");
+  if ((result[0]?.meta.changes ?? 0) !== 1)
+    throw error(409, "Notification rule could not be created");
   return id;
 }
 

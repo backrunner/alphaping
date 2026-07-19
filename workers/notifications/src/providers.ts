@@ -1,8 +1,4 @@
-import type {
-  DeliveryResult,
-  NotificationPayload,
-  NotificationProvider,
-} from "./types.js";
+import type { DeliveryResult, NotificationPayload, NotificationProvider } from "./types.js";
 
 const REQUEST_TIMEOUT_MS = 10_000;
 
@@ -69,9 +65,8 @@ function escapeHtml(value: string): string {
   return value.replace(
     /[&<>"']/g,
     (character) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
-        character
-      ] ?? character,
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ??
+      character,
   );
 }
 
@@ -127,10 +122,11 @@ function buildRequest(
     const webhook = httpsUrl(
       requiredString(config, "webhookUrl"),
       (host, path) =>
-        (host === "discord.com" || host === "discordapp.com") &&
-        path.startsWith("/api/webhooks/"),
+        (host === "discord.com" || host === "discordapp.com") && path.startsWith("/api/webhooks/"),
     );
-    return jsonRequest(webhook, { content: `${content.subject}\n\n${content.text}`.slice(0, 2_000) });
+    return jsonRequest(webhook, {
+      content: `${content.subject}\n\n${content.text}`.slice(0, 2_000),
+    });
   }
   if (provider === "slack") {
     const webhook = httpsUrl(
@@ -168,7 +164,11 @@ function resultForResponse(response: Response): DeliveryResult {
     ok: response.ok,
     retryable,
     status: response.status,
-    error: response.ok ? null : retryable ? "provider_temporarily_unavailable" : "provider_rejected",
+    error: response.ok
+      ? null
+      : retryable
+        ? "provider_temporarily_unavailable"
+        : "provider_rejected",
   };
 }
 

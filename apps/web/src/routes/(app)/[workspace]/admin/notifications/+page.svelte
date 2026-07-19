@@ -1,13 +1,5 @@
 <script lang="ts">
-  import {
-    BellRing,
-    Mail,
-    MessageCircle,
-    RadioTower,
-    Send,
-    Trash2,
-    Webhook,
-  } from "lucide-svelte";
+  import { BellRing, Mail, MessageCircle, RadioTower, Send, Trash2, Webhook } from "lucide-svelte";
 
   import Button from "$components/ui/button/button.svelte";
   import EmptyState from "$components/ui/empty-state/empty-state.svelte";
@@ -97,24 +89,99 @@
         </label>
 
         {#if selectedProvider === "resend"}
-          <label><span>API key</span><input name="apiKey" type="password" required autocomplete="new-password" /></label>
-          <label><span>Sender</span><input name="from" required placeholder="AlphaPing <alerts@example.com>" /></label>
-          <label><span>Recipients</span><textarea name="recipients" required rows="3" placeholder="ops@example.com"></textarea></label>
+          <label
+            ><span>API key</span><input
+              name="apiKey"
+              type="password"
+              required
+              autocomplete="new-password"
+            /></label
+          >
+          <label
+            ><span>Sender</span><input
+              name="from"
+              required
+              placeholder="AlphaPing <alerts@example.com>"
+            /></label
+          >
+          <label
+            ><span>Recipients</span><textarea
+              name="recipients"
+              required
+              rows="3"
+              placeholder="ops@example.com"
+            ></textarea></label
+          >
           <label><span>Reply-to</span><input name="replyTo" type="email" /></label>
         {:else if selectedProvider === "smtp"}
-          <label><span>HTTPS relay URL</span><input name="relayUrl" type="url" required placeholder="https://relay.example.com/send" /></label>
-          <label><span>Relay token</span><input name="relayToken" type="password" autocomplete="new-password" /></label>
-          <label><span>Sender</span><input name="from" required placeholder="alerts@example.com" /></label>
-          <label><span>Recipients</span><textarea name="recipients" required rows="3" placeholder="ops@example.com"></textarea></label>
+          <label
+            ><span>HTTPS relay URL</span><input
+              name="relayUrl"
+              type="url"
+              required
+              placeholder="https://relay.example.com/send"
+            /></label
+          >
+          <label
+            ><span>Relay token</span><input
+              name="relayToken"
+              type="password"
+              autocomplete="new-password"
+            /></label
+          >
+          <label
+            ><span>Sender</span><input
+              name="from"
+              required
+              placeholder="alerts@example.com"
+            /></label
+          >
+          <label
+            ><span>Recipients</span><textarea
+              name="recipients"
+              required
+              rows="3"
+              placeholder="ops@example.com"
+            ></textarea></label
+          >
         {:else if selectedProvider === "discord" || selectedProvider === "slack"}
-          <label><span>Webhook URL</span><input name="webhookUrl" type="password" required autocomplete="new-password" /></label>
+          <label
+            ><span>Webhook URL</span><input
+              name="webhookUrl"
+              type="password"
+              required
+              autocomplete="new-password"
+            /></label
+          >
         {:else if selectedProvider === "telegram"}
-          <label><span>Bot token</span><input name="botToken" type="password" required autocomplete="new-password" /></label>
+          <label
+            ><span>Bot token</span><input
+              name="botToken"
+              type="password"
+              required
+              autocomplete="new-password"
+            /></label
+          >
           <label><span>Chat ID</span><input name="chatId" required /></label>
         {:else}
-          <label><span>Device key</span><input name="deviceKey" type="password" required autocomplete="new-password" /></label>
-          <label><span>Endpoint</span><input name="endpoint" type="url" placeholder="https://api.day.app" /></label>
-          <label><span>Group</span><input name="group" maxlength="80" placeholder="AlphaPing" /></label>
+          <label
+            ><span>Device key</span><input
+              name="deviceKey"
+              type="password"
+              required
+              autocomplete="new-password"
+            /></label
+          >
+          <label
+            ><span>Endpoint</span><input
+              name="endpoint"
+              type="url"
+              placeholder="https://api.day.app"
+            /></label
+          >
+          <label
+            ><span>Group</span><input name="group" maxlength="80" placeholder="AlphaPing" /></label
+          >
         {/if}
         <Button type="submit"><BellRing size={15} />Add channel</Button>
       </form>
@@ -135,7 +202,10 @@
                 <span class="provider-icon"><Icon size={17} /></span>
                 <div>
                   <strong>{channel.name}</strong>
-                  <span>{providerOptions.find((entry) => entry.value === channel.provider)?.label}</span>
+                  <span
+                    >{providerOptions.find((entry) => entry.value === channel.provider)
+                      ?.label}</span
+                  >
                 </div>
                 <span class:active={channel.enabled} class="state-dot">
                   {channel.enabled ? "Active" : "Paused"}
@@ -143,13 +213,22 @@
               </div>
               <dl>
                 {#each Object.entries(channel.summary) as [key, value] (key)}
-                  <div><dt>{key}</dt><dd>{summaryValue(value)}</dd></div>
+                  <div>
+                    <dt>{key}</dt>
+                    <dd>{summaryValue(value)}</dd>
+                  </div>
                 {/each}
               </dl>
               <div class="channel-card__actions">
                 <form class="channel-settings" method="POST" action="?/updateChannel">
                   <input type="hidden" name="channelId" value={channel.id} />
-                  <input name="name" value={channel.name} maxlength="80" aria-label="Channel name" required />
+                  <input
+                    name="name"
+                    value={channel.name}
+                    maxlength="80"
+                    aria-label="Channel name"
+                    required
+                  />
                   <label class="toggle">
                     <input type="checkbox" name="enabled" checked={channel.enabled} />
                     <span>Enabled</span>
@@ -158,7 +237,12 @@
                 </form>
                 <form method="POST" action="?/deleteChannel">
                   <input type="hidden" name="channelId" value={channel.id} />
-                  <Button type="submit" variant="ghost" aria-label={`Delete ${channel.name}`} title="Delete channel">
+                  <Button
+                    type="submit"
+                    variant="ghost"
+                    aria-label={`Delete ${channel.name}`}
+                    title="Delete channel"
+                  >
                     <Trash2 size={15} />
                   </Button>
                 </form>
@@ -181,15 +265,35 @@
     <form class="rule-builder" method="POST" action="?/createRule">
       <label>
         <span>Resource</span>
-        <SelectInput name="resource" value="" options={resourceOptions} label="Monitored resource" placeholder="Select resource" required />
+        <SelectInput
+          name="resource"
+          value=""
+          options={resourceOptions}
+          label="Monitored resource"
+          placeholder="Select resource"
+          required
+        />
       </label>
       <label>
         <span>Dimension</span>
-        <SelectInput name="dimension" value="availability" options={dimensionOptions} label="Notification dimension" required />
+        <SelectInput
+          name="dimension"
+          value="availability"
+          options={dimensionOptions}
+          label="Notification dimension"
+          required
+        />
       </label>
       <label>
         <span>Channel</span>
-        <SelectInput name="channelId" value="" options={channelOptions} label="Notification channel" placeholder="Select channel" required />
+        <SelectInput
+          name="channelId"
+          value=""
+          options={channelOptions}
+          label="Notification channel"
+          placeholder="Select channel"
+          required
+        />
       </label>
       <Button type="submit" disabled={resourceOptions.length === 0 || channelOptions.length === 0}>
         <Send size={15} />Add route
@@ -213,15 +317,24 @@
         </div>
         {#each data.notifications.rules as rule (rule.id)}
           <div class="rule-row" role="row">
-            <div role="cell"><strong>{rule.resourceName}</strong><span>{rule.resourceType}</span></div>
-            <span class={`dimension dimension--${rule.dimension}`} role="cell">{rule.dimension}</span>
+            <div role="cell">
+              <strong>{rule.resourceName}</strong><span>{rule.resourceType}</span>
+            </div>
+            <span class={`dimension dimension--${rule.dimension}`} role="cell"
+              >{rule.dimension}</span
+            >
             <span role="cell">{rule.channelName}</span>
             <div class="rule-action">
               <form method="POST" action="?/deleteRule">
-              <input type="hidden" name="ruleId" value={rule.id} />
-              <Button type="submit" variant="ghost" aria-label={`Delete route for ${rule.resourceName}`} title="Delete route">
-                <Trash2 size={15} />
-              </Button>
+                <input type="hidden" name="ruleId" value={rule.id} />
+                <Button
+                  type="submit"
+                  variant="ghost"
+                  aria-label={`Delete route for ${rule.resourceName}`}
+                  title="Delete route"
+                >
+                  <Trash2 size={15} />
+                </Button>
               </form>
             </div>
           </div>

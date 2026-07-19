@@ -14,7 +14,9 @@ import type { Actions, PageServerLoad } from "./$types";
 
 function actionFailure(cause: unknown, kind: string) {
   const status = isHttpError(cause) ? cause.status : 400;
-  const message = isHttpError(cause) ? cause.body.message : "The notification change could not be saved";
+  const message = isHttpError(cause)
+    ? cause.body.message
+    : "The notification change could not be saved";
   return fail(status, { kind, message });
 }
 
@@ -50,7 +52,8 @@ export const load: PageServerLoad = async ({ locals, params, platform }) => {
 
 export const actions: Actions = {
   createChannel: async ({ request, locals, params, platform }) => {
-    if (!locals.session || !platform) return fail(401, { kind: "channel", message: "Unauthorized" });
+    if (!locals.session || !platform)
+      return fail(401, { kind: "channel", message: "Unauthorized" });
     const form = await request.formData();
     try {
       await createNotificationChannel(
@@ -70,21 +73,28 @@ export const actions: Actions = {
     }
   },
   updateChannel: async ({ request, locals, params, platform }) => {
-    if (!locals.session || !platform) return fail(401, { kind: "channel", message: "Unauthorized" });
+    if (!locals.session || !platform)
+      return fail(401, { kind: "channel", message: "Unauthorized" });
     const form = await request.formData();
     try {
-      await updateNotificationChannel(platform.env.CONTROL_DB, params.workspace, locals.session.user.id, {
-        channelId: String(form.get("channelId") ?? ""),
-        name: String(form.get("name") ?? ""),
-        enabled: form.get("enabled") === "on",
-      });
+      await updateNotificationChannel(
+        platform.env.CONTROL_DB,
+        params.workspace,
+        locals.session.user.id,
+        {
+          channelId: String(form.get("channelId") ?? ""),
+          name: String(form.get("name") ?? ""),
+          enabled: form.get("enabled") === "on",
+        },
+      );
       return { kind: "channel", saved: true };
     } catch (cause) {
       return actionFailure(cause, "channel");
     }
   },
   deleteChannel: async ({ request, locals, params, platform }) => {
-    if (!locals.session || !platform) return fail(401, { kind: "channel", message: "Unauthorized" });
+    if (!locals.session || !platform)
+      return fail(401, { kind: "channel", message: "Unauthorized" });
     const form = await request.formData();
     try {
       await deleteNotificationChannel(
@@ -112,7 +122,10 @@ export const actions: Actions = {
         {
           resourceType: resource.slice(0, separator) as "machine" | "service",
           resourceId: resource.slice(separator + 1),
-          dimension: String(form.get("dimension") ?? "") as "availability" | "resource" | "recovery",
+          dimension: String(form.get("dimension") ?? "") as
+            | "availability"
+            | "resource"
+            | "recovery",
           channelId: String(form.get("channelId") ?? ""),
         },
       );

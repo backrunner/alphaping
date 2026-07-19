@@ -1,14 +1,7 @@
-import {
-  d1BlobToArrayBuffer,
-  unwrapNotificationConfig,
-} from "@alphaping/contracts";
+import { d1BlobToArrayBuffer, unwrapNotificationConfig } from "@alphaping/contracts";
 
 import { sendNotification } from "./providers.js";
-import type {
-  DeliveryResult,
-  NotificationPayload,
-  NotificationProvider,
-} from "./types.js";
+import type { DeliveryResult, NotificationPayload, NotificationProvider } from "./types.js";
 
 const DELIVERY_LIMIT = 50;
 const CONCURRENCY = 5;

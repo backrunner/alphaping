@@ -24,8 +24,7 @@ const readySnapshot: SetupEnvironmentSnapshot = {
   setupToken: "setup-token-with-more-than-thirty-two-bytes",
   enrollmentTokenPepper: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
   checkSecretWrappingKey: "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
-  notificationSecretWrappingKey:
-    "123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0",
+  notificationSecretWrappingKey: "123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0",
   liveTicketSecret: "live-ticket-secret-with-more-than-thirty-two-bytes",
   ingestOrigin: "https://ingest.example.test",
   liveOrigin: "wss://live.example.test",

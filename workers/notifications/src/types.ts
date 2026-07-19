@@ -1,10 +1,4 @@
-export type NotificationProvider =
-  | "resend"
-  | "smtp"
-  | "discord"
-  | "telegram"
-  | "slack"
-  | "bark";
+export type NotificationProvider = "resend" | "smtp" | "discord" | "telegram" | "slack" | "bark";
 
 export type NotificationDimension = "availability" | "resource" | "recovery";
 export type ResourceType = "machine" | "service";

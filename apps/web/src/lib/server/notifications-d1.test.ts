@@ -61,8 +61,12 @@ beforeAll(async () => {
     database.prepare(`INSERT INTO workspaces VALUES (
       'workspace-1', 10, 'operations', 'Operations', 'dashboard-1', 10, NULL
     )`),
-    database.prepare(`INSERT INTO memberships VALUES ('workspace-1', 'admin-1', 'admin', 'active')`),
-    database.prepare(`INSERT INTO machines VALUES ('machine-1', 20, 'workspace-1', 'edge-01', NULL)`),
+    database.prepare(
+      `INSERT INTO memberships VALUES ('workspace-1', 'admin-1', 'admin', 'active')`,
+    ),
+    database.prepare(
+      `INSERT INTO machines VALUES ('machine-1', 20, 'workspace-1', 'edge-01', NULL)`,
+    ),
   ]);
 });
 
@@ -72,17 +76,11 @@ afterAll(async () => {
 
 describe("notification management persistence", () => {
   it("creates, reads, updates, routes, and deletes write-only channels", async () => {
-    const channelId = await createNotificationChannel(
-      database,
-      "operations",
-      "admin-1",
-      KEY,
-      {
-        name: "Operations Slack",
-        provider: "slack",
-        config: { webhookUrl: "https://hooks.slack.com/services/T/B/secret" },
-      },
-    );
+    const channelId = await createNotificationChannel(database, "operations", "admin-1", KEY, {
+      name: "Operations Slack",
+      provider: "slack",
+      config: { webhookUrl: "https://hooks.slack.com/services/T/B/secret" },
+    });
     let panel = await loadNotificationPanel(database, "operations", "admin-1");
     expect(panel.channels).toEqual([
       expect.objectContaining({

@@ -1,6 +1,15 @@
 <script lang="ts">
   import { page } from "$app/state";
-  import { Activity, Bell, BellRing, CircleGauge, LogOut, MonitorCog, Server, X } from "lucide-svelte";
+  import {
+    Activity,
+    Bell,
+    BellRing,
+    CircleGauge,
+    LogOut,
+    MonitorCog,
+    Server,
+    X,
+  } from "lucide-svelte";
   import type { WorkspaceShellData } from "@alphaping/db";
 
   let { shell, open, onclose }: { shell: WorkspaceShellData; open: boolean; onclose: () => void } =
@@ -53,8 +62,10 @@
   </nav>
   <nav class="sidebar__bottom" aria-label="Administration">
     {#if shell.navigation.developer}
-      <a class:active={isActive(`${rootPath}/admin`, true)} href={`${rootPath}/admin`} onclick={onclose}
-        ><MonitorCog size={16} />Admin</a
+      <a
+        class:active={isActive(`${rootPath}/admin`, true)}
+        href={`${rootPath}/admin`}
+        onclick={onclose}><MonitorCog size={16} />Admin</a
       >
       <a
         class:active={isActive(`${rootPath}/admin/notifications`)}

@@ -192,8 +192,16 @@ async function resolveResources(
   db: D1Database,
   events: readonly StateEventRow[],
 ): Promise<Map<string, ResolvedResource>> {
-  const machinePks = [...new Set(events.filter((event) => event.resource_type === 1).map((event) => event.resource_pk))];
-  const servicePks = [...new Set(events.filter((event) => event.resource_type === 2).map((event) => event.resource_pk))];
+  const machinePks = [
+    ...new Set(
+      events.filter((event) => event.resource_type === 1).map((event) => event.resource_pk),
+    ),
+  ];
+  const servicePks = [
+    ...new Set(
+      events.filter((event) => event.resource_type === 2).map((event) => event.resource_pk),
+    ),
+  ];
   const [machines, services] = await Promise.all([
     loadResourceRows(db, "machines", machinePks),
     loadResourceRows(db, "services", servicePks),
@@ -222,7 +230,9 @@ async function loadRules(
   resources: ReadonlyMap<string, ResolvedResource>,
 ): Promise<Map<string, RuleRow[]>> {
   const ids = [...new Set([...resources.values()].map((resource) => resource.id))];
-  const workspaceIds = [...new Set([...resources.values()].map((resource) => resource.workspaceId))];
+  const workspaceIds = [
+    ...new Set([...resources.values()].map((resource) => resource.workspaceId)),
+  ];
   if (ids.length === 0) return new Map();
   const result = await db
     .prepare(
@@ -261,7 +271,8 @@ async function prepareDeliveries(
     const resource = resources.get(resourceKey(type, event.workspace_pk, event.resource_pk));
     if (!resource) continue;
     const dimension = dimensionForEvent(event);
-    for (const rule of rules.get(ruleKey(resource.workspaceId, type, resource.id, dimension)) ?? []) {
+    for (const rule of rules.get(ruleKey(resource.workspaceId, type, resource.id, dimension)) ??
+      []) {
       const payload: NotificationPayload = {
         workspace: resource.workspaceName,
         resourceType: type,

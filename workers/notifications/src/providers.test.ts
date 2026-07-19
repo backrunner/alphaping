@@ -20,7 +20,11 @@ describe("notification providers", () => {
     await expect(
       sendNotification(
         "resend",
-        { apiKey: "re_secret", from: "AlphaPing <alerts@example.com>", recipients: ["ops@example.com"] },
+        {
+          apiKey: "re_secret",
+          from: "AlphaPing <alerts@example.com>",
+          recipients: ["ops@example.com"],
+        },
         payload,
         fetcher,
       ),
@@ -45,7 +49,9 @@ describe("notification providers", () => {
   });
 
   it("retries provider throttling without reading the response body", async () => {
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response("ignored", { status: 429 }));
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response("ignored", { status: 429 }));
     await expect(
       sendNotification(
         "slack",

@@ -14,9 +14,7 @@ function decodeKey(keyHex: string): Uint8Array<ArrayBuffer> {
 
 function additionalData(workspaceId: string, channelId: string): Uint8Array<ArrayBuffer> {
   if (!workspaceId || !channelId) throw new Error("invalid_notification_config_scope");
-  return new TextEncoder().encode(
-    `alphaping:notification-config:v1:${workspaceId}:${channelId}`,
-  );
+  return new TextEncoder().encode(`alphaping:notification-config:v1:${workspaceId}:${channelId}`);
 }
 
 async function importKey(keyHex: string): Promise<CryptoKey> {

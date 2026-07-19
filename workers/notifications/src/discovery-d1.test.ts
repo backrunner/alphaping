@@ -48,7 +48,9 @@ beforeAll(async () => {
               source_occurred_at, source_event_id)
     )`),
     controlDb.prepare(`INSERT INTO workspaces VALUES ('workspace-1', 10, 'Operations', NULL)`),
-    controlDb.prepare(`INSERT INTO machines VALUES ('machine-1', 20, 'workspace-1', 'edge-01', NULL)`),
+    controlDb.prepare(
+      `INSERT INTO machines VALUES ('machine-1', 20, 'workspace-1', 'edge-01', NULL)`,
+    ),
     controlDb.prepare(`INSERT INTO notification_channels VALUES ('channel-1', 'workspace-1', 1)`),
     controlDb.prepare(`INSERT INTO notification_rules VALUES (
       'rule-1', 'workspace-1', 'machine', 'machine-1', 'availability', 'channel-1', 1
@@ -80,9 +82,11 @@ describe("notification event discovery", () => {
       bootstrapped: true,
     });
     await telemetryDb
-      .prepare(`INSERT INTO state_events VALUES (
+      .prepare(
+        `INSERT INTO state_events VALUES (
         10, 1, 20, 200, X'02', 'healthy', 'offline', 'report_timeout'
-      )`)
+      )`,
+      )
       .run();
     await expect(discoverNotificationEvents(controlDb, telemetryDb, 2_000)).resolves.toEqual({
       scanned: 1,

@@ -532,10 +532,6 @@ export const notificationDeliveries = sqliteTable(
       table.createdAt,
       table.id,
     ),
-    index("notification_deliveries_workspace_idx").on(
-      table.workspaceId,
-      table.createdAt,
-      table.id,
-    ),
+    index("notification_deliveries_workspace_idx").on(table.workspaceId, table.createdAt, table.id),
   ],
 );
