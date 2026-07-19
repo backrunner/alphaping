@@ -254,8 +254,9 @@ export async function acceptInvitationForUser(
     before: { accepted: false },
     after: { accepted: true, role: invitation.role },
     now,
+    onlyIfPreviousStatementChanged: true,
   });
-  await db.batch([
+  const results = await db.batch([
     db
       .prepare(
         `UPDATE workspace_invitations SET accepted_at = ?
@@ -266,16 +267,20 @@ export async function acceptInvitationForUser(
       .prepare(
         `INSERT INTO memberships
           (workspace_id, user_id, role, status, created_at, updated_at)
-         VALUES (
+         SELECT
            (SELECT workspace_id FROM workspace_invitations WHERE id = ? AND accepted_at = ?),
            ?,
            (SELECT role FROM workspace_invitations WHERE id = ? AND accepted_at = ?),
            'active', ?, ?
-         )`,
+        
+        WHERE changes() = 1`,
       )
       .bind(invitation.id, now, user.id, invitation.id, now, now, now),
     audit,
   ]);
+  if (results[0]?.meta.changes !== 1 || results[1]?.meta.changes !== 1) {
+    throw error(409, "Invitation is no longer available");
+  }
   return { workspaceSlug: invitation.workspace_slug };
 }
 
@@ -306,8 +311,9 @@ export async function registerFromWorkspaceInvitation(
     before: { accepted: false },
     after: { accepted: true, role: invitation.role },
     now,
+    onlyIfPreviousStatementChanged: true,
   });
-  await db.batch([
+  const results = await db.batch([
     db
       .prepare(
         `UPDATE workspace_invitations SET accepted_at = ?
@@ -317,29 +323,38 @@ export async function registerFromWorkspaceInvitation(
     db
       .prepare(
         `INSERT INTO user (id, name, email, email_verified, created_at, updated_at)
-         VALUES (?, ?, ?, 1, ?, ?)`,
+         SELECT ?, ?, ?, 1, ?, ? WHERE changes() = 1`,
       )
       .bind(userId, name, invitation.email, now, now),
     db
       .prepare(
         `INSERT INTO account
           (id, account_id, provider_id, user_id, password, created_at, updated_at)
-         VALUES (?, ?, 'credential', ?, ?, ?, ?)`,
+         SELECT ?, ?, 'credential', ?, ?, ?, ? WHERE changes() = 1`,
       )
       .bind(crypto.randomUUID(), userId, userId, passwordHash, now, now),
     db
       .prepare(
         `INSERT INTO memberships
           (workspace_id, user_id, role, status, created_at, updated_at)
-         VALUES (
+         SELECT
            (SELECT workspace_id FROM workspace_invitations WHERE id = ? AND accepted_at = ?),
            ?,
            (SELECT role FROM workspace_invitations WHERE id = ? AND accepted_at = ?),
            'active', ?, ?
-         )`,
+        
+        WHERE changes() = 1`,
       )
       .bind(invitation.id, now, userId, invitation.id, now, now, now),
     audit,
   ]);
+  if (
+    results[0]?.meta.changes !== 1 ||
+    results[1]?.meta.changes !== 1 ||
+    results[2]?.meta.changes !== 1 ||
+    results[3]?.meta.changes !== 1
+  ) {
+    throw error(409, "Invitation is no longer available");
+  }
   return { workspaceSlug: invitation.workspace_slug, email: invitation.email };
 }
