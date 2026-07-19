@@ -136,7 +136,7 @@ D1 最终计费以每个 query 返回的 `meta.rows_written` 为准。Schema 实
 
 ### D1 读取预算
 
-按 5 个 dashboard session、每 30 秒刷新 8 小时/天的假设：
+先按 5 个 dashboard session、每 30 秒刷新 8 小时/天计算非公开页控制面读取：
 
 ```text
 Dashboard latest: 144,000 * 60 rows      8.640m
@@ -149,13 +149,35 @@ budgeted rows read                       25.304m/month
 Paid included                        25,000.000m/month
 ```
 
-预算只占 D1 included reads 约 0.101%。因此在这个规模下，用主键读取代替频繁更新的汇总/调度索引是明确的成本和性能优化。
+这部分只占 D1 included reads 约 0.101%。因此在这个规模下，用主键读取代替频繁更新的汇总/调度索引是明确的成本和性能优化，但不能据此忽略公开状态页的历史投影。
+
+#### 公开状态页读取
+
+公开状态页使用 Cache API 保存 6 小时故障 fallback，其中前 30 秒可直接作为 fresh response。Cloudflare Cache API 内容不会复制到其他数据中心，而且 Cache API 命中仍会执行 Worker，因此模型必须按活跃 edge location 和 route cache key 分别计算。当前路由最多接受 8 个 `servicePage` key；每个 live projection 都读取全部公开 machine/service current state，只有 25 个当前页 service 读取 24 小时 5 分钟时间桶。
+
+模型使用以下保守边界：
+
+- 一个完整页最多读取 `25 * 289 = 7,225` 个 `status_buckets` rows；289 包含 24 小时的 288 个完整区间和 SQL inclusive boundary 最多一行。
+- machine/service 各最多 200，container 查询考虑 90 项 D1 bind batch 和每批 500 行上限。
+- incident 最多 20 个、每个最多 20 个受影响 service、update 最多 200、announcement 最多 20。
+- 每个活跃 edge location 的 8 个允许 cache key 在每个 30 秒窗口各触发一次 live projection；同一窗口的额外 fresh-cache hit 只增加 Worker request。并发过期造成多次 live projection 时，以 `publicStatusRefreshesPerWindow` 线性放大。
+
+按上述最坏 route-key fanout：
+
+| 规模与持续活跃位置 | Public D1 reads | 全部 D1 reads | Worker requests | 平台 overage，不含 5 USD 基础费/CPU |
+| --- | ---: | ---: | ---: | ---: |
+| 30+30，1 edge location | 2.273b | 2.298b | 2.334m | 0.00 USD |
+| 100+100，1 edge location | 6.280b | 6.353b | 5.660m | 0.00 USD |
+| 100+100，5 edge locations | 31.401b | 31.474b | 8.425m | 6.47 USD |
+| 100+100，20 edge locations | 125.605b | 125.678b | 18.793m | 103.32 USD |
+
+一个 location 的 30+30 模型在一个 30 秒窗口内最多读取 26,308 行，100+100 为 72,688 行；每月各有 86,400 个窗口。这里的 location 是“8 个分页 key 每 30 秒都至少收到一次请求的数据中心”，不是访问者人数。真实流量只访问实际分页时会更低，但跨区域流量、cache expiry burst 或蓄意轮询会更高。发布后必须用 D1 `meta.rows_read` 和 Worker Analytics 分别观测 live projection 与 fresh-cache hit，不能把 `6h` fallback TTL 当成全球共享的读取缓存。
 
 中央检查执行结束后按 check 主键验证 `config_revision,last_claimed_slot`，防止配置替换期间的在途旧结果覆盖 latest；30/100 个每分钟检查分别增加 1.296m/4.32m rows read/月，不增加 Worker request 或稳态 rows written。Agent command delivery 在每个 report 增加一次 `(agent_id,state,not_before)` 有界索引读取，空队列不产生写入。100 台 Agent 按每分钟一个 report 约增加 4.32m rows read/月，仍只占 Paid 25bn included reads 的 0.0173%。Agent 版本合并进既有 `last_seen_at` 更新，不增加稳态 D1 write；只有创建、实际投递和完成命令时才新增低频 writes。
 
 服务状态并发收敛把原有事务外 `check_latest WHERE service_pk` 读取移动到 check latest 条件写之后的同一 D1 batch，并使用单次 `MAX(severity rank)` 扫描；event/service 后续只按现有复合主键点查。它不新增服务集合扫描、Worker request、稳态 service latest/event write 或热表二级索引，因此上述 rows-read/write 基线不变。
 
-机器离线收敛复用 Checks Worker 现有每分钟 Cron，不增加 Worker request。每台每分钟最多读取一条 CONTROL_DB 配置和一条 TELEMETRY_DB latest；100 台增加 8.64m rows read/月。按 100+100 的 dashboard、scheduler、中央 revision fence、Agent path、liveness 和 5m reserve 合计约 72.68m rows read/月，只占 Paid included reads 的 0.291%。离线/恢复只在状态转换时写 latest/event，低频写入由 25% margin 覆盖。
+机器离线收敛复用 Checks Worker 现有每分钟 Cron，不增加 Worker request。每台每分钟最多读取一条 CONTROL_DB 配置和一条 TELEMETRY_DB latest；100 台增加 8.64m rows read/月。按 100+100 的 dashboard、scheduler、中央 revision fence、Agent path、liveness 和 5m reserve，非公开页控制面合计约 72.68m rows read/月；加入一个持续活跃 edge location 的公开状态页后为 6.353b，占 Paid included reads 的 25.41%。离线/恢复只在状态转换时写 latest/event，低频写入由 25% margin 覆盖。
 
 `service_state_sync_jobs` 复用 Checks Worker 的既有每分钟 Cron，不增加 Worker request。每次 check target/policy/delete/maintenance mutation 写一个按 check 或 service 合并的 CONTROL_DB job，并在 15 分钟保护窗内重复重放；扫描和处理每轮上限 50，每次尝试在同一行更新 `next_attempt_at,last_attempted_at` 以轮转积压。长维护窗口在保护窗成功收敛后休眠到结束时间，不产生窗口全程的每分钟写入。该负载只随人工配置 mutation 产生，不随 report/check 周期增长，因此不进入稳态账本，由 25% 配置/重试 margin 覆盖。
 
@@ -180,12 +202,14 @@ Cron invocations                        43,200
 5 dashboard sessions, 30s polling,
 8 hours/day                            144,000
 Viewer ticket + socket refresh          29,794
-total                                1,642,594/month
+Public status, 1 edge location,
+8 keys * one request/30s                691,200
+total                                2,333,794/month
 Paid included                       10,000,000/month
 request overage                           0.00 USD
 ```
 
-中央 HTTP/TCP 检查产生的 outbound subrequest 不单独计 Workers dynamic request。Dashboard 静态资源也免费。
+中央 HTTP/TCP 检查产生的 outbound subrequest 不单独计 Workers dynamic request。Dashboard 静态资源也免费。公开状态的 691,200 是让每个 cache key 保持持续活跃所需的最低 request 数；同一 30 秒窗口内更多访问仍执行 Worker，必须额外计 request，但 fresh snapshot 会跳过 D1。
 
 CPU 建模：
 
@@ -279,7 +303,7 @@ Cloudflare 对 DO 入站 WebSocket 消息按 20:1 折算 request；WebSocket upg
 | Live Durable Object | 0.00 USD |
 | **预计总额** | **5.00 USD/month** |
 
-这是不影响在线查询、Agent 可靠补报、服务检查和一年历史图表的最低可持续方案。Free 计划每日只有 100,000 D1 rows written，与本项目约 331,200 known rows written/day 不兼容，不能作为 30 台生产方案。
+这是在一个 edge location 持续访问全部 8 个公开状态分页 key 的保守模型下，不影响在线查询、Agent 可靠补报、服务检查和一年历史图表的最低可持续方案。30+30 的公开页及控制面总 D1 reads 约 2.298b/月，仍在 25b included 内。Free 计划每日只有 100,000 D1 rows written，与本项目约 331,200 known rows written/day 不兼容，不能作为 30 台生产方案。
 
 ## 9. 其他方案的同规模价格
 
@@ -348,7 +372,8 @@ Agent reports                         4,320,000
 Agent live session upgrades             432,000
 Cron + same dashboard assumption        187,200
 Viewer ticket + socket refresh           29,794
-total                                 4,968,994
+Public status, 1 edge location           691,200
+total                                 5,660,194
 Paid included                        10,000,000
 ```
 
@@ -371,7 +396,7 @@ total target                           4.284 GB
 storage overage                         0.00 USD
 ```
 
-结论：按上述 payload/rollup 预算、CPU 目标和 5 个 machine detail session 每天可见 8 小时的默认，**100 台机器 + 100 个每分钟服务检查仍可完整覆盖在 5 USD Workers Paid included usage 内**。即使 100 个 topic 每天都持续可见 8 小时，DO request overage 也约为 0.0697 USD；若 CPU 只达到保守基准，再增加约 0.4512 USD/月。这些结论必须由实际 Worker/DO 基准和 D1 page size fixture 验证。
+结论：按上述 payload/rollup 预算、CPU 目标、5 个 machine detail session 每天可见 8 小时，并让全部 8 个公开状态分页 key 在一个 edge location 持续活跃，**100 台机器 + 100 个每分钟服务检查仍可完整覆盖在 5 USD Workers Paid included usage 内**。5 个持续活跃 location 会让 D1 read overage 增至约 6.47 USD/月；20 个 location 的平台 overage 约 103.32 USD/月，因此 5 USD 结论不能外推到全球持续流量。即使 100 个 topic 每天都持续可见 8 小时，DO request overage 也约为 0.0697 USD；若 CPU 只达到保守基准，再增加约 0.4512 USD/月。这些结论必须由实际 Worker/DO 基准、D1 page size fixture 和公开页 edge 分布验证。
 
 ### 容器密度的存储拐点
 
@@ -399,11 +424,11 @@ D1 storage overage at 0.75 USD/GB       4.1048 USD/month
 
 | Machines + checks | D1 known writes | Requests | Target storage | 估算总费 |
 | --- | ---: | ---: | ---: | ---: |
-| 30 + 30 | 10.037m | 1.64m | 约 1.63 GB | 5.00 USD |
-| 100 + 100 | 33.221m | 4.97m | 约 4.28 GB | 5.00-5.45 USD |
-| 150 + 150 | 49.781m | 7.34m | 约 6.17 GB | 约 19.09 USD，含 25% write margin 与保守 CPU |
-| 200 + 200 | 66.341m | 9.72m | 约 8.06 GB | 约 41.73 USD，含 25% write margin 与保守 CPU |
-| 300 + 300 | 99.461m | 14.47m | 约 11.84 GB | 约 88.42 USD，含 25% write margin、请求与保守 CPU |
+| 30 + 30 | 10.037m | 2.33m | 约 1.63 GB | 5.00 USD |
+| 100 + 100 | 33.221m | 5.66m | 约 4.28 GB | 5.00-5.45 USD |
+| 150 + 150 | 49.781m | 8.04m | 约 6.17 GB | 约 19.09 USD，含 25% write margin 与保守 CPU |
+| 200 + 200 | 66.341m | 10.41m | 约 8.06 GB | 约 41.85 USD，含 25% write margin、请求与保守 CPU |
+| 300 + 300 | 99.461m | 15.16m | 约 11.84 GB | 约 88.63 USD，含 25% write margin、请求与保守 CPU |
 
 增长最终由 D1 rows written 主导，大约在 100+100 之后开始逼近 included 边界。每台 60 秒 machine report 将已知月写入增加 156,960；每个 60 秒 centralized check 因增加可直接查询的 5 分钟 service status bucket，将已知月写入增加 174,240。将 interval 从 60 秒改为 300 秒时，该 check 的执行、CPU 和主要写入约降为五分之一。
 
@@ -415,14 +440,16 @@ D1 storage overage at 0.75 USD/GB       4.1048 USD/month
 - 单库持续出现 D1 overloaded、存储达 8 GB 或预测含 margin 的月写入超 40 million 时，启动按 workspace/resource hash 分片评估。分片提升容量和并发，但不会重置账户级 included usage。
 - 需要子分钟中央调度时才评估 Durable Objects alarms；一分钟以下 ICMP/HTTP/TCP 优先由 Agent 执行。
 - 10 秒 live update 由 Durable Objects WebSocket Hibernation 提供；D1 始终是 60 秒 durable latest/history 的权威回退。
+- 公开状态页 Cache API 是 per-data-center 缓存。100+100 在 5 个持续活跃 edge location 时已经产生约 6.47 USD D1 read overage；观测到更多 location、30 秒窗口内重复 live projection 或持续访问多个分页 key 时，必须提高 freshness TTL、合并分页快照刷新或引入可验证的全局 single-flight，不能假设 Cache API 自动跨区域去重。
 - 系统默认将“含 25% margin 的预测 D1 writes”软上限设为 40 million/月。超出前管理界面必须要求调 check/report 周期、关闭不需要的高分辨率 rollup，或显式接受 overage。单纯缩短保留期只降低 storage，稳态 INSERT/DELETE 频率不会下降。
 
 ## 12. 上线前成本验证
 
 1. 用实际 Drizzle migration 创建两个本地 D1。
 2. 生成 30 与 100 台、7 天 raw、30 天 5m、365 天 1h 的最坏大小 fixture。
-3. 记录每条热查询的 `meta.rows_read`/`meta.rows_written`。
+3. 记录每条热查询的 `meta.rows_read`/`meta.rows_written`，并分别测量公开状态 page 1/last page 的 live projection。
 4. 用 `PRAGMA page_count * page_size` 记录实际 storage，包含索引。
 5. 对 Rust Ingest 执行 AES-GCM/zlib/protobuf/D1 基准：30 台门禁低于 18 ms，100+100 要留在 CPU included 内则目标低于 5 ms/report 且 1 ms/check minute batch。
 6. 对 24 小时离线后的补报进行压测，确认 D1 不 overloaded 且 live data 优先。
-7. 在发布门禁中重算 30/100/200/1000 台和对应 check 档位，实测值与本基线偏差超过 20% 时阻止发布。
+7. 用 Worker Analytics 记录公开状态 live/cache/snapshot source、活跃 edge location、cache expiry burst 和每个分页 key 的请求量。
+8. 在发布门禁中重算 30/100/200/1000 台和对应 check 档位，以及 100+100 的 1/5/20 edge location 档位；实测值与本基线偏差超过 20% 时阻止发布。

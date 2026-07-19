@@ -19,6 +19,18 @@ const DASHBOARD_SESSIONS = 5;
 const DASHBOARD_HOURS_PER_DAY = 8;
 const DAYS_PER_MONTH = 30;
 const VIEWER_REFRESH_SECONDS = 290;
+const PUBLIC_STATUS_CACHE_TTL_SECONDS = 30;
+const PUBLIC_STATUS_MAX_SERVICE_PAGES = 8;
+const PUBLIC_STATUS_SERVICE_PAGE_SIZE = 25;
+const PUBLIC_STATUS_MAX_MACHINES = 200;
+const PUBLIC_STATUS_MAX_SERVICES = 200;
+const PUBLIC_STATUS_CONTAINER_QUERY_LIMIT = 500;
+const PUBLIC_STATUS_INCIDENT_LIMIT = 20;
+const PUBLIC_STATUS_INCIDENT_SERVICE_LIMIT = 20;
+const PUBLIC_STATUS_INCIDENT_UPDATE_LIMIT = 200;
+const PUBLIC_STATUS_ANNOUNCEMENT_LIMIT = 20;
+const PUBLIC_STATUS_BUCKETS_PER_SERVICE = (24 * 60) / 5 + 1;
+const D1_IN_BATCH_SIZE = 90;
 const TYPICAL_CONTAINER_COUNT = 10;
 const TYPICAL_REPORT_BYTES = 2 * 1024;
 const MAX_CONTAINER_COUNT = 64;
@@ -74,10 +86,85 @@ function liveRequests(machines) {
   };
 }
 
+function publicContainerQueryRows(machines, containersPerMachine) {
+  const boundedContainers = Math.max(
+    0,
+    Math.min(MAX_CONTAINER_COUNT, Math.floor(containersPerMachine)),
+  );
+  let rows = 0;
+  for (let offset = 0; offset < machines; offset += D1_IN_BATCH_SIZE) {
+    const batchSize = Math.min(D1_IN_BATCH_SIZE, machines - offset);
+    rows += Math.min(PUBLIC_STATUS_CONTAINER_QUERY_LIMIT, batchSize * boundedContainers);
+  }
+  return rows;
+}
+
+function publicStatusLedger(
+  machines,
+  checks,
+  containersPerMachine,
+  activeEdgeLocations,
+  refreshesPerWindow,
+) {
+  const visibleMachines = Math.min(PUBLIC_STATUS_MAX_MACHINES, Math.max(0, machines));
+  // The scale model assumes one check per service, matching the documented scale table.
+  const visibleServices = Math.min(PUBLIC_STATUS_MAX_SERVICES, Math.max(0, checks));
+  const incidentQueryBatches = Math.ceil(visibleServices / D1_IN_BATCH_SIZE);
+  const incidentRows = visibleServices > 0 ? PUBLIC_STATUS_INCIDENT_LIMIT : 0;
+  const fixedRowsPerProjection =
+    1 +
+    visibleMachines * 2 +
+    publicContainerQueryRows(visibleMachines, containersPerMachine) +
+    visibleServices * 4 +
+    incidentQueryBatches * PUBLIC_STATUS_INCIDENT_LIMIT +
+    incidentRows * Math.min(PUBLIC_STATUS_INCIDENT_SERVICE_LIMIT, visibleServices) +
+    (incidentRows > 0 ? PUBLIC_STATUS_INCIDENT_UPDATE_LIMIT : 0) +
+    PUBLIC_STATUS_ANNOUNCEMENT_LIMIT;
+  const actualPageCount = Math.max(1, Math.ceil(visibleServices / PUBLIC_STATUS_SERVICE_PAGE_SIZE));
+  let timelineRowsPerRefreshWindow = 0;
+  for (
+    let requestedPage = 1;
+    requestedPage <= PUBLIC_STATUS_MAX_SERVICE_PAGES;
+    requestedPage += 1
+  ) {
+    const actualPage = Math.min(requestedPage, actualPageCount);
+    const pageOffset = (actualPage - 1) * PUBLIC_STATUS_SERVICE_PAGE_SIZE;
+    const servicesOnPage = Math.max(
+      0,
+      Math.min(PUBLIC_STATUS_SERVICE_PAGE_SIZE, visibleServices - pageOffset),
+    );
+    timelineRowsPerRefreshWindow += servicesOnPage * PUBLIC_STATUS_BUCKETS_PER_SERVICE;
+  }
+  const boundedEdgeLocations = Math.max(0, Math.floor(activeEdgeLocations));
+  const boundedRefreshesPerWindow = Math.max(1, Math.floor(refreshesPerWindow));
+  const refreshWindows = (MONTH_MINUTES * 60) / PUBLIC_STATUS_CACHE_TTL_SECONDS;
+  const routeCacheKeys = PUBLIC_STATUS_MAX_SERVICE_PAGES;
+  const rowsPerRefreshWindow =
+    fixedRowsPerProjection * routeCacheKeys + timelineRowsPerRefreshWindow;
+  const liveProjections =
+    refreshWindows * routeCacheKeys * boundedEdgeLocations * boundedRefreshesPerWindow;
+  return {
+    activeEdgeLocations: boundedEdgeLocations,
+    refreshesPerWindow: boundedRefreshesPerWindow,
+    routeCacheKeys,
+    fixedRowsPerProjection,
+    rowsPerRefreshWindow,
+    liveProjections,
+    readRows:
+      rowsPerRefreshWindow * boundedEdgeLocations * boundedRefreshesPerWindow * refreshWindows,
+    workerRequests: liveProjections,
+  };
+}
+
 export function estimateScale(
   machines,
   checks,
-  { containersPerMachine = TYPICAL_CONTAINER_COUNT, catalogChangesPerDay = 0 } = {},
+  {
+    containersPerMachine = TYPICAL_CONTAINER_COUNT,
+    catalogChangesPerDay = 0,
+    publicStatusActiveEdgeLocations = 1,
+    publicStatusRefreshesPerWindow = 1,
+  } = {},
 ) {
   const catalogWrites =
     machines *
@@ -91,19 +178,31 @@ export function estimateScale(
     CHECK_SCHEDULER_CURSOR_WRITES +
     FIXED_RETENTION_WRITES;
   const budgetedWrites = knownWrites * IMPLEMENTATION_MARGIN;
-  const modeledReads =
+  const publicStatus = publicStatusLedger(
+    machines,
+    checks,
+    containersPerMachine,
+    publicStatusActiveEdgeLocations,
+    publicStatusRefreshesPerWindow,
+  );
+  const controlPlaneReads =
     DASHBOARD_REQUESTS * (machines + checks) +
     checks * MONTH_MINUTES * 2 +
     machines * MONTH_MINUTES * 5 +
     machines * MONTH_MINUTES * 2 +
     5_000_000;
+  const modeledReads = controlPlaneReads + publicStatus.readRows;
   const machineStorageGb =
     MACHINE_NON_RAW_STORAGE_GB +
     (REPORTS_PER_MACHINE_7D * reportBytesForContainers(containersPerMachine)) / 1_000_000_000;
   const storageGb = machines * machineStorageGb + checks * 0.0116 + 0.5;
   const live = liveRequests(machines);
   const workersRequests =
-    machines * MONTH_MINUTES + MONTH_MINUTES + DASHBOARD_REQUESTS + live.workerRequests;
+    machines * MONTH_MINUTES +
+    MONTH_MINUTES +
+    DASHBOARD_REQUESTS +
+    live.workerRequests +
+    publicStatus.workerRequests;
   const d1WriteOverage =
     (Math.max(0, budgetedWrites - D1_INCLUDED_WRITES) / 1_000_000) * D1_WRITE_PRICE_PER_MILLION;
   const d1ReadOverage =
@@ -123,6 +222,14 @@ export function estimateScale(
     checkSchedulerCursorWrites: CHECK_SCHEDULER_CURSOR_WRITES,
     fixedRetentionWrites: FIXED_RETENTION_WRITES,
     r2ClassAOperations: R2_ARTIFACT_LIST_OPERATIONS,
+    controlPlaneReads,
+    publicStatusActiveEdgeLocations: publicStatus.activeEdgeLocations,
+    publicStatusRefreshesPerWindow: publicStatus.refreshesPerWindow,
+    publicStatusRouteCacheKeys: publicStatus.routeCacheKeys,
+    publicStatusRowsPerRefreshWindow: publicStatus.rowsPerRefreshWindow,
+    publicStatusLiveProjections: publicStatus.liveProjections,
+    publicStatusReadRows: publicStatus.readRows,
+    publicStatusWorkerRequests: publicStatus.workerRequests,
     knownWrites,
     budgetedWrites,
     modeledReads,
@@ -147,13 +254,18 @@ scales.push(
     catalogChangesPerDay: 1,
   }),
 );
+scales.push(
+  estimateScale(100, 100, { publicStatusActiveEdgeLocations: 5 }),
+  estimateScale(100, 100, { publicStatusActiveEdgeLocations: 20 }),
+);
 
 console.table(
   scales.map((scale) => ({
-    scale: `${scale.machines}+${scale.checks} / ${scale.containersPerMachine}c`,
+    scale: `${scale.machines}+${scale.checks} / ${scale.containersPerMachine}c / ${scale.publicStatusActiveEdgeLocations}e`,
     knownWrites: millions(scale.knownWrites),
     budgetedWrites: millions(scale.budgetedWrites),
     modeledReads: millions(scale.modeledReads),
+    publicStatusReads: millions(scale.publicStatusReadRows),
     storage: `${scale.storageGb.toFixed(3)} GB`,
     requests: millions(scale.workersRequests),
     liveDoRequests: millions(scale.durableObjectRequests),
@@ -163,16 +275,48 @@ console.table(
 );
 
 const baseline = estimateScale(100, 100);
-if (baseline.budgetedWrites > D1_INCLUDED_WRITES || baseline.storageGb > D1_INCLUDED_STORAGE_GB) {
+if (
+  baseline.budgetedWrites > D1_INCLUDED_WRITES ||
+  baseline.modeledReads > D1_INCLUDED_READS ||
+  baseline.storageGb > D1_INCLUDED_STORAGE_GB
+) {
   throw new Error("100 machines + 100 checks no longer fit the Cloudflare Paid baseline");
 }
-if (baseline.workersRequests !== 4_968_994 || baseline.durableObjectRequests !== 483_642) {
+if (baseline.workersRequests !== 5_660_194 || baseline.durableObjectRequests !== 483_642) {
   throw new Error(
     `live request ledger drifted: ${baseline.workersRequests} Worker / ${baseline.durableObjectRequests} DO requests`,
   );
 }
-if (baseline.modeledReads !== 72_680_000) {
+if (
+  baseline.controlPlaneReads !== 72_680_000 ||
+  baseline.publicStatusRouteCacheKeys !== 8 ||
+  baseline.publicStatusRowsPerRefreshWindow !== 72_688 ||
+  baseline.publicStatusLiveProjections !== 691_200 ||
+  baseline.publicStatusReadRows !== 6_280_243_200 ||
+  baseline.modeledReads !== 6_352_923_200
+) {
   throw new Error(`D1 read ledger drifted: ${baseline.modeledReads}`);
+}
+const regionalPublicStatus = estimateScale(100, 100, {
+  publicStatusActiveEdgeLocations: 5,
+});
+if (
+  regionalPublicStatus.publicStatusReadRows !== 31_401_216_000 ||
+  regionalPublicStatus.workersRequests !== 8_424_994 ||
+  regionalPublicStatus.platformOverage < 6.47 ||
+  regionalPublicStatus.platformOverage > 6.48
+) {
+  throw new Error("regional public status cost ledger drifted");
+}
+const publicStatusRefreshBurst = estimateScale(100, 100, {
+  publicStatusRefreshesPerWindow: 2,
+});
+if (
+  publicStatusRefreshBurst.publicStatusReadRows !== 12_560_486_400 ||
+  publicStatusRefreshBurst.publicStatusWorkerRequests !== 1_382_400 ||
+  publicStatusRefreshBurst.modeledReads !== 12_633_166_400
+) {
+  throw new Error("public status refresh burst ledger drifted");
 }
 if (
   baseline.checkSchedulerCursorWrites !== 86_400 ||

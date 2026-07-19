@@ -23,6 +23,18 @@
 
 影响：权威持久仍使用 60 秒 HTTP batch。10 秒 UI 实时性使用按需 Hibernation WebSocket，避免每 10 秒产生一个 Worker HTTP request 和 D1 write。
 
+### Workers Cache API
+
+来源：https://developers.cloudflare.com/workers/runtime-apis/cache/
+
+结论：
+
+- Cache API 内容只保存在发起 `put()` 的数据中心，不会复制到其他数据中心。
+- Cache API 与 CDN Worker response cache 是两套独立机制；Cache API 命中仍会执行 Worker。
+- `cache.put()`/`cache.match()` 不支持 `stale-while-revalidate` 或 `stale-if-error`。
+
+影响：公开状态页的 30 秒快照必须按活跃 edge location 和分页 cache key 分别计 Worker request 与 D1 live projection。6 小时 fallback snapshot 提高控制面故障时的可用性，但不能当成全球共享的 6 小时 D1 读取缓存。
+
 ### Workers limits
 
 来源：https://developers.cloudflare.com/workers/platform/limits/
