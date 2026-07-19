@@ -154,11 +154,12 @@ export async function runWebPerformanceE2e({
          UNION ALL SELECT value + 1 FROM sequence WHERE value < ${machinesToAdd}
        )
        INSERT INTO machines
-         (id, telemetry_pk, workspace_id, name, description, labels_json,
+         (id, telemetry_pk, workspace_id, public_slug, name, description, labels_json,
           sampling_interval_seconds, report_interval_seconds, offline_after_seconds,
           container_monitoring_enabled, desired_config_revision, created_at, updated_at)
        SELECT printf('performance-machine-%03d', value), ${TELEMETRY_PK_BASE} + value,
-              ${sqlString(workspace.id)}, printf('Benchmark %03d', value),
+              ${sqlString(workspace.id)}, printf('performance-machine-%03d', value),
+              printf('Benchmark %03d', value),
               '500-machine SSR performance fixture', '{"fixture":"performance"}',
               10, 60, 150, 0, 1, ${now}, ${now}
        FROM sequence`,
