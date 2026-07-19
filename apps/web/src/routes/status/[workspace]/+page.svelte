@@ -33,8 +33,12 @@
   {/if}
   <PublicAnnouncements announcements={data.announcements} />
   <PublicIncidentList incidents={data.incidents} />
-  <PublicMachineList machines={data.machines} />
-  <PublicServiceList services={data.services} pagination={data.servicePagination} />
+  <PublicMachineList machines={data.machines} workspaceSlug={data.workspace.slug} />
+  <PublicServiceList
+    services={data.services}
+    pagination={data.servicePagination}
+    workspaceSlug={data.workspace.slug}
+  />
   <footer>
     <span
       >{data.stale ? "Snapshot captured" : "Updated"}

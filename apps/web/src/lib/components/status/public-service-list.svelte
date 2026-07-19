@@ -11,9 +11,11 @@
   let {
     services,
     pagination,
+    workspaceSlug,
   }: {
     services: PublicStatusView["services"];
     pagination: PublicStatusView["servicePagination"];
+    workspaceSlug: string;
   } = $props();
 
   function paginationHref(value: number): string {
@@ -39,7 +41,9 @@
         <article class="service">
           <div class="service-line">
             <div class="identity">
-              <strong>{service.name}</strong>
+              <a href={`/status/${workspaceSlug}/services/${service.slug}`}
+                ><strong>{service.name}</strong></a
+              >
               {#if service.description}<span>{service.description}</span>{/if}
             </div>
             <div class="service-metrics">
@@ -132,6 +136,15 @@
 
   .identity strong {
     font-size: 13px;
+  }
+
+  .identity a {
+    color: var(--text);
+    text-decoration: none;
+  }
+
+  .identity a:hover {
+    color: var(--accent);
   }
 
   .identity span {

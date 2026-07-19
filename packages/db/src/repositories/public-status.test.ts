@@ -152,6 +152,7 @@ describe("public status projection", () => {
     const projected = projectPublicStatusMachine({
       machine: {
         id: "machine-internal-id",
+        public_slug: "public-machine-slug",
         telemetry_pk: 9,
         name: "Edge node",
         description: "Public edge capacity",
@@ -206,6 +207,7 @@ describe("public status projection", () => {
     });
 
     expect(projected.name).toBe("Edge node");
+    expect(projected.slug).toBe("public-machine-slug");
     expect(projected.containers).toEqual([
       {
         name: "web",

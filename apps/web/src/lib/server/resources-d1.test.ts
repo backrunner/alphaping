@@ -102,6 +102,7 @@ beforeEach(async () => {
         id TEXT PRIMARY KEY,
         telemetry_pk INTEGER NOT NULL,
         workspace_id TEXT NOT NULL,
+        public_slug TEXT NOT NULL,
         name TEXT NOT NULL,
         description TEXT NOT NULL,
         expected_host TEXT,
@@ -160,7 +161,7 @@ beforeEach(async () => {
     ),
     database.prepare(
       `INSERT INTO machines VALUES
-          ('machine-1', 1, 'workspace-1', 'edge-01', 'Initial', NULL, '{}',
+          ('machine-1', 1, 'workspace-1', 'public-edge-01', 'edge-01', 'Initial', NULL, '{}',
            15, 120, 300, 1, NULL, 1, 1, 1, NULL)`,
     ),
     database.prepare(`INSERT INTO memberships VALUES ('workspace-1', 'user-1', 'admin', 'active')`),

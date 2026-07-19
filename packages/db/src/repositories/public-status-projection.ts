@@ -5,6 +5,7 @@ import type { MonitorState, ServiceTimelineBucket } from "./service-models.js";
 
 export interface PublicMachineRow {
   id: string;
+  public_slug: string;
   telemetry_pk: number;
   name: string;
   description: string;
@@ -34,6 +35,7 @@ export interface PublicContainerRow {
 }
 
 export interface PublicStatusMachine {
+  slug: string;
   name: string;
   description: string;
   state: MachineState;
@@ -124,6 +126,7 @@ export function projectPublicStatusMachine(input: {
     (input.inventory?.containers ?? []).map((container) => [container.id, container]),
   );
   return {
+    slug: input.machine.public_slug,
     name: input.machine.name,
     description: detailed ? input.machine.description : "",
     state: input.latest

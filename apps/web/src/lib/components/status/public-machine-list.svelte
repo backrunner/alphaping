@@ -5,7 +5,10 @@
   import StatusLabel from "$components/status/status-label.svelte";
   import { formatBytes, formatPercent, formatRate, formatRelativeTime } from "$lib/utils/format";
 
-  let { machines }: { machines: readonly PublicStatusMachine[] } = $props();
+  let {
+    machines,
+    workspaceSlug,
+  }: { machines: readonly PublicStatusMachine[]; workspaceSlug: string } = $props();
   const previewSize = 25;
   let expanded = $state(false);
   const visibleMachines = $derived(expanded ? machines : machines.slice(0, previewSize));
@@ -24,9 +27,9 @@
         <article>
           <div class="machine-main">
             <div class="machine-name">
-              <strong>{machine.name}</strong>{#if machine.description}<span
-                  >{machine.description}</span
-                >{/if}
+              <a href={`/status/${workspaceSlug}/machines/${machine.slug}`}
+                ><strong>{machine.name}</strong></a
+              >{#if machine.description}<span>{machine.description}</span>{/if}
             </div>
             <StatusLabel status={machine.state} />
             <span class="observed">{formatRelativeTime(machine.observedAt)}</span>

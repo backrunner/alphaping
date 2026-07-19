@@ -124,12 +124,193 @@ export interface PublicStatusPageOptions {
 export class PublicStatusNotFoundError extends Error {}
 export class PublicStatusDataError extends Error {}
 
+interface PublicMachineContextRow extends PublicMachineRow {
+  workspace_id: string;
+  workspace_name: string;
+  workspace_slug: string;
+  workspace_pk: number;
+  dashboard_name: string;
+}
+
+interface PublicServiceContextRow extends PublicServiceRow {
+  workspace_id: string;
+  workspace_name: string;
+  workspace_slug: string;
+  workspace_pk: number;
+  dashboard_name: string;
+}
+
+export interface PublicMachineStatusPage {
+  workspace: { name: string; slug: string };
+  dashboard: { name: string };
+  machine: PublicStatusMachine;
+  updatedAt: number | null;
+}
+
+export interface PublicServiceStatusPage {
+  workspace: { name: string; slug: string };
+  dashboard: { name: string };
+  service: PublicStatusService;
+  updatedAt: number | null;
+}
+
 function placeholders(length: number): string {
   return Array.from({ length }, () => "?").join(", ");
 }
 
 function compareText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
+}
+
+export async function loadPublicMachineStatusPage(
+  controlDb: D1Database,
+  telemetryDb: D1Database,
+  workspaceSlug: string,
+  machineSlug: string,
+  now = Date.now(),
+): Promise<PublicMachineStatusPage> {
+  const machine = await controlDb
+    .prepare(
+      `SELECT w.id AS workspace_id, w.name AS workspace_name, w.slug AS workspace_slug,
+              w.telemetry_pk AS workspace_pk, d.name AS dashboard_name,
+              m.id, m.public_slug, m.telemetry_pk, m.name, m.description, m.offline_after_seconds,
+              p.projection_profile
+       FROM workspaces w
+       JOIN dashboards d ON d.id = w.default_dashboard_id
+       JOIN dashboard_resources dr ON dr.dashboard_id = d.id AND dr.resource_type = 'machine'
+       JOIN machines m ON m.id = dr.resource_id AND m.workspace_id = w.id
+       JOIN resource_public_policies p
+         ON p.workspace_id = w.id AND p.resource_type = 'machine'
+        AND p.resource_id = m.id AND p.effect = 'allow'
+       WHERE w.slug = ? AND m.public_slug = ? AND w.deleted_at IS NULL AND d.deleted_at IS NULL
+         AND d.visibility = 'public' AND m.deleted_at IS NULL AND dr.public_override != 'deny'
+       LIMIT 1`,
+    )
+    .bind(workspaceSlug, machineSlug)
+    .first<PublicMachineContextRow>();
+  if (!machine) throw new PublicStatusNotFoundError();
+
+  const [latest, publicContainers] = await Promise.all([
+    telemetryDb
+      .prepare(
+        `SELECT machine_pk, observed_at, received_at, state, cpu_permille,
+                memory_used_bytes, memory_total_bytes, storage_used_bytes,
+                storage_total_bytes, network_rx_bps, network_tx_bps,
+                container_inventory_json
+         FROM machine_latest WHERE workspace_pk = ? AND machine_pk = ?`,
+      )
+      .bind(machine.workspace_pk, machine.telemetry_pk)
+      .first<PublicMachineLatestRow>(),
+    controlDb
+      .prepare(
+        `SELECT c.id, c.machine_id, p.projection_profile
+         FROM containers c JOIN resource_public_policies p
+           ON p.workspace_id = c.workspace_id AND p.resource_type = 'container'
+          AND p.resource_id = c.id AND p.effect = 'allow'
+         WHERE c.workspace_id = ? AND c.machine_id = ? AND c.deleted_at IS NULL
+         ORDER BY c.name, c.id LIMIT 100`,
+      )
+      .bind(machine.workspace_id, machine.id)
+      .all<PublicContainerRow>(),
+  ]);
+  const projected = projectPublicStatusMachine({
+    machine,
+    latest: latest ?? undefined,
+    inventory: parseContainerInventory(latest?.container_inventory_json ?? null),
+    publicContainers: publicContainers.results,
+    now,
+  });
+  return {
+    workspace: { name: machine.workspace_name, slug: machine.workspace_slug },
+    dashboard: { name: machine.dashboard_name },
+    machine: projected,
+    updatedAt: projected.observedAt,
+  };
+}
+
+export async function loadPublicServiceStatusPage(
+  controlDb: D1Database,
+  telemetryDb: D1Database,
+  workspaceSlug: string,
+  serviceSlug: string,
+  now = Date.now(),
+): Promise<PublicServiceStatusPage> {
+  const service = await controlDb
+    .prepare(
+      `SELECT w.id AS workspace_id, w.name AS workspace_name, w.slug AS workspace_slug,
+              w.telemetry_pk AS workspace_pk, d.name AS dashboard_name,
+              s.id, s.telemetry_pk, s.name, s.slug, s.description, p.projection_profile
+       FROM workspaces w
+       JOIN dashboards d ON d.id = w.default_dashboard_id
+       JOIN dashboard_resources dr ON dr.dashboard_id = d.id AND dr.resource_type = 'service'
+       JOIN services s ON s.id = dr.resource_id AND s.workspace_id = w.id
+       JOIN resource_public_policies p
+         ON p.workspace_id = w.id AND p.resource_type = 'service'
+        AND p.resource_id = s.id AND p.effect = 'allow'
+       WHERE w.slug = ? AND (s.slug = ? OR (s.slug IS NULL AND s.id = ?))
+         AND w.deleted_at IS NULL AND d.deleted_at IS NULL AND d.visibility = 'public'
+         AND s.deleted_at IS NULL AND dr.public_override != 'deny'
+       LIMIT 1`,
+    )
+    .bind(workspaceSlug, serviceSlug, serviceSlug)
+    .first<PublicServiceContextRow>();
+  if (!service) throw new PublicStatusNotFoundError();
+
+  const checks = await controlDb
+    .prepare(
+      `SELECT telemetry_pk, service_id FROM check_configs
+       WHERE workspace_id = ? AND service_id = ? AND enabled = 1
+       ORDER BY telemetry_pk LIMIT 1001`,
+    )
+    .bind(service.workspace_id, service.id)
+    .all<CheckIdentityRow>();
+  if (checks.results.length > 1_000) throw new PublicStatusDataError();
+  const checkPks = checks.results.map((check) => check.telemetry_pk);
+  const since = now - 24 * 60 * 60_000;
+  const [latest, latestChecks, buckets] = await Promise.all([
+    telemetryDb
+      .prepare(
+        `SELECT service_pk, state, last_transition_at FROM service_latest
+         WHERE workspace_pk = ? AND service_pk = ?`,
+      )
+      .bind(service.workspace_pk, service.telemetry_pk)
+      .first<PublicServiceLatestRow>(),
+    queryInBatches<CheckLatestRow, number>(telemetryDb, checkPks, (batch) =>
+      telemetryDb
+        .prepare(
+          `SELECT check_pk, observed_at FROM check_latest
+           WHERE workspace_pk = ? AND check_pk IN (${placeholders(batch.length)})`,
+        )
+        .bind(service.workspace_pk, ...batch),
+    ),
+    telemetryDb
+      .prepare(
+        `SELECT resource_pk, bucket_start, state, availability_permille,
+                latency_avg_ms, summary_code
+         FROM status_buckets WHERE workspace_pk = ? AND resource_type = 2
+           AND resource_pk = ? AND bucket_seconds = 300 AND bucket_start >= ?
+         ORDER BY bucket_start LIMIT 288`,
+      )
+      .bind(service.workspace_pk, service.telemetry_pk, since)
+      .all<PublicStatusBucketRow>(),
+  ]);
+  const lastCheckedAt = latestChecks.reduce(
+    (latestAt, check) => Math.max(latestAt, check.observed_at),
+    0,
+  );
+  const projected = projectPublicStatusService({
+    service,
+    latest: latest ?? undefined,
+    lastCheckedAt: lastCheckedAt === 0 ? null : lastCheckedAt,
+    buckets: buckets.results,
+    now,
+  });
+  return {
+    workspace: { name: service.workspace_name, slug: service.workspace_slug },
+    dashboard: { name: service.dashboard_name },
+    service: projected,
+    updatedAt: projected.lastCheckedAt,
+  };
 }
 
 export function buildPublicStatusServicePage<T>(
@@ -190,7 +371,7 @@ export async function loadPublicStatusPage(
   const machines = (
     await controlDb
       .prepare(
-        `SELECT m.id, m.telemetry_pk, m.name, m.description, m.offline_after_seconds,
+        `SELECT m.id, m.public_slug, m.telemetry_pk, m.name, m.description, m.offline_after_seconds,
                 p.projection_profile
          FROM dashboard_resources dr
          JOIN machines m ON m.id = dr.resource_id AND m.workspace_id = ? AND m.deleted_at IS NULL

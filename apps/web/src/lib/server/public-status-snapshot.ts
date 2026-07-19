@@ -65,6 +65,7 @@ function boundedArray<T>(
 
 function sanitizeMachine(value: unknown): PublicStatusPage["machines"][number] | null {
   if (!isRecord(value)) return null;
+  const slug = boundedString(value.slug, 200, false);
   const name = boundedString(value.name, 200, false);
   const description = boundedString(value.description, 2_000);
   const observedAt = nullableInteger(value.observedAt);
@@ -100,6 +101,7 @@ function sanitizeMachine(value: unknown): PublicStatusPage["machines"][number] |
     };
   });
   if (
+    slug === null ||
     name === null ||
     description === null ||
     typeof value.state !== "string" ||
@@ -117,6 +119,7 @@ function sanitizeMachine(value: unknown): PublicStatusPage["machines"][number] |
     return null;
   }
   return {
+    slug,
     name,
     description,
     state: value.state as PublicStatusPage["machines"][number]["state"],

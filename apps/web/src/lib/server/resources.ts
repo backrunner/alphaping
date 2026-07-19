@@ -229,7 +229,8 @@ export async function createMachine(
   const now = Date.now();
   const expiresAt = now + 15 * 60_000;
   const machineId = crypto.randomUUID();
-  const authorization = finalAdminCondition(userId, "?15");
+  const publicSlug = crypto.randomUUID().replaceAll("-", "");
+  const authorization = finalAdminCondition(userId, "?16");
   const audit = await prepareAuditStatement(db, {
     workspaceId: access.workspaceId,
     actorUserId: userId,
@@ -245,17 +246,18 @@ export async function createMachine(
     db
       .prepare(
         `INSERT INTO machines
-          (id, telemetry_pk, workspace_id, name, description, expected_host, labels_json,
+          (id, telemetry_pk, workspace_id, public_slug, name, description, expected_host, labels_json,
            sampling_interval_seconds, report_interval_seconds, offline_after_seconds,
            container_monitoring_enabled, maintenance_until, desired_config_revision,
            created_at, updated_at)
-         SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?
+         SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?
          WHERE ${authorization.sql}`,
       )
       .bind(
         machineId,
         telemetryPk,
         access.workspaceId,
+        publicSlug,
         configuration.name,
         configuration.description,
         configuration.expectedHost,

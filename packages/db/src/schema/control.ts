@@ -181,6 +181,7 @@ export const machines = sqliteTable(
     id: text("id").primaryKey(),
     telemetryPk: integer("telemetry_pk").notNull(),
     workspaceId: text("workspace_id").notNull(),
+    publicSlug: text("public_slug").notNull(),
     name: text("name").notNull(),
     expectedHost: text("expected_host"),
     samplingIntervalSeconds: integer("sampling_interval_seconds").notNull().default(10),
@@ -197,7 +198,10 @@ export const machines = sqliteTable(
     purgeStartedAt: integer("purge_started_at"),
     purgeAgentCursor: text("purge_agent_cursor").notNull().default(""),
   },
-  (table) => [uniqueIndex("machines_telemetry_pk_uq").on(table.telemetryPk)],
+  (table) => [
+    uniqueIndex("machines_telemetry_pk_uq").on(table.telemetryPk),
+    uniqueIndex("machines_workspace_public_slug_uq").on(table.workspaceId, table.publicSlug),
+  ],
 );
 
 export const agents = sqliteTable(
