@@ -2,6 +2,8 @@ import { env, runInDurableObject, SELF } from "cloudflare:test";
 import { signViewerLiveTicket } from "@alphaping/contracts";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { liveConnectionAvailable } from "./live-hub.js";
+
 const SECRET = "0123456789abcdef0123456789abcdef";
 const WORKSPACE = "workspace-live-test";
 const SESSION = Uint8Array.from({ length: 16 }, (_, index) => index + 1);
@@ -165,6 +167,14 @@ afterEach(() => {
 });
 
 describe("LiveHub", () => {
+  it("keeps live connection admission bounded", () => {
+    expect(liveConnectionAvailable(0, 4)).toBe(true);
+    expect(liveConnectionAvailable(3, 4)).toBe(true);
+    expect(liveConnectionAvailable(4, 4)).toBe(false);
+    expect(liveConnectionAvailable(-1, 4)).toBe(false);
+    expect(liveConnectionAvailable(Number.POSITIVE_INFINITY, 4)).toBe(false);
+  });
+
   it("isolates topics, decrypts frames, and rejects replay without storage writes", async () => {
     const agent = await connect(await agentTicket(7));
     const firstDemand = JSON.parse(String(await nextMessage(agent))) as { active: boolean };

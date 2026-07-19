@@ -37,6 +37,14 @@ interface SessionSequenceState {
 const DEMAND_TTL_MS = 30_000;
 const MAX_LIVE_SEQUENCE = 1_000_000;
 const MAX_SEQUENCE_JUMP = 1_024;
+const MAX_AGENT_CONNECTIONS_PER_SESSION = 2;
+const MAX_VIEWER_CONNECTIONS_PER_TOPIC = 4;
+
+export function liveConnectionAvailable(activeConnections: number, limit: number): boolean {
+  return (
+    Number.isSafeInteger(activeConnections) && activeConnections >= 0 && activeConnections < limit
+  );
+}
 
 function attachment(socket: WebSocket): SocketAttachment | null {
   const value = socket.deserializeAttachment() as unknown;
@@ -105,6 +113,19 @@ function topicMachinePk(topic: string): number | null {
 
 export class LiveHub extends DurableObject<Env> {
   private readonly sequenceStates = new Map<string, SessionSequenceState>();
+
+  private activeConnections(tag: string, role: SocketAttachment["role"], now: number): number {
+    let active = 0;
+    for (const socket of this.ctx.getWebSockets(tag)) {
+      const current = attachment(socket);
+      if (!current || current.expiresAt <= now) {
+        socket.close(1008, "Ticket expired");
+        continue;
+      }
+      if (current.role === role) active += 1;
+    }
+    return active;
+  }
 
   private hasViewer(topic: string, excluded?: WebSocket): boolean {
     const now = Date.now();
@@ -203,11 +224,31 @@ export class LiveHub extends DurableObject<Env> {
       };
     }
 
+    const connectionTag =
+      socketAttachment.role === "agent"
+        ? `session:${socketAttachment.sessionId}`
+        : `viewer:${socketAttachment.subjectId}:${socketAttachment.topics[0]}`;
+    const connectionLimit =
+      socketAttachment.role === "agent"
+        ? MAX_AGENT_CONNECTIONS_PER_SESSION
+        : MAX_VIEWER_CONNECTIONS_PER_TOPIC;
+    if (
+      !liveConnectionAvailable(
+        this.activeConnections(connectionTag, socketAttachment.role, Date.now()),
+        connectionLimit,
+      )
+    ) {
+      return new Response("Connection limit reached", {
+        status: 429,
+        headers: { "retry-after": "5" },
+      });
+    }
+
     const pair = new WebSocketPair();
     const client = pair[0];
     const server = pair[1];
     const tags = [role, `topic:${topics[0]}`];
-    if (socketAttachment.role === "agent") tags.push(`session:${socketAttachment.sessionId}`);
+    tags.push(connectionTag);
     this.ctx.acceptWebSocket(server, tags);
     server.serializeAttachment(socketAttachment);
     this.sendDemand(topics[0]);
