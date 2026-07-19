@@ -21,15 +21,22 @@
     };
   } = $props();
 
-  function actionHref(action: string): string {
+  function resourcePageParams(): SvelteURLSearchParams {
     const params = new SvelteURLSearchParams(page.url.searchParams);
-    for (const key of params.keys()) if (key.startsWith("/")) params.delete(key);
+    for (const key of [...params.keys()]) {
+      if (key !== "resourceCursor" && key !== "resourceDirection") params.delete(key);
+    }
+    return params;
+  }
+
+  function actionHref(action: string): string {
+    const params = resourcePageParams();
     const query = params.toString();
     return `?/${action}${query ? `&${query}` : ""}`;
   }
 
   function paginationHref(cursor: string, direction: "after" | "before"): string {
-    const params = new SvelteURLSearchParams(page.url.searchParams);
+    const params = resourcePageParams();
     params.set("resourceCursor", cursor);
     params.set("resourceDirection", direction);
     const query = params.toString();
