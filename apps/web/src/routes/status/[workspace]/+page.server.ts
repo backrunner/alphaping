@@ -1,4 +1,8 @@
-import { loadPublicStatusPage, PublicStatusNotFoundError } from "@alphaping/db";
+import {
+  loadPublicStatusPage,
+  PublicStatusDataError,
+  PublicStatusNotFoundError,
+} from "@alphaping/db";
 import { error } from "@sveltejs/kit";
 
 import {
@@ -63,6 +67,9 @@ export const load: PageServerLoad = async ({ params, platform, setHeaders, url }
         "x-robots-tag": "noindex",
       });
       return { ...snapshot.page, stale: true, snapshotAt: snapshot.cachedAt };
+    }
+    if (cause instanceof PublicStatusDataError) {
+      throw error(503, "Status data exceeds the supported limit");
     }
     throw cause;
   }

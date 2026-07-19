@@ -1,4 +1,8 @@
-import { IncidentCenterNotFoundError, loadIncidentCenter } from "@alphaping/db";
+import {
+  IncidentCenterDataError,
+  IncidentCenterNotFoundError,
+  loadIncidentCenter,
+} from "@alphaping/db";
 import { error, fail, isHttpError, redirect } from "@sveltejs/kit";
 
 import {
@@ -34,6 +38,9 @@ export const load: PageServerLoad = async ({ locals, params, platform }) => {
     );
   } catch (cause) {
     if (cause instanceof IncidentCenterNotFoundError) throw error(404, "Workspace not found");
+    if (cause instanceof IncidentCenterDataError) {
+      throw error(503, "Incident data exceeds the supported limit");
+    }
     throw cause;
   }
 };

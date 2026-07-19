@@ -10,12 +10,13 @@ import {
   type PublicStatusBucketRow,
   type PublicStatusService,
 } from "./public-status-projection.js";
-import { queryInBatches } from "./d1-query-batches.js";
+import { queryEachInBatches, queryInBatches } from "./d1-query-batches.js";
 import { loadLatestIncidentUpdates } from "./incident-updates.js";
 import { parseContainerInventory } from "./machines.js";
 
 const PUBLIC_INCIDENT_UPDATES_PER_INCIDENT_LIMIT = 20;
 const PUBLIC_INCIDENT_UPDATES_GLOBAL_LIMIT = 200;
+const INCIDENT_SERVICES_LIMIT = 20;
 
 export {
   projectPublicStatusMachine,
@@ -121,6 +122,7 @@ export interface PublicStatusPageOptions {
 }
 
 export class PublicStatusNotFoundError extends Error {}
+export class PublicStatusDataError extends Error {}
 
 function placeholders(length: number): string {
   return Array.from({ length }, () => "?").join(", ");
@@ -366,15 +368,17 @@ export async function loadPublicStatusPage(
   const incidentIds = incidentRows.map((incident) => incident.id);
   const [incidentResources, incidentUpdates] =
     incidentIds.length === 0
-      ? [{ results: [] as IncidentResourceRow[] }, []]
+      ? [[], []]
       : await Promise.all([
-          controlDb
-            .prepare(
-              `SELECT incident_id, resource_id, impact FROM incident_resources
-           WHERE resource_type = 'service' AND incident_id IN (${placeholders(incidentIds.length)})`,
-            )
-            .bind(...incidentIds)
-            .all<IncidentResourceRow>(),
+          queryEachInBatches<IncidentResourceRow, string>(controlDb, incidentIds, (incidentId) =>
+            controlDb
+              .prepare(
+                `SELECT incident_id, resource_id, impact FROM incident_resources
+                   WHERE resource_type = 'service' AND incident_id = ?
+                   ORDER BY resource_id LIMIT ${INCIDENT_SERVICES_LIMIT + 1}`,
+              )
+              .bind(incidentId),
+          ),
           loadLatestIncidentUpdates(
             controlDb,
             incidentIds,
@@ -382,6 +386,12 @@ export async function loadPublicStatusPage(
             PUBLIC_INCIDENT_UPDATES_GLOBAL_LIMIT,
           ),
         ]);
+  const incidentResourceCounts = new Map<string, number>();
+  for (const resource of incidentResources) {
+    const count = (incidentResourceCounts.get(resource.incident_id) ?? 0) + 1;
+    if (count > INCIDENT_SERVICES_LIMIT) throw new PublicStatusDataError();
+    incidentResourceCounts.set(resource.incident_id, count);
+  }
   const serviceNameById = new Map(services.map((service) => [service.id, service.name]));
   const announcements = (
     await controlDb
@@ -402,7 +412,7 @@ export async function loadPublicStatusPage(
     state: incident.state,
     startsAt: incident.starts_at,
     resolvedAt: incident.resolved_at,
-    affectedServices: incidentResources.results
+    affectedServices: incidentResources
       .filter(
         (resource) =>
           resource.incident_id === incident.id && serviceNameById.has(resource.resource_id),

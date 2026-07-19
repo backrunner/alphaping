@@ -1,6 +1,6 @@
 import type { WorkspaceRole } from "@alphaping/authz";
 
-import { queryInBatches } from "./d1-query-batches.js";
+import { queryEachInBatches } from "./d1-query-batches.js";
 import { loadLatestIncidentUpdates } from "./incident-updates.js";
 import {
   incidentManageCondition,
@@ -10,6 +10,7 @@ import {
 
 const INCIDENT_UPDATES_PER_INCIDENT_LIMIT = 50;
 const INCIDENT_UPDATES_GLOBAL_LIMIT = 500;
+const INCIDENT_SERVICES_LIMIT = 20;
 
 interface WorkspaceRow {
   id: string;
@@ -81,10 +82,7 @@ export interface IncidentCenter {
 }
 
 export class IncidentCenterNotFoundError extends Error {}
-
-function placeholders(length: number): string {
-  return Array.from({ length }, () => "?").join(", ");
-}
+export class IncidentCenterDataError extends Error {}
 
 export async function loadIncidentCenter(
   db: D1Database,
@@ -139,13 +137,14 @@ export async function loadIncidentCenter(
   ).results;
   const incidentIds = incidents.map((incident) => incident.id);
   const [resources, updates] = await Promise.all([
-    queryInBatches<IncidentResourceRow, string>(db, incidentIds, (batch) =>
+    queryEachInBatches<IncidentResourceRow, string>(db, incidentIds, (incidentId) =>
       db
         .prepare(
           `SELECT incident_id, resource_id, impact FROM incident_resources
-           WHERE resource_type = 'service' AND incident_id IN (${placeholders(batch.length)})`,
+           WHERE resource_type = 'service' AND incident_id = ?
+           ORDER BY resource_id LIMIT ${INCIDENT_SERVICES_LIMIT + 1}`,
         )
-        .bind(...batch),
+        .bind(incidentId),
     ),
     loadLatestIncidentUpdates(
       db,
@@ -154,6 +153,12 @@ export async function loadIncidentCenter(
       INCIDENT_UPDATES_GLOBAL_LIMIT,
     ),
   ]);
+  const resourceCounts = new Map<string, number>();
+  for (const resource of resources) {
+    const count = (resourceCounts.get(resource.incident_id) ?? 0) + 1;
+    if (count > INCIDENT_SERVICES_LIMIT) throw new IncidentCenterDataError();
+    resourceCounts.set(resource.incident_id, count);
+  }
   const visibleIncidents = incidents.map((incident) => {
     const incidentResources = resources.filter((resource) => resource.incident_id === incident.id);
     const visibleResources = incidentResources.filter((resource) =>

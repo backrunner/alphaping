@@ -1,7 +1,7 @@
 import { Miniflare } from "miniflare";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { loadIncidentCenter } from "./incidents.js";
+import { IncidentCenterDataError, loadIncidentCenter } from "./incidents.js";
 
 const now = 1_752_580_800_000;
 
@@ -285,5 +285,29 @@ describe("incident center collection bounds", () => {
     expect(updateIds).toContain("update-600");
     expect(updateIds).not.toContain("update-100");
     expect(center.incidents.every((incident) => incident.updates.length === 5)).toBe(true);
+  });
+
+  it("fails explicitly after reading the twenty-first service for an incident", async () => {
+    await database.batch([
+      database.prepare(
+        `INSERT INTO incidents
+          (id, workspace_id, title, summary, severity, state, starts_at,
+           resolved_at, created_at, deleted_at)
+         VALUES ('incident-overflow', 'workspace-1', 'Overflow', 'Invalid relations',
+                 'minor', 'monitoring', 1, NULL, 1, NULL)`,
+      ),
+      database.prepare(
+        `WITH RECURSIVE sequence(value) AS (
+           VALUES (1) UNION ALL SELECT value + 1 FROM sequence WHERE value < 21
+         )
+         INSERT INTO incident_resources (incident_id, resource_type, resource_id, impact)
+         SELECT 'incident-overflow', 'service', printf('service-%03d', value), 'degraded'
+         FROM sequence`,
+      ),
+    ]);
+
+    await expect(loadIncidentCenter(database, "operations", "admin-1", now)).rejects.toBeInstanceOf(
+      IncidentCenterDataError,
+    );
   });
 });
