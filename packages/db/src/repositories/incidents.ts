@@ -7,6 +7,10 @@ import {
 } from "@alphaping/authz";
 
 import { queryInBatches } from "./d1-query-batches.js";
+import { loadLatestIncidentUpdates } from "./incident-updates.js";
+
+const INCIDENT_UPDATES_PER_INCIDENT_LIMIT = 50;
+const INCIDENT_UPDATES_GLOBAL_LIMIT = 500;
 
 interface WorkspaceRow {
   id: string;
@@ -42,15 +46,6 @@ interface IncidentResourceRow {
   incident_id: string;
   resource_id: string;
   impact: "degraded" | "down";
-}
-
-interface IncidentUpdateRow {
-  id: string;
-  incident_id: string;
-  state: string;
-  body: string;
-  published_at: number | null;
-  created_at: number;
 }
 
 interface AnnouncementRow {
@@ -153,7 +148,7 @@ export async function loadIncidentCenter(
       .all<IncidentRow>()
   ).results;
   const incidentIds = incidents.map((incident) => incident.id);
-  const [resources, updateCandidates] = await Promise.all([
+  const [resources, updates] = await Promise.all([
     queryInBatches<IncidentResourceRow, string>(db, incidentIds, (batch) =>
       db
         .prepare(
@@ -162,23 +157,13 @@ export async function loadIncidentCenter(
         )
         .bind(...batch),
     ),
-    queryInBatches<IncidentUpdateRow, string>(db, incidentIds, (batch) =>
-      db
-        .prepare(
-          `SELECT id, incident_id, state, body, published_at, created_at
-           FROM incident_updates WHERE incident_id IN (${placeholders(batch.length)})
-           ORDER BY COALESCE(published_at, created_at) DESC LIMIT 500`,
-        )
-        .bind(...batch),
+    loadLatestIncidentUpdates(
+      db,
+      incidentIds,
+      INCIDENT_UPDATES_PER_INCIDENT_LIMIT,
+      INCIDENT_UPDATES_GLOBAL_LIMIT,
     ),
   ]);
-  const updates = updateCandidates
-    .sort(
-      (left, right) =>
-        (right.published_at ?? right.created_at) - (left.published_at ?? left.created_at) ||
-        left.id.localeCompare(right.id),
-    )
-    .slice(0, 500);
   const visibleIncidents = incidents.flatMap((incident) => {
     const incidentResources = resources.filter((resource) => resource.incident_id === incident.id);
     const visibleResources = incidentResources.filter((resource) =>

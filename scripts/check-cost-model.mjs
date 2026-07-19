@@ -27,7 +27,7 @@ const PUBLIC_STATUS_MAX_SERVICES = 200;
 const PUBLIC_STATUS_CONTAINER_QUERY_LIMIT = 500;
 const PUBLIC_STATUS_INCIDENT_LIMIT = 20;
 const PUBLIC_STATUS_INCIDENT_SERVICE_LIMIT = 20;
-const PUBLIC_STATUS_INCIDENT_UPDATE_LIMIT = 200;
+const PUBLIC_STATUS_INCIDENT_UPDATES_PER_INCIDENT_LIMIT = 20;
 const PUBLIC_STATUS_ANNOUNCEMENT_LIMIT = 20;
 const PUBLIC_STATUS_BUCKETS_PER_SERVICE = (24 * 60) / 5 + 1;
 const D1_IN_BATCH_SIZE = 90;
@@ -118,7 +118,7 @@ function publicStatusLedger(
     visibleServices * 4 +
     incidentQueryBatches * PUBLIC_STATUS_INCIDENT_LIMIT +
     incidentRows * Math.min(PUBLIC_STATUS_INCIDENT_SERVICE_LIMIT, visibleServices) +
-    (incidentRows > 0 ? PUBLIC_STATUS_INCIDENT_UPDATE_LIMIT : 0) +
+    incidentRows * PUBLIC_STATUS_INCIDENT_UPDATES_PER_INCIDENT_LIMIT +
     PUBLIC_STATUS_ANNOUNCEMENT_LIMIT;
   const actualPageCount = Math.max(1, Math.ceil(visibleServices / PUBLIC_STATUS_SERVICE_PAGE_SIZE));
   let timelineRowsPerRefreshWindow = 0;
@@ -290,10 +290,10 @@ if (baseline.workersRequests !== 5_660_194 || baseline.durableObjectRequests !==
 if (
   baseline.controlPlaneReads !== 72_680_000 ||
   baseline.publicStatusRouteCacheKeys !== 8 ||
-  baseline.publicStatusRowsPerRefreshWindow !== 72_688 ||
+  baseline.publicStatusRowsPerRefreshWindow !== 74_288 ||
   baseline.publicStatusLiveProjections !== 691_200 ||
-  baseline.publicStatusReadRows !== 6_280_243_200 ||
-  baseline.modeledReads !== 6_352_923_200
+  baseline.publicStatusReadRows !== 6_418_483_200 ||
+  baseline.modeledReads !== 6_491_163_200
 ) {
   throw new Error(`D1 read ledger drifted: ${baseline.modeledReads}`);
 }
@@ -301,10 +301,10 @@ const regionalPublicStatus = estimateScale(100, 100, {
   publicStatusActiveEdgeLocations: 5,
 });
 if (
-  regionalPublicStatus.publicStatusReadRows !== 31_401_216_000 ||
+  regionalPublicStatus.publicStatusReadRows !== 32_092_416_000 ||
   regionalPublicStatus.workersRequests !== 8_424_994 ||
-  regionalPublicStatus.platformOverage < 6.47 ||
-  regionalPublicStatus.platformOverage > 6.48
+  regionalPublicStatus.platformOverage < 7.16 ||
+  regionalPublicStatus.platformOverage > 7.17
 ) {
   throw new Error("regional public status cost ledger drifted");
 }
@@ -312,9 +312,9 @@ const publicStatusRefreshBurst = estimateScale(100, 100, {
   publicStatusRefreshesPerWindow: 2,
 });
 if (
-  publicStatusRefreshBurst.publicStatusReadRows !== 12_560_486_400 ||
+  publicStatusRefreshBurst.publicStatusReadRows !== 12_836_966_400 ||
   publicStatusRefreshBurst.publicStatusWorkerRequests !== 1_382_400 ||
-  publicStatusRefreshBurst.modeledReads !== 12_633_166_400
+  publicStatusRefreshBurst.modeledReads !== 12_909_646_400
 ) {
   throw new Error("public status refresh burst ledger drifted");
 }

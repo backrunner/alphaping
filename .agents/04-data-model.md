@@ -412,6 +412,8 @@ Checks Worker 只在五分钟 block 闭合时写一次 service bucket。同一�
 
 追加式记录。修正内容通过新 update 或审计记录完成。
 
+`incident_id,COALESCE(published_at,created_at),id` 时间线索引支持按 incident 倒序读取。管理中心每个 incident 最多读取最新 50 条后全局合并 500 条；公开状态页每个 incident 最多读取 20 条后全局合并 200 条。历史记录仍完整保留，查询 loader 不再为全局排序扫描所选 incident 的全部 update。
+
 ### `announcements`
 
 - `id`, `workspace_id`, `title`, `body`, `severity`

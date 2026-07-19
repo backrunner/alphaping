@@ -82,6 +82,10 @@
         {
           "file": "0020_service_state_sync_schedule.sql",
           "sha256": "9f85581680ebebf919041b5a320726dc5fee5dc77d9e68249e4d154fc62f6ec9"
+        },
+        {
+          "file": "0021_incident_update_timeline.sql",
+          "sha256": "131eaaf61fb7de09d9faa3c97c746410e41dfba4a999909222951695033f847c"
         }
       ],
       "objects": [
@@ -186,6 +190,12 @@
           "name": "incident_resources_resource_idx",
           "table": "incident_resources",
           "sql": "CREATE INDEX incident_resources_resource_idx\n  ON incident_resources (resource_type, resource_id, incident_id)"
+        },
+        {
+          "type": "index",
+          "name": "incident_updates_projection_timeline_idx",
+          "table": "incident_updates",
+          "sql": "CREATE INDEX incident_updates_projection_timeline_idx\n  ON incident_updates (incident_id, COALESCE(published_at, created_at) DESC, id)"
         },
         {
           "type": "index",
@@ -626,6 +636,12 @@
           "name": "incident_resources_resource_idx",
           "table": "incident_resources",
           "sql": "CREATE INDEX incident_resources_resource_idx\n  ON incident_resources (resource_type, resource_id, incident_id)"
+        },
+        {
+          "type": "index",
+          "name": "incident_updates_projection_timeline_idx",
+          "table": "incident_updates",
+          "sql": "CREATE INDEX incident_updates_projection_timeline_idx\n  ON incident_updates (incident_id, COALESCE(published_at, created_at) DESC, id)"
         },
         {
           "type": "index",

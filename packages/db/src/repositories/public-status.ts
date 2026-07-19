@@ -11,7 +11,11 @@ import {
   type PublicStatusService,
 } from "./public-status-projection.js";
 import { queryInBatches } from "./d1-query-batches.js";
+import { loadLatestIncidentUpdates } from "./incident-updates.js";
 import { parseContainerInventory } from "./machines.js";
+
+const PUBLIC_INCIDENT_UPDATES_PER_INCIDENT_LIMIT = 20;
+const PUBLIC_INCIDENT_UPDATES_GLOBAL_LIMIT = 200;
 
 export {
   projectPublicStatusMachine,
@@ -57,15 +61,6 @@ interface IncidentResourceRow {
   incident_id: string;
   resource_id: string;
   impact: "degraded" | "down";
-}
-
-interface IncidentUpdateRow {
-  id: string;
-  incident_id: string;
-  state: string;
-  body: string;
-  published_at: number | null;
-  created_at: number;
 }
 
 interface AnnouncementRow {
@@ -371,7 +366,7 @@ export async function loadPublicStatusPage(
   const incidentIds = incidentRows.map((incident) => incident.id);
   const [incidentResources, incidentUpdates] =
     incidentIds.length === 0
-      ? [{ results: [] as IncidentResourceRow[] }, { results: [] as IncidentUpdateRow[] }]
+      ? [{ results: [] as IncidentResourceRow[] }, []]
       : await Promise.all([
           controlDb
             .prepare(
@@ -380,14 +375,12 @@ export async function loadPublicStatusPage(
             )
             .bind(...incidentIds)
             .all<IncidentResourceRow>(),
-          controlDb
-            .prepare(
-              `SELECT id, incident_id, state, body, published_at, created_at
-           FROM incident_updates WHERE incident_id IN (${placeholders(incidentIds.length)})
-           ORDER BY COALESCE(published_at, created_at) DESC LIMIT 200`,
-            )
-            .bind(...incidentIds)
-            .all<IncidentUpdateRow>(),
+          loadLatestIncidentUpdates(
+            controlDb,
+            incidentIds,
+            PUBLIC_INCIDENT_UPDATES_PER_INCIDENT_LIMIT,
+            PUBLIC_INCIDENT_UPDATES_GLOBAL_LIMIT,
+          ),
         ]);
   const serviceNameById = new Map(services.map((service) => [service.id, service.name]));
   const announcements = (
@@ -418,7 +411,7 @@ export async function loadPublicStatusPage(
         name: serviceNameById.get(resource.resource_id) ?? "Service",
         impact: resource.impact,
       })),
-    updates: incidentUpdates.results
+    updates: incidentUpdates
       .filter((update) => update.incident_id === incident.id)
       .map((update) => ({
         id: update.id,

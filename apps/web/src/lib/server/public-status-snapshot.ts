@@ -204,7 +204,7 @@ function sanitizeIncident(value: unknown): PublicStatusPage["incidents"][number]
     if (name === null || (impact !== "degraded" && impact !== "down")) return null;
     return { name, impact } as const;
   });
-  const updates = boundedArray(value.updates, 200, (item) => {
+  const updates = boundedArray(value.updates, 20, (item) => {
     if (!isRecord(item)) return null;
     const updateId = boundedString(item.id, 128, false);
     const state = boundedString(item.state, 64, false);
