@@ -125,13 +125,19 @@ const MAX_AGENT_CONFIG_BYTES = 44 * 1024;
 const AGENT_CAPACITY_CONDITION = `
   AND (
     ? = 0 OR (
-      (SELECT COUNT(*) FROM check_configs capacity
-       WHERE capacity.executor_agent_id = ? AND capacity.enabled = 1
-         AND (? IS NULL OR capacity.id != ?)) < ${MAX_AGENT_CHECKS}
+      (SELECT COUNT(*) FROM (
+         SELECT 1 FROM check_configs capacity
+         WHERE capacity.executor_agent_id = ? AND capacity.enabled = 1
+           AND (? IS NULL OR capacity.id != ?)
+         LIMIT ${MAX_AGENT_CHECKS}
+       )) < ${MAX_AGENT_CHECKS}
       AND
-      (SELECT COALESCE(SUM(capacity.config_bytes), 0) FROM check_configs capacity
-       WHERE capacity.executor_agent_id = ? AND capacity.enabled = 1
-         AND (? IS NULL OR capacity.id != ?)) + ? <= ${MAX_AGENT_CONFIG_BYTES}
+      (SELECT COALESCE(SUM(config_bytes), 0) FROM (
+         SELECT capacity.config_bytes FROM check_configs capacity
+         WHERE capacity.executor_agent_id = ? AND capacity.enabled = 1
+           AND (? IS NULL OR capacity.id != ?)
+         LIMIT ${MAX_AGENT_CHECKS}
+       )) + ? <= ${MAX_AGENT_CONFIG_BYTES}
     )
   )`;
 
@@ -230,8 +236,11 @@ async function assertAgentCapacity(db: D1Database, input: AgentCapacityInput): P
   const capacity = await db
     .prepare(
       `SELECT COUNT(*) AS probe_count, COALESCE(SUM(config_bytes), 0) AS config_bytes
-       FROM check_configs
-       WHERE executor_agent_id = ? AND enabled = 1 AND (? IS NULL OR id != ?)`,
+       FROM (
+         SELECT config_bytes FROM check_configs
+         WHERE executor_agent_id = ? AND enabled = 1 AND (? IS NULL OR id != ?)
+         LIMIT ${MAX_AGENT_CHECKS}
+       )`,
     )
     .bind(input.agentId, input.excludedCheckId, input.excludedCheckId)
     .first<{ probe_count: number; config_bytes: number }>();
@@ -307,10 +316,16 @@ export async function createServiceMonitor(
       ? await db
           .prepare(
             `SELECT a.id, a.machine_id,
-                    (SELECT COUNT(*) FROM check_configs c
-                     WHERE c.executor_agent_id = a.id AND c.enabled = 1) AS probe_count,
-                    (SELECT COALESCE(SUM(c.config_bytes), 0) FROM check_configs c
-                     WHERE c.executor_agent_id = a.id AND c.enabled = 1) AS config_bytes
+                    (SELECT COUNT(*) FROM (
+                       SELECT 1 FROM check_configs c
+                       WHERE c.executor_agent_id = a.id AND c.enabled = 1
+                       LIMIT ${MAX_AGENT_CHECKS}
+                     )) AS probe_count,
+                    (SELECT COALESCE(SUM(config_bytes), 0) FROM (
+                       SELECT c.config_bytes FROM check_configs c
+                       WHERE c.executor_agent_id = a.id AND c.enabled = 1
+                       LIMIT ${MAX_AGENT_CHECKS}
+                     )) AS config_bytes
              FROM agents a
              WHERE a.id = ? AND a.workspace_id = ? AND a.status = 'active'`,
           )
@@ -642,10 +657,16 @@ export async function addServiceCheck(
       ? await db
           .prepare(
             `SELECT a.id, a.machine_id,
-                    (SELECT COUNT(*) FROM check_configs c
-                     WHERE c.executor_agent_id = a.id AND c.enabled = 1) AS probe_count,
-                    (SELECT COALESCE(SUM(c.config_bytes), 0) FROM check_configs c
-                     WHERE c.executor_agent_id = a.id AND c.enabled = 1) AS config_bytes
+                    (SELECT COUNT(*) FROM (
+                       SELECT 1 FROM check_configs c
+                       WHERE c.executor_agent_id = a.id AND c.enabled = 1
+                       LIMIT ${MAX_AGENT_CHECKS}
+                     )) AS probe_count,
+                    (SELECT COALESCE(SUM(config_bytes), 0) FROM (
+                       SELECT c.config_bytes FROM check_configs c
+                       WHERE c.executor_agent_id = a.id AND c.enabled = 1
+                       LIMIT ${MAX_AGENT_CHECKS}
+                     )) AS config_bytes
              FROM agents a
              WHERE a.id = ? AND a.workspace_id = ? AND a.status = 'active'`,
           )
@@ -1327,12 +1348,12 @@ export async function updateServiceCheckPolicy(
   if (row.enabled === 1 && !input.enabled) {
     const remaining = await controlDb
       .prepare(
-        `SELECT COUNT(*) AS count FROM check_configs
-         WHERE service_id = ? AND workspace_id = ? AND enabled = 1 AND id != ?`,
+        `SELECT 1 AS remaining_check FROM check_configs
+         WHERE service_id = ? AND workspace_id = ? AND enabled = 1 AND id != ? LIMIT 1`,
       )
       .bind(serviceId, access.workspaceId, checkId)
-      .first<{ count: number }>();
-    if (!remaining || remaining.count === 0) {
+      .first<{ remaining_check: number }>();
+    if (!remaining) {
       throw error(409, "A service must keep at least one enabled check");
     }
   }
@@ -1535,7 +1556,7 @@ export async function deleteServiceCheck(
 ): Promise<void> {
   const access = await loadMonitoringAccess(controlDb, workspaceSlug, userId);
   requireResourceCapability(access, "service", serviceId, "manage");
-  const [row, count] = await Promise.all([
+  const [row, remaining] = await Promise.all([
     controlDb
       .prepare(
         `SELECT c.id, c.telemetry_pk, s.telemetry_pk AS service_telemetry_pk,
@@ -1553,14 +1574,14 @@ export async function deleteServiceCheck(
       .first<CheckPolicyRow>(),
     controlDb
       .prepare(
-        `SELECT COUNT(*) AS count FROM check_configs
-         WHERE service_id = ? AND workspace_id = ?`,
+        `SELECT 1 AS remaining_check FROM check_configs
+         WHERE service_id = ? AND workspace_id = ? LIMIT 1 OFFSET 1`,
       )
       .bind(serviceId, access.workspaceId)
-      .first<{ count: number }>(),
+      .first<{ remaining_check: number }>(),
   ]);
   if (!row) throw error(404, "Check not found");
-  if (!count || count.count <= 1) throw error(409, "A service must keep at least one check");
+  if (!remaining) throw error(409, "A service must keep at least one check");
   const now = Date.now();
   const agentMachineId = row.executor_kind === "agent" ? row.machine_id : null;
   const secretIds = referencedSecretIds(row.secret_refs_json);

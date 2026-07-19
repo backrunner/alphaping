@@ -134,7 +134,7 @@ afterEach(async () => {
   await miniflare.dispose();
 });
 
-function synchronizeAdministratorCounts(db: D1Database, expectedReads: number): D1Database {
+function synchronizeAdministratorGuardReads(db: D1Database, expectedReads: number): D1Database {
   let completedReads = 0;
   let releaseReads: (() => void) | undefined;
   const allReadsCompleted = new Promise<void>((resolve) => {
@@ -149,7 +149,7 @@ function synchronizeAdministratorCounts(db: D1Database, expectedReads: number): 
       }
       return (query: string) => {
         const statement = target.prepare(query);
-        if (!query.includes("SELECT COUNT(*) AS count FROM memberships")) return statement;
+        if (!query.includes("AS replacement_admin")) return statement;
         return new Proxy(statement, {
           get(statementTarget, statementProperty) {
             if (statementProperty !== "bind") {
@@ -198,7 +198,7 @@ function mutateBeforeBatch(db: D1Database, mutation: string): D1Database {
 
 describe("workspace administrator invariant", () => {
   it("prevents concurrent updates from removing every active administrator", async () => {
-    const synchronized = synchronizeAdministratorCounts(database, 2);
+    const synchronized = synchronizeAdministratorGuardReads(database, 2);
     const outcomes = await Promise.allSettled([
       updateWorkspaceMembership(synchronized, "operations", "admin-a", {
         memberId: "admin-b",

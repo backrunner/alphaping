@@ -277,6 +277,7 @@ beforeEach(async () => {
     telemetryDatabase.prepare(
       `CREATE TABLE check_latest (
         check_pk INTEGER PRIMARY KEY,
+        workspace_pk INTEGER NOT NULL,
         service_pk INTEGER NOT NULL,
         state TEXT NOT NULL,
         critical INTEGER NOT NULL,
@@ -387,7 +388,7 @@ async function assignCheckToAgent(checkId: string, enabled = true): Promise<void
     .run();
 }
 
-function synchronizeCheckCounts(db: D1Database, expectedReads: number): D1Database {
+function synchronizeCheckGuardReads(db: D1Database, expectedReads: number): D1Database {
   let completedReads = 0;
   let releaseReads: (() => void) | undefined;
   const allReadsCompleted = new Promise<void>((resolve) => {
@@ -402,7 +403,7 @@ function synchronizeCheckCounts(db: D1Database, expectedReads: number): D1Databa
       }
       return (query: string) => {
         const statement = target.prepare(query);
-        if (!query.includes("SELECT COUNT(*) AS count FROM check_configs")) return statement;
+        if (!query.includes("AS remaining_check")) return statement;
         return new Proxy(statement, {
           get(statementTarget, statementProperty) {
             if (statementProperty !== "bind") {
@@ -1241,7 +1242,7 @@ describe("service check invariants", () => {
 
   it("prevents concurrent policy updates from disabling every check", async () => {
     await seedServiceChecks();
-    const synchronized = synchronizeCheckCounts(database, 2);
+    const synchronized = synchronizeCheckGuardReads(database, 2);
     const policy = {
       enabled: false,
       intervalSeconds: 60,
@@ -1289,7 +1290,7 @@ describe("service check invariants", () => {
 
   it("prevents concurrent deletes from removing every check", async () => {
     await seedServiceChecks();
-    const synchronized = synchronizeCheckCounts(database, 2);
+    const synchronized = synchronizeCheckGuardReads(database, 2);
     const outcomes = await Promise.allSettled([
       deleteServiceCheck(
         synchronized,
@@ -1361,8 +1362,8 @@ describe("service telemetry synchronization", () => {
   it("increments a replaced central configuration and invalidates its old latest", async () => {
     await seedServiceChecks();
     await telemetryDatabase.batch([
-      telemetryDatabase.prepare("INSERT INTO check_latest VALUES (101, 10, 'down', 1, 1)"),
-      telemetryDatabase.prepare("INSERT INTO check_latest VALUES (102, 10, 'healthy', 1, 1)"),
+      telemetryDatabase.prepare("INSERT INTO check_latest VALUES (101, 1, 10, 'down', 1, 1)"),
+      telemetryDatabase.prepare("INSERT INTO check_latest VALUES (102, 1, 10, 'healthy', 1, 1)"),
       telemetryDatabase.prepare(
         "INSERT INTO service_latest VALUES (10, 1, 'down', 1, 'check_down', 1, 1)",
       ),
@@ -1406,8 +1407,8 @@ describe("service telemetry synchronization", () => {
   it("commits policy changes and retains a retry job when TELEMETRY_DB is unavailable", async () => {
     await seedServiceChecks();
     await telemetryDatabase.batch([
-      telemetryDatabase.prepare("INSERT INTO check_latest VALUES (101, 10, 'down', 1, 1)"),
-      telemetryDatabase.prepare("INSERT INTO check_latest VALUES (102, 10, 'healthy', 1, 1)"),
+      telemetryDatabase.prepare("INSERT INTO check_latest VALUES (101, 1, 10, 'down', 1, 1)"),
+      telemetryDatabase.prepare("INSERT INTO check_latest VALUES (102, 1, 10, 'healthy', 1, 1)"),
       telemetryDatabase.prepare(
         "INSERT INTO service_latest VALUES (10, 1, 'down', 1, 'check_down', 1, 1)",
       ),
@@ -1466,7 +1467,7 @@ describe("service telemetry synchronization", () => {
   it("persists maintenance synchronization with the control mutation", async () => {
     await seedServiceChecks();
     await telemetryDatabase
-      .prepare("INSERT INTO check_latest VALUES (101, 10, 'healthy', 1, 1)")
+      .prepare("INSERT INTO check_latest VALUES (101, 1, 10, 'healthy', 1, 1)")
       .run();
     const maintenanceUntil = Date.now() + 60 * 60_000;
 

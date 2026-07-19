@@ -292,14 +292,15 @@ export async function updateWorkspaceMembership(
     member.status === "active" &&
     (input.role !== "admin" || input.status !== "active");
   if (removesActiveAdmin) {
-    const administrators = await db
+    const replacement = await db
       .prepare(
-        `SELECT COUNT(*) AS count FROM memberships
-         WHERE workspace_id = ? AND role = 'admin' AND status = 'active'`,
+        `SELECT 1 AS replacement_admin FROM memberships
+         WHERE workspace_id = ? AND role = 'admin' AND status = 'active'
+         LIMIT 1 OFFSET 1`,
       )
       .bind(access.workspaceId)
-      .first<{ count: number }>();
-    if (!administrators || administrators.count <= 1) {
+      .first<{ replacement_admin: number }>();
+    if (!replacement) {
       throw error(409, "The workspace must keep at least one active administrator");
     }
   }
