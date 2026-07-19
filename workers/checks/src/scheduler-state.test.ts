@@ -1,7 +1,7 @@
 import { Miniflare } from "miniflare";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { loadDueChecks } from "./index.js";
+import { loadDueChecks, processCheckBatches } from "./index.js";
 import { loadMachineLivenessCandidates } from "./machine-liveness.js";
 import { acquireSchedulerLease, releaseSchedulerLease } from "./scheduler-state.js";
 
@@ -185,5 +185,49 @@ describe("bounded scheduler scans", () => {
     await expect(releaseSchedulerLease(database, resumed, 1, 1, resumed.leaseUntil)).resolves.toBe(
       false,
     );
+  });
+});
+
+describe("bounded check execution", () => {
+  it("runs five checks concurrently and preserves the first deferred cursor", async () => {
+    const candidates = Array.from({ length: 8 }, (_, index) => ({ telemetry_pk: index + 1 }));
+    let active = 0;
+    let maximumActive = 0;
+    const progress = await processCheckBatches(
+      candidates,
+      (batch) => batch[0]?.telemetry_pk === 1,
+      async () => {
+        active += 1;
+        maximumActive = Math.max(maximumActive, active);
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        active -= 1;
+      },
+    );
+
+    expect(progress).toEqual({
+      processed: 5,
+      failed: 0,
+      lastCursor: 5,
+      deadlineReached: true,
+    });
+    expect(maximumActive).toBe(5);
+  });
+
+  it("records failed checks while advancing past the attempted batch", async () => {
+    const progress = await processCheckBatches(
+      [{ telemetry_pk: 1 }, { telemetry_pk: 2 }],
+      () => true,
+      (candidate) =>
+        candidate.telemetry_pk === 2
+          ? Promise.reject(new Error("persistence failed"))
+          : Promise.resolve(),
+    );
+
+    expect(progress).toEqual({
+      processed: 2,
+      failed: 1,
+      lastCursor: 2,
+      deadlineReached: false,
+    });
   });
 });

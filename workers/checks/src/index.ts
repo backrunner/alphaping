@@ -11,6 +11,36 @@ import { parseHttpRequest, parseTcpRequest } from "./validation.js";
 
 const MAX_CANDIDATES = 500;
 const MAX_CONCURRENCY = 5;
+const RUN_WORK_BUDGET_MS = 12 * 60_000;
+const RETRY_DELAY_MS = 100;
+
+export interface CheckBatchProgress {
+  processed: number;
+  failed: number;
+  lastCursor: number | null;
+  deadlineReached: boolean;
+}
+
+export async function processCheckBatches<T extends { telemetry_pk: number }>(
+  candidates: readonly T[],
+  canStart: (batch: readonly T[]) => boolean,
+  process: (candidate: T) => Promise<void>,
+): Promise<CheckBatchProgress> {
+  let processed = 0;
+  let failed = 0;
+  let lastCursor: number | null = null;
+  for (let offset = 0; offset < candidates.length; offset += MAX_CONCURRENCY) {
+    const batch = candidates.slice(offset, offset + MAX_CONCURRENCY);
+    if (!canStart(batch)) {
+      return { processed, failed, lastCursor, deadlineReached: true };
+    }
+    const outcomes = await Promise.allSettled(batch.map(process));
+    processed += batch.length;
+    failed += outcomes.filter((outcome) => outcome.status === "rejected").length;
+    lastCursor = batch.at(-1)?.telemetry_pk ?? lastCursor;
+  }
+  return { processed, failed, lastCursor, deadlineReached: false };
+}
 
 function configurationFailureSummary(cause: unknown): string {
   if (cause instanceof DOMException && cause.name === "OperationError") {
@@ -121,31 +151,29 @@ async function runChecks(
   env: Env,
   scheduledAt: number,
   candidates: readonly CheckConfigRow[],
-): Promise<void> {
-  const serviceGroups = new Map<number, CheckConfigRow[]>();
-  for (const row of candidates) {
-    const group = serviceGroups.get(row.service_telemetry_pk) ?? [];
-    group.push(row);
-    serviceGroups.set(row.service_telemetry_pk, group);
-  }
-  const groups = [...serviceGroups.values()];
-  let failedGroups = 0;
-  for (let offset = 0; offset < groups.length; offset += MAX_CONCURRENCY) {
-    const outcomes = await Promise.allSettled(
-      groups.slice(offset, offset + MAX_CONCURRENCY).map(async (group) => {
-        for (const row of group) await processCheck(env, row, scheduledAt);
-      }),
-    );
-    failedGroups += outcomes.filter((outcome) => outcome.status === "rejected").length;
-  }
-  if (failedGroups > 0) {
-    throw new Error(`check_persistence_failed:${failedGroups}`);
-  }
+  deadline: number,
+): Promise<CheckBatchProgress> {
+  return processCheckBatches(
+    candidates,
+    (batch) => {
+      const maximumDuration = batch.reduce(
+        (maximum, row) =>
+          Math.max(
+            maximum,
+            row.timeout_ms * (row.retry_count + 1) + row.retry_count * RETRY_DELAY_MS,
+          ),
+        0,
+      );
+      return Date.now() + maximumDuration <= deadline;
+    },
+    (row) => processCheck(env, row, scheduledAt),
+  );
 }
 
 export async function runScheduled(env: Env, scheduledAt: number): Promise<void> {
   const lease = await acquireSchedulerLease(env.CONTROL_DB, Date.now());
   if (lease === null) return;
+  const deadline = Date.now() + RUN_WORK_BUDGET_MS;
 
   let checkCursor = lease.checkCursor;
   let machineCursor = lease.machineCursor;
@@ -154,13 +182,15 @@ export async function runScheduled(env: Env, scheduledAt: number): Promise<void>
       loadDueChecks(env.CONTROL_DB, scheduledAt, checkCursor),
       loadMachineLivenessCandidates(env.CONTROL_DB, machineCursor),
     ]);
-    if (checks.length > 0) checkCursor = checks[checks.length - 1]!.telemetry_pk;
     if (machines.length > 0) machineCursor = machines[machines.length - 1]!.telemetry_pk;
 
     const [liveness, checkExecution] = await Promise.allSettled([
       reconcileMachineLiveness(env.TELEMETRY_DB, scheduledAt, machines),
-      runChecks(env, scheduledAt, checks),
+      runChecks(env, scheduledAt, checks, deadline),
     ]);
+    if (checkExecution.status === "fulfilled" && checkExecution.value.lastCursor !== null) {
+      checkCursor = checkExecution.value.lastCursor;
+    }
     const [stateSync] = await Promise.allSettled([
       reconcileServiceStateSyncJobs(env.CONTROL_DB, env.TELEMETRY_DB, Date.now()),
     ]);
@@ -183,9 +213,19 @@ export async function runScheduled(env: Env, scheduledAt: number): Promise<void>
         }),
       );
     }
+    if (checkExecution.status === "fulfilled" && checkExecution.value.deadlineReached) {
+      console.warn(
+        JSON.stringify({
+          event: "check_scheduler_deadline_reached",
+          processed: checkExecution.value.processed,
+          deferred: checks.length - checkExecution.value.processed,
+        }),
+      );
+    }
     const failedTasks =
       Number(liveness.status === "rejected") +
       Number(checkExecution.status === "rejected") +
+      Number(checkExecution.status === "fulfilled" && checkExecution.value.failed > 0) +
       Number(stateSync.status === "rejected") +
       Number(stateSync.status === "fulfilled" && stateSync.value.failed > 0);
     if (failedTasks > 0) throw new Error(`scheduled_tasks_failed:${failedTasks}`);
