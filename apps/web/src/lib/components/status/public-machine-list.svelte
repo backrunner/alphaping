@@ -1,11 +1,14 @@
 <script lang="ts">
-  import { Box, Cpu, HardDrive, MemoryStick, Network } from "lucide-svelte";
+  import { Box, ChevronDown, ChevronUp, Cpu, HardDrive, MemoryStick, Network } from "lucide-svelte";
   import type { PublicStatusMachine } from "@alphaping/db";
 
   import StatusLabel from "$components/status/status-label.svelte";
   import { formatBytes, formatPercent, formatRate, formatRelativeTime } from "$lib/utils/format";
 
   let { machines }: { machines: readonly PublicStatusMachine[] } = $props();
+  const previewSize = 25;
+  let expanded = $state(false);
+  const visibleMachines = $derived(expanded ? machines : machines.slice(0, previewSize));
 </script>
 
 {#if machines.length > 0}
@@ -17,7 +20,7 @@
       </div>
     </header>
     <div class="machine-list">
-      {#each machines as machine}
+      {#each visibleMachines as machine}
         <article>
           <div class="machine-main">
             <div class="machine-name">
@@ -78,6 +81,18 @@
         </article>
       {/each}
     </div>
+    {#if machines.length > previewSize}
+      <button
+        class="machine-toggle"
+        type="button"
+        aria-expanded={expanded}
+        onclick={() => (expanded = !expanded)}
+      >
+        {#if expanded}<ChevronUp size={13} />Show first {previewSize}{:else}<ChevronDown
+            size={13}
+          />Show all {machines.length} machines{/if}
+      </button>
+    {/if}
   </section>
 {/if}
 
@@ -107,6 +122,22 @@
 
   .machine-list {
     border-top: 1px solid var(--border);
+  }
+
+  .machine-toggle {
+    display: inline-flex;
+    height: 30px;
+    align-items: center;
+    gap: 5px;
+    margin-top: 9px;
+    padding: 0;
+    border: 0;
+    color: var(--accent);
+    background: transparent;
+    font: inherit;
+    font-size: 10px;
+    font-weight: 650;
+    cursor: pointer;
   }
 
   article {
