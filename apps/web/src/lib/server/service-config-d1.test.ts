@@ -552,7 +552,10 @@ describe("Agent executor authorization", () => {
 
     await expect(
       listServiceCheckAgents(database, "operations", "user-1", "service-1"),
-    ).resolves.toEqual([]);
+    ).resolves.toEqual({
+      agents: [],
+      pagination: { page: 1, hasPrevious: false, hasNext: false },
+    });
 
     await setMemberAccess("manage");
     await database.batch([
@@ -577,7 +580,10 @@ describe("Agent executor authorization", () => {
     ]);
     await expect(
       listServiceCheckAgents(database, "operations", "user-1", "service-1"),
-    ).resolves.toEqual([{ id: "agent-1", name: "ZZZ Edge node" }]);
+    ).resolves.toEqual({
+      agents: [{ id: "agent-1", name: "ZZZ Edge node" }],
+      pagination: { page: 1, hasPrevious: false, hasNext: false },
+    });
 
     await database
       .prepare(
@@ -587,7 +593,43 @@ describe("Agent executor authorization", () => {
       .run();
     await expect(
       listServiceCheckAgents(database, "operations", "user-1", "service-1"),
-    ).resolves.toEqual([]);
+    ).resolves.toEqual({
+      agents: [],
+      pagination: { page: 1, hasPrevious: false, hasNext: false },
+    });
+  });
+
+  it("keeps later authorized Agents addressable without an unbounded count", async () => {
+    await seedServiceChecks();
+    await database.batch([
+      database.prepare(
+        `WITH RECURSIVE sequence(value) AS (
+           VALUES (2) UNION ALL SELECT value + 1 FROM sequence WHERE value < 221
+         )
+         INSERT INTO machines
+           (id, workspace_id, name, desired_config_revision, updated_at, deleted_at)
+         SELECT printf('machine-%03d', value), 'workspace-1',
+                printf('Machine %03d', value), 1, 1, NULL FROM sequence`,
+      ),
+      database.prepare(
+        `WITH RECURSIVE sequence(value) AS (
+           VALUES (2) UNION ALL SELECT value + 1 FROM sequence WHERE value < 221
+         )
+         INSERT INTO agents (id, machine_id, workspace_id, status)
+         SELECT printf('agent-%03d', value), printf('machine-%03d', value),
+                'workspace-1', 'active' FROM sequence`,
+      ),
+    ]);
+
+    await expect(
+      listServiceCheckAgents(database, "operations", "user-1", "service-1", { agentPage: 5 }),
+    ).resolves.toEqual({
+      agents: Array.from({ length: 21 }, (_, index) => ({
+        id: `agent-${String(index + 201).padStart(3, "0")}`,
+        name: `Machine ${String(index + 201).padStart(3, "0")}`,
+      })),
+      pagination: { page: 5, hasPrevious: true, hasNext: false },
+    });
   });
 
   it("requires machine manage permission before adding an Agent check", async () => {

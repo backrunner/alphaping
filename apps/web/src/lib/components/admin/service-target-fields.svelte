@@ -1,13 +1,29 @@
 <script lang="ts">
+  import { page } from "$app/state";
+  import { ChevronLeft, ChevronRight } from "lucide-svelte";
+  import { SvelteURLSearchParams } from "svelte/reactivity";
+
   let {
     kind,
     executor = $bindable(),
     agents,
+    pagination,
+    agentAnchor,
   }: {
     kind: "http" | "tcp" | "icmp";
     executor: "cloudflare" | "agent";
     agents: readonly { id: string; name: string }[];
+    pagination: { page: number; hasPrevious: boolean; hasNext: boolean };
+    agentAnchor: string;
   } = $props();
+
+  function agentPageHref(value: number): string {
+    const params = new SvelteURLSearchParams(page.url.searchParams);
+    if (value <= 1) params.delete("agentPage");
+    else params.set("agentPage", String(value));
+    const query = params.toString();
+    return `${page.url.pathname}${query ? `?${query}` : ""}#${agentAnchor}`;
+  }
 </script>
 
 <div class="fields two">
@@ -23,7 +39,14 @@
         ><option value="">Select machine</option>{#each agents as agent}<option value={agent.id}
             >{agent.name}</option
           >{/each}</select
-      ></label
+      >{#if pagination.hasPrevious || pagination.hasNext}<nav aria-label="Agent pages">
+          {#if pagination.hasPrevious}<a href={agentPageHref(pagination.page - 1)}
+              ><ChevronLeft size={12} />Previous</a
+            >{:else}<span></span>{/if}<strong>Page {pagination.page}</strong
+          >{#if pagination.hasNext}<a href={agentPageHref(pagination.page + 1)}
+              >Next<ChevronRight size={12} /></a
+            >{:else}<span></span>{/if}
+        </nav>{/if}</label
     >{:else}<input type="hidden" name="executorAgentId" value="" />{/if}
 </div>
 
@@ -198,6 +221,28 @@
     margin-top: 5px;
     color: var(--text-faint);
     font-size: 9px;
+  }
+  nav {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 8px;
+    margin-top: 5px;
+    color: var(--text-faint);
+    font-size: 9px;
+  }
+  nav a {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    color: var(--accent);
+    text-decoration: none;
+  }
+  nav a:last-child {
+    justify-self: end;
+  }
+  nav strong {
+    font-weight: 550;
   }
   label small input,
   .inline-check input {

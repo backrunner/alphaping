@@ -23,6 +23,8 @@ interface GrantRow {
 }
 
 const MAX_ACCESS_GRANTS = 5_000;
+const AGENT_PAGE_SIZE = 50;
+const AGENT_MAX_PAGE = 100;
 
 export interface MonitoringAccess {
   workspaceId: string;
@@ -35,7 +37,13 @@ export interface MonitoringAccess {
 
 export interface DeveloperPanelData {
   agents: readonly { id: string; name: string }[];
+  agentPagination: { page: number; hasPrevious: boolean; hasNext: boolean };
   defaultSamplingIntervalSeconds: number;
+}
+
+function requestedAgentPage(value: number | undefined): number {
+  if (!Number.isSafeInteger(value)) return 1;
+  return Math.min(AGENT_MAX_PAGE, Math.max(1, value ?? 1));
 }
 
 export async function loadMonitoringAccess(
@@ -202,20 +210,34 @@ export async function loadDeveloperPanel(
   db: D1Database,
   workspaceSlug: string,
   userId: string,
+  request: { agentPage?: number } = {},
 ): Promise<DeveloperPanelData> {
   const access = await loadMonitoringAccess(db, workspaceSlug, userId);
   requireAdmin(access);
+  const page = requestedAgentPage(request.agentPage);
   const agents = await db
     .prepare(
       `SELECT a.id, m.name AS machine_name FROM agents a
        JOIN machines m ON m.id = a.machine_id
        WHERE a.workspace_id = ? AND a.status = 'active' AND m.deleted_at IS NULL
-       ORDER BY m.name LIMIT 200`,
+         AND EXISTS (
+           SELECT 1 FROM memberships actor
+           WHERE actor.workspace_id = a.workspace_id AND actor.user_id = ?
+             AND actor.role = 'admin' AND actor.status = 'active'
+         )
+       ORDER BY m.name, a.id LIMIT ? OFFSET ?`,
     )
-    .bind(access.workspaceId)
+    .bind(access.workspaceId, userId, AGENT_PAGE_SIZE + 1, (page - 1) * AGENT_PAGE_SIZE)
     .all<{ id: string; machine_name: string }>();
   return {
-    agents: agents.results.map((agent) => ({ id: agent.id, name: agent.machine_name })),
+    agents: agents.results
+      .slice(0, AGENT_PAGE_SIZE)
+      .map((agent) => ({ id: agent.id, name: agent.machine_name })),
+    agentPagination: {
+      page,
+      hasPrevious: page > 1,
+      hasNext: agents.results.length > AGENT_PAGE_SIZE,
+    },
     defaultSamplingIntervalSeconds: access.defaultSamplingIntervalSeconds,
   };
 }

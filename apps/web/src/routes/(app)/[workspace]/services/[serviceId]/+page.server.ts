@@ -15,7 +15,7 @@ import { softDeleteResource } from "$lib/server/resources";
 
 import type { Actions, PageServerLoad } from "./$types";
 
-export const load: PageServerLoad = async ({ locals, params, platform }) => {
+export const load: PageServerLoad = async ({ locals, params, platform, url }) => {
   if (!locals.session) throw redirect(303, "/login");
   if (!platform) throw error(503, "Cloudflare bindings are unavailable");
   try {
@@ -34,8 +34,12 @@ export const load: PageServerLoad = async ({ locals, params, platform }) => {
             params.workspace,
             locals.session.user.id,
             params.serviceId,
+            { agentPage: Number(url.searchParams.get("agentPage") ?? "1") },
           )
-        : [],
+        : {
+            agents: [],
+            pagination: { page: 1, hasPrevious: false, hasNext: false },
+          },
     };
   } catch (cause) {
     if (cause instanceof ServiceNotFoundError) throw error(404, "Service not found");

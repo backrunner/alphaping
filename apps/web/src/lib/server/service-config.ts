@@ -51,6 +51,9 @@ export interface ServiceCheckAgent {
   name: string;
 }
 
+const AGENT_SELECTOR_PAGE_SIZE = 50;
+const AGENT_SELECTOR_MAX_PAGE = 100;
+
 export type AddServiceCheckInput = Omit<CreateServiceMonitorInput, "name" | "description"> & {
   checkName: string;
 };
@@ -481,9 +484,16 @@ export async function listServiceCheckAgents(
   workspaceSlug: string,
   userId: string,
   serviceId: string,
-): Promise<readonly ServiceCheckAgent[]> {
+  request: { agentPage?: number } = {},
+): Promise<{
+  agents: readonly ServiceCheckAgent[];
+  pagination: { page: number; hasPrevious: boolean; hasNext: boolean };
+}> {
   const access = await loadMonitoringAccess(db, workspaceSlug, userId);
   requireResourceCapability(access, "service", serviceId, "manage");
+  const requestedPage = Number.isSafeInteger(request.agentPage)
+    ? Math.min(AGENT_SELECTOR_MAX_PAGE, Math.max(1, request.agentPage ?? 1))
+    : 1;
   const service = await db
     .prepare(`SELECT id FROM services WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL`)
     .bind(serviceId, access.workspaceId)
@@ -516,7 +526,7 @@ export async function listServiceCheckAgents(
            WHERE current.id = ? AND current.workspace_id = ? AND current.deleted_at IS NULL
              AND ${serviceAuthorization.sql}
          )
-       ORDER BY m.name LIMIT 200`,
+       ORDER BY m.name, a.id LIMIT ? OFFSET ?`,
     )
     .bind(
       access.workspaceId,
@@ -524,9 +534,20 @@ export async function listServiceCheckAgents(
       serviceId,
       access.workspaceId,
       ...serviceAuthorization.binds,
+      AGENT_SELECTOR_PAGE_SIZE + 1,
+      (requestedPage - 1) * AGENT_SELECTOR_PAGE_SIZE,
     )
     .all<{ id: string; machine_id: string; name: string }>();
-  return agents.results.map((agent) => ({ id: agent.id, name: agent.name }));
+  return {
+    agents: agents.results
+      .slice(0, AGENT_SELECTOR_PAGE_SIZE)
+      .map((agent) => ({ id: agent.id, name: agent.name })),
+    pagination: {
+      page: requestedPage,
+      hasPrevious: requestedPage > 1,
+      hasNext: agents.results.length > AGENT_SELECTOR_PAGE_SIZE,
+    },
+  };
 }
 
 export async function addServiceCheck(

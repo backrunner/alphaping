@@ -118,7 +118,11 @@
     historyBase={`/${data.workspace.slug}/services/${data.service.id}/checks`}
   />
   {#if data.service.canManage}
-    <ServiceCheckForm agents={data.checkAgents} result={form ?? null} />
+    <ServiceCheckForm
+      agents={data.checkAgents.agents}
+      agentPagination={data.checkAgents.pagination}
+      result={form ?? null}
+    />
   {/if}
   <ServiceEvents events={data.events} />
 </main>

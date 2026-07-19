@@ -108,7 +108,13 @@
       </form>
     </section>
 
-    <div class="service-monitor"><ServiceMonitorForm agents={data.agents} result={form} /></div>
+    <div class="service-monitor">
+      <ServiceMonitorForm
+        agents={data.agents}
+        agentPagination={data.agentPagination}
+        result={form}
+      />
+    </div>
   </div>
   <DeletedResourceList resources={data.deletedResources} result={form ?? null} />
 </main>

@@ -15,6 +15,7 @@ export const load: PageServerLoad = async ({ locals, params, platform, url }) =>
     platform.env.CONTROL_DB,
     params.workspace,
     locals.session.user.id,
+    { agentPage: Number(url.searchParams.get("agentPage") ?? "1") },
   );
   return {
     workspace: params.workspace,
@@ -22,6 +23,7 @@ export const load: PageServerLoad = async ({ locals, params, platform, url }) =>
     installOrigin: url.origin,
     installerChecksums: await installerChecksums(),
     agents: panel.agents,
+    agentPagination: panel.agentPagination,
     defaultSamplingIntervalSeconds: panel.defaultSamplingIntervalSeconds,
     deletedResources: await listDeletedResources(
       platform.env.CONTROL_DB,

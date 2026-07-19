@@ -8,9 +8,11 @@
 
   let {
     agents,
+    agentPagination,
     result,
   }: {
     agents: readonly { id: string; name: string }[];
+    agentPagination: { page: number; hasPrevious: boolean; hasNext: boolean };
     result: { kind?: string; message?: string; created?: boolean; serviceId?: string } | null;
   } = $props();
 
@@ -67,7 +69,13 @@
         /></label
       >
     </div>
-    <ServiceTargetFields {kind} bind:executor {agents} />
+    <ServiceTargetFields
+      {kind}
+      bind:executor
+      {agents}
+      pagination={agentPagination}
+      agentAnchor="service-monitor"
+    />
     <ServiceRequestFields {kind} {executor} />
     <ServiceScheduleFields {executor} />
     <Button type="submit"><ShieldCheck size={14} />Create service</Button>

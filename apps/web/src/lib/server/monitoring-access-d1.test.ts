@@ -1,7 +1,7 @@
 import { Miniflare } from "miniflare";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { loadMonitoringAccess } from "./monitoring-access.js";
+import { loadDeveloperPanel, loadMonitoringAccess } from "./monitoring-access.js";
 
 let miniflare: Miniflare;
 let database: D1Database;
@@ -31,6 +31,16 @@ beforeEach(async () => {
       `CREATE TABLE resource_grants (
         workspace_id TEXT NOT NULL, subject_user_id TEXT NOT NULL, resource_type TEXT NOT NULL,
         resource_id TEXT NOT NULL, capability TEXT NOT NULL, effect TEXT NOT NULL
+      )`,
+    ),
+    database.prepare(
+      `CREATE TABLE machines (
+        id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, name TEXT NOT NULL, deleted_at INTEGER
+      )`,
+    ),
+    database.prepare(
+      `CREATE TABLE agents (
+        id TEXT PRIMARY KEY, machine_id TEXT NOT NULL, workspace_id TEXT NOT NULL, status TEXT NOT NULL
       )`,
     ),
     database.prepare(
@@ -78,5 +88,32 @@ describe("monitoring access grant bounds", () => {
     await expect(loadMonitoringAccess(database, "operations", "member-1")).rejects.toMatchObject({
       status: 503,
     });
+  });
+
+  it("keeps later administrator Agent pages addressable", async () => {
+    await database.batch([
+      database.prepare(
+        `WITH RECURSIVE sequence(value) AS (
+           VALUES (1) UNION ALL SELECT value + 1 FROM sequence WHERE value < 120
+         )
+         INSERT INTO machines
+           SELECT printf('machine-%03d', value), 'workspace-1',
+                  printf('Machine %03d', value), NULL FROM sequence`,
+      ),
+      database.prepare(
+        `WITH RECURSIVE sequence(value) AS (
+           VALUES (1) UNION ALL SELECT value + 1 FROM sequence WHERE value < 120
+         )
+         INSERT INTO agents
+           SELECT printf('agent-%03d', value), printf('machine-%03d', value),
+                  'workspace-1', 'active' FROM sequence`,
+      ),
+    ]);
+
+    const panel = await loadDeveloperPanel(database, "operations", "admin-1", { agentPage: 3 });
+
+    expect(panel.agents).toHaveLength(20);
+    expect(panel.agents[0]).toEqual({ id: "agent-101", name: "Machine 101" });
+    expect(panel.agentPagination).toEqual({ page: 3, hasPrevious: true, hasNext: false });
   });
 });

@@ -8,9 +8,11 @@
 
   let {
     agents,
+    agentPagination,
     result,
   }: {
     agents: readonly { id: string; name: string }[];
+    agentPagination: { page: number; hasPrevious: boolean; hasNext: boolean };
     result: { kind?: string; message?: string; created?: boolean } | null;
   } = $props();
 
@@ -23,7 +25,7 @@
   }
 </script>
 
-<section class="add-check">
+<section id="add-check" class="add-check">
   <details open={result?.kind === "serviceCheck"}>
     <summary><Plus size={14} />Add check</summary>
     <form method="POST" action="?/addCheck">
@@ -63,7 +65,13 @@
           placeholder="Regional availability"
         /></label
       >
-      <ServiceTargetFields {kind} bind:executor {agents} />
+      <ServiceTargetFields
+        {kind}
+        bind:executor
+        {agents}
+        pagination={agentPagination}
+        agentAnchor="add-check"
+      />
       <ServiceRequestFields {kind} {executor} />
       <ServiceScheduleFields {executor} />
       <footer><Button type="submit"><ShieldCheck size={14} />Add check</Button></footer>
