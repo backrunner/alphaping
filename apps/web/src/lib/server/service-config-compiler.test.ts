@@ -167,6 +167,19 @@ describe("service configuration compiler", () => {
     ).rejects.toMatchObject({ status: 400 });
   });
 
+  it("rejects invalid latency thresholds before persisting a check", async () => {
+    for (const overrides of [
+      { degradedAfterMs: -1 },
+      { downAfterMs: 30_001 },
+      { degradedAfterMs: 10.5 },
+      { degradedAfterMs: 5_000, downAfterMs: 4_999 },
+    ]) {
+      await expect(
+        compileServiceConfig(serviceInput(overrides), WORKSPACE_ID, WRAPPING_KEY),
+      ).rejects.toMatchObject({ status: 400 });
+    }
+  });
+
   it("wraps Agent TCP payloads and compiles bounded response prefixes", async () => {
     const config = await compileServiceConfig(
       serviceInput({

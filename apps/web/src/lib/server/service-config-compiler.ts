@@ -322,6 +322,17 @@ export async function compileServiceConfig(
   boundedInteger(input.retryCount, 0, 3, "Retry count");
   boundedInteger(input.failureConfirmations, 1, 20, "Failure confirmations");
   boundedInteger(input.recoveryConfirmations, 1, 20, "Recovery confirmations");
+  const degradedAfterMs =
+    input.degradedAfterMs === null
+      ? null
+      : boundedInteger(input.degradedAfterMs, 0, 30_000, "Degraded latency threshold");
+  const downAfterMs =
+    input.downAfterMs === null
+      ? null
+      : boundedInteger(input.downAfterMs, 0, 30_000, "Down latency threshold");
+  if (degradedAfterMs !== null && downAfterMs !== null && downAfterMs < degradedAfterMs) {
+    throw error(400, "Down latency threshold cannot be lower than degraded threshold");
+  }
   if (input.executorKind === "cloudflare" && input.kind === "icmp") {
     throw error(400, "Cloudflare cannot execute ICMP checks; select an Agent executor");
   }
@@ -350,7 +361,7 @@ export async function compileServiceConfig(
     secretHeaderReferences[name] = reference;
   }
   return {
-    request: compileRequest(input, publicHeaders, assertions),
+    request: compileRequest({ ...input, degradedAfterMs, downAfterMs }, publicHeaders, assertions),
     assertions,
     secretRefs: {
       headers: secretHeaderReferences,
