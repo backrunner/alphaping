@@ -78,6 +78,37 @@ pub fn validate_enrollment_response(
     Ok(())
 }
 
+async fn read_bounded_response(mut response: reqwest::Response) -> Result<Vec<u8>> {
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_ENVELOPE_BYTES as u64)
+    {
+        bail!("enrollment response is too large");
+    }
+    let capacity = response
+        .content_length()
+        .and_then(|length| usize::try_from(length).ok())
+        .unwrap_or_default()
+        .min(MAX_ENVELOPE_BYTES);
+    let mut body = Vec::with_capacity(capacity);
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .context("failed to read enrollment response")?
+    {
+        append_response_chunk(&mut body, &chunk)?;
+    }
+    Ok(body)
+}
+
+fn append_response_chunk(body: &mut Vec<u8>, chunk: &[u8]) -> Result<()> {
+    if chunk.len() > MAX_ENVELOPE_BYTES.saturating_sub(body.len()) {
+        bail!("enrollment response is too large");
+    }
+    body.extend_from_slice(chunk);
+    Ok(())
+}
+
 pub async fn enroll(
     origin: &str,
     token: &str,
@@ -98,16 +129,7 @@ pub async fn enroll(
     if !response.status().is_success() {
         bail!("enrollment was rejected");
     }
-    if response
-        .content_length()
-        .is_some_and(|length| length as usize > MAX_ENVELOPE_BYTES)
-    {
-        bail!("enrollment response is too large");
-    }
-    let body = response.bytes().await?;
-    if body.len() > MAX_ENVELOPE_BYTES {
-        bail!("enrollment response is too large");
-    }
+    let body = read_bounded_response(response).await?;
     let enrollment: EnrollmentResponse = decode_message(&body)?;
     validate_enrollment_response(&enrollment, machine_claim_id)?;
     Ok(EnrollmentMaterial {
@@ -121,7 +143,7 @@ mod tests {
     use alphaping_protocol::{MAX_ENVELOPE_BYTES, encode_message, v1::EnrollmentResponse};
     use ed25519_dalek::{Signature, VerifyingKey};
 
-    use super::{build_enrollment_proof, validate_enrollment_response};
+    use super::{append_response_chunk, build_enrollment_proof, validate_enrollment_response};
 
     #[test]
     fn enrollment_proof_binds_the_token_and_machine_claim() {
@@ -174,5 +196,17 @@ mod tests {
         assert!(validate_enrollment_response(&response, machine_claim_id).is_ok());
         response.initial_client_sequence = 0;
         assert!(validate_enrollment_response(&response, machine_claim_id).is_err());
+    }
+
+    #[test]
+    fn enrollment_response_chunks_cannot_exceed_the_envelope_limit() {
+        let mut body = vec![0_u8; MAX_ENVELOPE_BYTES - 2];
+        append_response_chunk(&mut body, &[1, 2]).expect("exact limit should be accepted");
+        assert_eq!(body.len(), MAX_ENVELOPE_BYTES);
+
+        let error = append_response_chunk(&mut body, &[3])
+            .expect_err("a chunk beyond the response budget must be rejected");
+        assert!(error.to_string().contains("too large"));
+        assert_eq!(body.len(), MAX_ENVELOPE_BYTES);
     }
 }
