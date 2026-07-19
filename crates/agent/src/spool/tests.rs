@@ -132,9 +132,9 @@ fn more_than_24_hours_of_deliveries_survive_restart_and_recover_in_order() {
     let mut reopened = Spool::open(&path).expect("reopen spool after outage");
     assert_eq!(
         reopened
-            .wake_backlog(retry_at)
+            .wake_backlog(retry_at, 4)
             .expect("wake offline backlog"),
-        usize::try_from(MINUTES).expect("minute count")
+        4
     );
     for (minute, expected_report_id) in report_ids.iter().enumerate() {
         let delivery = reopened
@@ -169,6 +169,10 @@ fn more_than_24_hours_of_deliveries_survive_restart_and_recover_in_order() {
                 .acknowledge(&delivery.report_id)
                 .expect("ack recovered delivery")
         );
+        let woken = reopened
+            .wake_backlog(retry_at, 4)
+            .expect("advance bounded recovery window");
+        assert!(woken <= 4);
     }
     let last_minute = first_minute + (MINUTES - 1) * MINUTE_MS;
     assert!(last_minute - first_minute >= 24 * 60 * MINUTE_MS);
@@ -178,6 +182,12 @@ fn more_than_24_hours_of_deliveries_survive_restart_and_recover_in_order() {
             .due_delivery(retry_at)
             .expect("read empty backlog")
             .is_none()
+    );
+    assert_eq!(
+        reopened
+            .wake_backlog(retry_at, 4)
+            .expect("empty recovery window"),
+        0
     );
 }
 

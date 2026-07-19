@@ -36,6 +36,7 @@ struct RuntimeControl<'a> {
 }
 
 const TRANSPORT_SEQUENCE_RESERVATION: u64 = 1_024;
+const BACKLOG_WAKE_BATCH: u32 = 4;
 
 pub async fn run(
     config_path: &Path,
@@ -233,7 +234,10 @@ async fn upload_due_report(
                 Ok(changed) => {
                     schedule_changed = changed;
                     let recovery_jitter_ms = rand::rng().random_range(0_i64..=5_000);
-                    spool.wake_backlog(now_ms.saturating_add(recovery_jitter_ms))?;
+                    spool.wake_backlog(
+                        now_ms.saturating_add(recovery_jitter_ms),
+                        BACKLOG_WAKE_BATCH,
+                    )?;
                 }
                 Err(error) => {
                     spool.reschedule_delivery(

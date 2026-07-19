@@ -576,11 +576,17 @@ impl Spool {
         Ok(())
     }
 
-    pub fn wake_backlog(&self, retry_at: i64) -> Result<usize> {
+    pub fn wake_backlog(&self, retry_at: i64, limit: u32) -> Result<usize> {
+        if limit == 0 || limit > 64 {
+            bail!("delivery wake batch must be between 1 and 64");
+        }
         self.connection
             .execute(
-                "UPDATE deliveries SET next_attempt_at = MIN(next_attempt_at, ?)",
-                [retry_at],
+                "UPDATE deliveries SET next_attempt_at = ? WHERE report_id IN (
+                   SELECT report_id FROM deliveries WHERE next_attempt_at > ?
+                   ORDER BY nominal_minute LIMIT ?
+                 )",
+                params![retry_at, retry_at, limit],
             )
             .context("failed to wake delivery backlog")
     }
