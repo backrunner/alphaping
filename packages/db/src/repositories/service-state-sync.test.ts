@@ -2,6 +2,7 @@ import { Miniflare } from "miniflare";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
+  applyServiceStateSyncJob,
   createServiceStateSyncJob,
   prepareServiceStateSyncJob,
   reconcileServiceStateSyncJobs,
@@ -55,7 +56,7 @@ beforeEach(async () => {
   await telemetryDb.batch([
     telemetryDb.prepare(
       `CREATE TABLE check_latest (
-        check_pk INTEGER PRIMARY KEY, service_pk INTEGER, state TEXT, critical INTEGER,
+        check_pk INTEGER PRIMARY KEY, workspace_pk INTEGER, service_pk INTEGER, state TEXT, critical INTEGER,
         config_revision INTEGER NOT NULL DEFAULT 0
       )`,
     ),
@@ -72,8 +73,8 @@ beforeEach(async () => {
         PRIMARY KEY (resource_type, resource_pk, occurred_at, event_id)
       )`,
     ),
-    telemetryDb.prepare("INSERT INTO check_latest VALUES (101, 10, 'down', 1, 1)"),
-    telemetryDb.prepare("INSERT INTO check_latest VALUES (102, 10, 'healthy', 1, 1)"),
+    telemetryDb.prepare("INSERT INTO check_latest VALUES (101, 1, 10, 'down', 1, 1)"),
+    telemetryDb.prepare("INSERT INTO check_latest VALUES (102, 1, 10, 'healthy', 1, 1)"),
     telemetryDb.prepare("INSERT INTO service_latest VALUES (10, 1, 'down', 1, 'check_down', 1, 1)"),
   ]);
 });
@@ -107,7 +108,7 @@ describe("service state synchronization", () => {
     ).resolves.toEqual({ state: "healthy" });
 
     await telemetryDb.batch([
-      telemetryDb.prepare("INSERT INTO check_latest VALUES (101, 10, 'down', 1, 1)"),
+      telemetryDb.prepare("INSERT INTO check_latest VALUES (101, 1, 10, 'down', 1, 1)"),
       telemetryDb.prepare("UPDATE service_latest SET state = 'down' WHERE service_pk = 10"),
     ]);
     await expect(
@@ -144,7 +145,7 @@ describe("service state synchronization", () => {
       telemetryDb.prepare("SELECT check_pk FROM check_latest ORDER BY check_pk").all(),
     ).resolves.toMatchObject({ results: [{ check_pk: 102 }] });
 
-    await telemetryDb.prepare("INSERT INTO check_latest VALUES (101, 10, 'down', 1, 2)").run();
+    await telemetryDb.prepare("INSERT INTO check_latest VALUES (101, 1, 10, 'down', 1, 2)").run();
     await expect(
       reconcileServiceStateSyncJobs(controlDb, telemetryDb, job.protectUntil),
     ).resolves.toEqual({ processed: 1, completed: 1, failed: 0 });
@@ -203,6 +204,43 @@ describe("service state synchronization", () => {
       last_attempted_at: job.protectUntil,
       next_attempt_at: job.protectUntil,
     });
+  });
+
+  it("does not overwrite telemetry rows belonging to another workspace", async () => {
+    await controlDb.batch([
+      controlDb.prepare("INSERT INTO workspaces VALUES ('workspace-2', 2, NULL)"),
+      controlDb.prepare("INSERT INTO services VALUES ('service-2', 'workspace-2', 20, NULL, NULL)"),
+    ]);
+    await telemetryDb.batch([
+      telemetryDb.prepare("INSERT INTO check_latest VALUES (201, 1, 20, 'down', 1, 1)"),
+      telemetryDb.prepare(
+        "INSERT INTO service_latest VALUES (20, 1, 'down', 1, 'check_down', 1, 1)",
+      ),
+    ]);
+    const job = createServiceStateSyncJob({
+      workspaceId: "workspace-2",
+      workspacePk: 2,
+      serviceId: "service-2",
+      servicePk: 20,
+      checkId: null,
+      checkPk: null,
+      reasonCode: "maintenance_window",
+      updatedAt: 1_000,
+    });
+
+    await expect(applyServiceStateSyncJob(controlDb, telemetryDb, job, 2_000)).rejects.toThrow(
+      "service_state_sync_telemetry_identity_changed",
+    );
+    await expect(
+      telemetryDb
+        .prepare("SELECT workspace_pk, state FROM service_latest WHERE service_pk = 20")
+        .first(),
+    ).resolves.toEqual({ workspace_pk: 1, state: "down" });
+    await expect(
+      telemetryDb
+        .prepare("SELECT COUNT(*) AS count FROM state_events WHERE resource_pk = 20")
+        .first(),
+    ).resolves.toEqual({ count: 0 });
   });
 
   it("does not restore an expired maintenance window during delayed replay", async () => {

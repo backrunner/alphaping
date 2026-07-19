@@ -183,8 +183,8 @@ export async function applyServiceStateSyncJob(
   if (desired === null) {
     if (job.checkPk !== null) {
       await telemetryDb
-        .prepare("DELETE FROM check_latest WHERE check_pk = ?")
-        .bind(job.checkPk)
+        .prepare("DELETE FROM check_latest WHERE workspace_pk = ? AND check_pk = ?")
+        .bind(job.workspacePk, job.checkPk)
         .run();
     }
     return { maintenanceUntil: null };
@@ -197,36 +197,38 @@ export async function applyServiceStateSyncJob(
       desired.check_pk === job.checkPk && desired.enabled === 1 && desired.critical !== null;
     if (!currentCheck) {
       await telemetryDb
-        .prepare("DELETE FROM check_latest WHERE check_pk = ?")
-        .bind(job.checkPk)
+        .prepare("DELETE FROM check_latest WHERE workspace_pk = ? AND check_pk = ?")
+        .bind(job.workspacePk, job.checkPk)
         .run();
     } else if (desired.executor_kind === "cloudflare" && desired.config_revision !== null) {
       await telemetryDb.batch([
         telemetryDb
-          .prepare("DELETE FROM check_latest WHERE check_pk = ? AND config_revision != ?")
-          .bind(job.checkPk, desired.config_revision),
+          .prepare(
+            "DELETE FROM check_latest WHERE workspace_pk = ? AND check_pk = ? AND config_revision != ?",
+          )
+          .bind(job.workspacePk, job.checkPk, desired.config_revision),
         telemetryDb
           .prepare(
-            "UPDATE check_latest SET critical = ? WHERE check_pk = ? AND config_revision = ?",
+            "UPDATE check_latest SET critical = ? WHERE workspace_pk = ? AND check_pk = ? AND config_revision = ?",
           )
-          .bind(desired.critical, job.checkPk, desired.config_revision),
+          .bind(desired.critical, job.workspacePk, job.checkPk, desired.config_revision),
       ]);
     } else {
       await telemetryDb
-        .prepare("UPDATE check_latest SET critical = ? WHERE check_pk = ?")
-        .bind(desired.critical, job.checkPk)
+        .prepare("UPDATE check_latest SET critical = ? WHERE workspace_pk = ? AND check_pk = ?")
+        .bind(desired.critical, job.workspacePk, job.checkPk)
         .run();
     }
   }
 
   const [checks, previous] = await Promise.all([
     telemetryDb
-      .prepare("SELECT state, critical FROM check_latest WHERE service_pk = ?")
-      .bind(job.servicePk)
+      .prepare("SELECT state, critical FROM check_latest WHERE workspace_pk = ? AND service_pk = ?")
+      .bind(job.workspacePk, job.servicePk)
       .all<CheckStateRow>(),
     telemetryDb
-      .prepare("SELECT state FROM service_latest WHERE service_pk = ?")
-      .bind(job.servicePk)
+      .prepare("SELECT state FROM service_latest WHERE workspace_pk = ? AND service_pk = ?")
+      .bind(job.workspacePk, job.servicePk)
       .first<{ state: string }>(),
   ]);
   const nextState = serviceState(checks.results, desired.maintenance_until, now);
@@ -241,7 +243,7 @@ export async function applyServiceStateSyncJob(
         ? "maintenance_window_ended"
         : job.reasonCode;
   const id = await eventId(job, previousState, nextState);
-  await telemetryDb.batch([
+  const results = await telemetryDb.batch([
     telemetryDb
       .prepare(
         `INSERT INTO service_latest
@@ -253,7 +255,8 @@ export async function applyServiceStateSyncJob(
            status_since = excluded.status_since,
            reason_code = excluded.reason_code,
            last_transition_at = excluded.last_transition_at,
-           updated_at = excluded.updated_at`,
+           updated_at = excluded.updated_at
+         WHERE service_latest.workspace_pk = excluded.workspace_pk`,
       )
       .bind(job.servicePk, job.workspacePk, nextState, now, reasonCode, now, now),
     telemetryDb
@@ -261,10 +264,13 @@ export async function applyServiceStateSyncJob(
         `INSERT OR IGNORE INTO state_events
           (workspace_pk, resource_type, resource_pk, occurred_at, event_id,
            previous_state, current_state, reason_code)
-         VALUES (?, 2, ?, ?, ?, ?, ?, ?)`,
+         SELECT ?, 2, ?, ?, ?, ?, ?, ? WHERE changes() = 1`,
       )
       .bind(job.workspacePk, job.servicePk, now, id, previousState, nextState, reasonCode),
   ]);
+  if (results[0]?.meta.changes !== 1) {
+    throw new Error("service_state_sync_telemetry_identity_changed");
+  }
   return { maintenanceUntil: desired.maintenance_until };
 }
 
