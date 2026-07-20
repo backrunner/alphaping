@@ -121,6 +121,23 @@ async function fetchPublicStatus(
   return { durationMs, html };
 }
 
+async function fetchPublicMachineDashboard(baseUrl, page = 1) {
+  const url = new URL("/status/operations/machines", baseUrl);
+  url.searchParams.set("fixture", "performance");
+  if (page > 1) url.searchParams.set("page", String(page));
+  const response = await fetch(url);
+  const html = await response.text();
+  if (response.status !== 200) {
+    throw new Error(
+      `200-machine public dashboard returned ${response.status}, expected 200; body starts with ${JSON.stringify(html.slice(0, 500))}`,
+    );
+  }
+  if (response.headers.get("x-alphaping-status-source") !== "live") {
+    throw new Error("200-machine public dashboard did not use the live projection");
+  }
+  return html;
+}
+
 export async function runWebPerformanceE2e({
   baseUrl,
   adminCookie,
@@ -392,6 +409,21 @@ export async function runWebPerformanceE2e({
   const firstOmittedService = publicServiceRows[PUBLIC_STATUS_SERVICE_PAGE_SIZE];
   if (!firstOmittedService || publicStatus.html.includes(firstOmittedService.name)) {
     throw new Error("public status first page serialized services beyond its bounded page");
+  }
+  const publicMachineDashboard = await fetchPublicMachineDashboard(baseUrl);
+  const lastPublicMachine = publicMachineRows.at(-1);
+  if (
+    !lastPublicMachine ||
+    !publicMachineDashboard.includes(publicMachineRows[0].name) ||
+    !publicMachineDashboard.includes(lastPublicMachine.name)
+  ) {
+    throw new Error("public machine dashboard omitted a published machine");
+  }
+  const firstPrivateMachine = machineRows.find(
+    (machine) => !publicMachineRows.some((published) => published.name === machine.name),
+  );
+  if (!firstPrivateMachine || publicMachineDashboard.includes(firstPrivateMachine.name)) {
+    throw new Error("public machine dashboard leaked a machine outside the public projection");
   }
   const lastServicePage = Math.ceil(publicServiceRows.length / PUBLIC_STATUS_SERVICE_PAGE_SIZE);
   const lastPublicStatus = await fetchPublicStatus(baseUrl, { servicePage: lastServicePage });

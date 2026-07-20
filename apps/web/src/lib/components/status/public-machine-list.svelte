@@ -1,5 +1,14 @@
 <script lang="ts">
-  import { Box, ChevronDown, ChevronUp, Cpu, HardDrive, MemoryStick, Network } from "lucide-svelte";
+  import {
+    ArrowRight,
+    Box,
+    ChevronDown,
+    ChevronUp,
+    Cpu,
+    HardDrive,
+    MemoryStick,
+    Network,
+  } from "lucide-svelte";
   import type { PublicStatusMachine } from "@alphaping/db";
 
   import StatusLabel from "$components/status/status-label.svelte";
@@ -21,6 +30,7 @@
         <h2 id="public-machines-title">Infrastructure</h2>
         <p>{machines.length} published machines</p>
       </div>
+      <a href={`/status/${workspaceSlug}/machines`}>View all machines<ArrowRight size={13} /></a>
     </header>
     <div class="machine-list">
       {#each visibleMachines as machine}
@@ -105,7 +115,26 @@
   }
 
   header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px;
     margin-bottom: 10px;
+  }
+
+  header a {
+    display: inline-flex;
+    min-height: 28px;
+    align-items: center;
+    gap: 5px;
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 650;
+    text-decoration: none;
+  }
+
+  header a:hover {
+    color: var(--accent-hover);
   }
 
   h2,

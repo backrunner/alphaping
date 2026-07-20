@@ -147,6 +147,14 @@ export interface PublicMachineStatusPage {
   updatedAt: number | null;
 }
 
+export interface PublicMachinesStatusPage {
+  workspace: { name: string; slug: string };
+  dashboard: { name: string };
+  machines: readonly PublicStatusMachine[];
+  overallState: PublicStatusOverallState;
+  updatedAt: number | null;
+}
+
 export interface PublicServiceStatusPage {
   workspace: { name: string; slug: string };
   dashboard: { name: string };
@@ -160,6 +168,127 @@ function placeholders(length: number): string {
 
 function compareText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
+}
+
+async function loadPublicMachineProjection(
+  controlDb: D1Database,
+  telemetryDb: D1Database,
+  workspace: PublicWorkspaceRow,
+  now: number,
+): Promise<{
+  machines: readonly PublicStatusMachine[];
+  latest: readonly PublicMachineLatestRow[];
+}> {
+  const machines = (
+    await controlDb
+      .prepare(
+        `SELECT m.id, m.public_slug, m.telemetry_pk, m.name, m.description, m.offline_after_seconds,
+                p.projection_profile
+         FROM dashboard_resources dr
+         JOIN machines m ON m.id = dr.resource_id AND m.workspace_id = ? AND m.deleted_at IS NULL
+         JOIN resource_public_policies p
+           ON p.workspace_id = m.workspace_id AND p.resource_type = 'machine'
+          AND p.resource_id = m.id AND p.effect = 'allow'
+         WHERE dr.dashboard_id = ? AND dr.resource_type = 'machine'
+           AND dr.public_override != 'deny'
+         ORDER BY dr.sort_order, m.name LIMIT 200`,
+      )
+      .bind(workspace.id, workspace.dashboard_id)
+      .all<PublicMachineRow>()
+  ).results;
+  const machinePks = machines.map((machine) => machine.telemetry_pk);
+  const machineIds = machines.map((machine) => machine.id);
+  const [latestMachines, publicContainerRows] = await Promise.all([
+    queryInBatches<PublicMachineLatestRow, number>(telemetryDb, machinePks, (batch) =>
+      telemetryDb
+        .prepare(
+          `SELECT machine_pk, observed_at, received_at, state, cpu_permille,
+                    memory_used_bytes, memory_total_bytes, storage_used_bytes,
+                    storage_total_bytes, network_rx_bps, network_tx_bps,
+                    container_inventory_json
+             FROM machine_latest WHERE workspace_pk = ?
+               AND machine_pk IN (${placeholders(batch.length)})`,
+        )
+        .bind(workspace.telemetry_pk, ...batch),
+    ),
+    queryInBatches<PublicContainerQueryRow, string>(controlDb, machineIds, (batch) =>
+      controlDb
+        .prepare(
+          `SELECT c.id, c.machine_id, p.projection_profile,
+                    hex(c.name) AS name_sort_key, hex(c.id) AS id_sort_key
+             FROM containers c
+             JOIN resource_public_policies p
+               ON p.workspace_id = c.workspace_id AND p.resource_type = 'container'
+              AND p.resource_id = c.id AND p.effect = 'allow'
+             WHERE c.workspace_id = ? AND c.deleted_at IS NULL
+               AND c.machine_id IN (${placeholders(batch.length)})
+             ORDER BY c.name, c.id LIMIT 500`,
+        )
+        .bind(workspace.id, ...batch),
+    ),
+  ]);
+  const publicContainers = publicContainerRows
+    .sort(
+      (left, right) =>
+        compareText(left.name_sort_key, right.name_sort_key) ||
+        compareText(left.id_sort_key, right.id_sort_key),
+    )
+    .slice(0, 500);
+  const latestByMachine = new Map(latestMachines.map((latest) => [latest.machine_pk, latest]));
+  const publicMachines = machines.map((machine) => {
+    const latest = latestByMachine.get(machine.telemetry_pk);
+    return projectPublicStatusMachine({
+      machine,
+      latest,
+      inventory: parseContainerInventory(latest?.container_inventory_json ?? null),
+      publicContainers: publicContainers.filter((container) => container.machine_id === machine.id),
+      now,
+    });
+  });
+  return { machines: publicMachines, latest: latestMachines };
+}
+
+async function loadPublicWorkspace(
+  controlDb: D1Database,
+  workspaceSlug: string,
+): Promise<PublicWorkspaceRow> {
+  const workspace = await controlDb
+    .prepare(
+      `SELECT w.id, w.name, w.slug, w.telemetry_pk, d.id AS dashboard_id,
+            d.name AS dashboard_name
+     FROM workspaces w JOIN dashboards d ON d.id = w.default_dashboard_id
+     WHERE w.slug = ? AND w.deleted_at IS NULL AND d.deleted_at IS NULL
+       AND d.visibility = 'public'`,
+    )
+    .bind(workspaceSlug)
+    .first<PublicWorkspaceRow>();
+  if (!workspace) throw new PublicStatusNotFoundError();
+  return workspace;
+}
+
+export async function loadPublicMachinesStatusPage(
+  controlDb: D1Database,
+  telemetryDb: D1Database,
+  workspaceSlug: string,
+  now = Date.now(),
+): Promise<PublicMachinesStatusPage> {
+  const workspace = await loadPublicWorkspace(controlDb, workspaceSlug);
+  const { machines, latest } = await loadPublicMachineProjection(
+    controlDb,
+    telemetryDb,
+    workspace,
+    now,
+  );
+  return {
+    workspace: { name: workspace.name, slug: workspace.slug },
+    dashboard: { name: workspace.dashboard_name },
+    machines,
+    overallState: summarizePublicStatusState(machines.map((machine) => machine.state)),
+    updatedAt: latest.reduce<number | null>(
+      (latestAt, machine) => Math.max(latestAt ?? 0, machine.observed_at),
+      null,
+    ),
+  };
 }
 
 export async function loadPublicMachineStatusPage(
@@ -357,83 +486,13 @@ export async function loadPublicStatusPage(
   now = Date.now(),
   options: PublicStatusPageOptions = {},
 ): Promise<PaginatedPublicStatusPage> {
-  const workspace = await controlDb
-    .prepare(
-      `SELECT w.id, w.name, w.slug, w.telemetry_pk, d.id AS dashboard_id,
-            d.name AS dashboard_name
-     FROM workspaces w JOIN dashboards d ON d.id = w.default_dashboard_id
-     WHERE w.slug = ? AND w.deleted_at IS NULL AND d.deleted_at IS NULL
-       AND d.visibility = 'public'`,
-    )
-    .bind(workspaceSlug)
-    .first<PublicWorkspaceRow>();
-  if (!workspace) throw new PublicStatusNotFoundError();
-  const machines = (
-    await controlDb
-      .prepare(
-        `SELECT m.id, m.public_slug, m.telemetry_pk, m.name, m.description, m.offline_after_seconds,
-                p.projection_profile
-         FROM dashboard_resources dr
-         JOIN machines m ON m.id = dr.resource_id AND m.workspace_id = ? AND m.deleted_at IS NULL
-         JOIN resource_public_policies p
-           ON p.workspace_id = m.workspace_id AND p.resource_type = 'machine'
-          AND p.resource_id = m.id AND p.effect = 'allow'
-         WHERE dr.dashboard_id = ? AND dr.resource_type = 'machine'
-           AND dr.public_override != 'deny'
-         ORDER BY dr.sort_order, m.name LIMIT 200`,
-      )
-      .bind(workspace.id, workspace.dashboard_id)
-      .all<PublicMachineRow>()
-  ).results;
-  const machinePks = machines.map((machine) => machine.telemetry_pk);
-  const machineIds = machines.map((machine) => machine.id);
-  const [latestMachines, publicContainerRows] = await Promise.all([
-    queryInBatches<PublicMachineLatestRow, number>(telemetryDb, machinePks, (batch) =>
-      telemetryDb
-        .prepare(
-          `SELECT machine_pk, observed_at, received_at, state, cpu_permille,
-                    memory_used_bytes, memory_total_bytes, storage_used_bytes,
-                    storage_total_bytes, network_rx_bps, network_tx_bps,
-                    container_inventory_json
-             FROM machine_latest WHERE workspace_pk = ?
-               AND machine_pk IN (${placeholders(batch.length)})`,
-        )
-        .bind(workspace.telemetry_pk, ...batch),
-    ),
-    queryInBatches<PublicContainerQueryRow, string>(controlDb, machineIds, (batch) =>
-      controlDb
-        .prepare(
-          `SELECT c.id, c.machine_id, p.projection_profile,
-                    hex(c.name) AS name_sort_key, hex(c.id) AS id_sort_key
-             FROM containers c
-             JOIN resource_public_policies p
-               ON p.workspace_id = c.workspace_id AND p.resource_type = 'container'
-              AND p.resource_id = c.id AND p.effect = 'allow'
-             WHERE c.workspace_id = ? AND c.deleted_at IS NULL
-               AND c.machine_id IN (${placeholders(batch.length)})
-             ORDER BY c.name, c.id LIMIT 500`,
-        )
-        .bind(workspace.id, ...batch),
-    ),
-  ]);
-  const publicContainers = publicContainerRows
-    .sort(
-      (left, right) =>
-        compareText(left.name_sort_key, right.name_sort_key) ||
-        compareText(left.id_sort_key, right.id_sort_key),
-    )
-    .slice(0, 500);
-  const latestByMachine = new Map(latestMachines.map((latest) => [latest.machine_pk, latest]));
-  const publicMachines = machines.map((machine) => {
-    const latest = latestByMachine.get(machine.telemetry_pk);
-    return projectPublicStatusMachine({
-      machine,
-      latest,
-      inventory: parseContainerInventory(latest?.container_inventory_json ?? null),
-      publicContainers: publicContainers.filter((container) => container.machine_id === machine.id),
-      now,
-    });
-  });
+  const workspace = await loadPublicWorkspace(controlDb, workspaceSlug);
+  const { machines: publicMachines, latest: latestMachines } = await loadPublicMachineProjection(
+    controlDb,
+    telemetryDb,
+    workspace,
+    now,
+  );
   const services = (
     await controlDb
       .prepare(

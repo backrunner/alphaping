@@ -13,7 +13,9 @@
 </svelte:head>
 
 <main>
-  <a class="back" href={`/status/${data.workspace.slug}`}><ArrowLeft size={15} />All status</a>
+  <a class="back" href={`/status/${data.workspace.slug}/machines`}
+    ><ArrowLeft size={15} />All machines</a
+  >
   <header class="resource-header">
     <div>
       <span class="workspace">{data.workspace.name}</span>
