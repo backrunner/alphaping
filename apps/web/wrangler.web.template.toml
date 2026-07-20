@@ -15,6 +15,7 @@ head_sampling_rate = 0.1
 INGEST_ORIGIN = "https://ingest.example.com"
 LIVE_ORIGIN = "wss://live.example.com"
 AGENT_RELEASE_MANIFEST_JSON = '{"linux-x86_64":{"version":"0.1.0","length":0,"sha256":"0000000000000000000000000000000000000000000000000000000000000000"}}'
+DOMAIN_ROUTES_JSON = '{}'
 
 [[ratelimits]]
 name = "AUTH_EDGE_RATE_LIMITER"
@@ -47,6 +48,7 @@ name = "alphaping-web-production"
 INGEST_ORIGIN = "https://ingest.example.com"
 LIVE_ORIGIN = "wss://live.example.com"
 AGENT_RELEASE_MANIFEST_JSON = '{"linux-x86_64":{"version":"0.1.0","length":0,"sha256":"0000000000000000000000000000000000000000000000000000000000000000"}}'
+DOMAIN_ROUTES_JSON = '{}'
 
 [[env.production.ratelimits]]
 name = "AUTH_EDGE_RATE_LIMITER"

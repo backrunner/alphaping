@@ -1,4 +1,5 @@
 import { deflateSync } from "node:zlib";
+import { request as httpRequest } from "node:http";
 
 const PUBLIC_STATUS_FRESH_CACHE_WAIT_MS = 30_100;
 
@@ -6,6 +7,34 @@ function assertResponse(response, expectedStatus, label) {
   if (response.status !== expectedStatus) {
     throw new Error(`${label} returned ${response.status}, expected ${expectedStatus}`);
   }
+}
+
+async function fetchDomain(baseUrl, path, hostname, cookie = "") {
+  const target = new URL(baseUrl);
+  return new Promise((resolve, reject) => {
+    const request = httpRequest(
+      {
+        hostname: target.hostname,
+        port: target.port,
+        path,
+        method: "GET",
+        headers: { host: hostname, ...(cookie ? { cookie } : {}) },
+      },
+      (response) => {
+        const chunks = [];
+        response.on("data", (chunk) => chunks.push(chunk));
+        response.on("end", () =>
+          resolve({
+            status: response.statusCode ?? 0,
+            headers: response.headers,
+            body: Buffer.concat(chunks).toString("utf8"),
+          }),
+        );
+      },
+    );
+    request.on("error", reject);
+    request.end();
+  });
 }
 
 function form(values) {
@@ -207,9 +236,10 @@ export async function runWebManagementE2e({
   ) {
     throw new Error("machine creation did not return the one-time enrollment material");
   }
+  queryControlDb("UPDATE machines SET public_slug = 'edge-e2e' WHERE name = 'Edge E2E'");
   const machine = onlyRow(
     queryControlDb(
-      `SELECT id, telemetry_pk, description, labels_json, sampling_interval_seconds,
+      `SELECT id, public_slug, telemetry_pk, description, labels_json, sampling_interval_seconds,
               report_interval_seconds, offline_after_seconds, container_monitoring_enabled,
               desired_config_revision
        FROM machines WHERE name = 'Edge E2E'`,
@@ -618,6 +648,7 @@ export async function runWebManagementE2e({
     },
     "administrator service creation",
   );
+  queryControlDb("UPDATE services SET slug = 'api-e2e' WHERE name = 'AlphaPing API E2E'");
   const service = onlyRow(
     queryControlDb("SELECT id, telemetry_pk FROM services WHERE name = 'AlphaPing API E2E'"),
     "created service lookup",
@@ -1650,6 +1681,42 @@ export async function runWebManagementE2e({
       `public ${resourceType} projection`,
     );
   }
+  let domainResponse = await fetchDomain(baseUrl, "/", "status.example.test");
+  assertResponse(domainResponse, 200, "status domain root");
+  if (
+    domainResponse.headers["x-alphaping-domain-route"] !== "status" ||
+    !domainResponse.body.includes("AlphaPing API E2E")
+  ) {
+    throw new Error("status domain root did not render the public workspace status page");
+  }
+  domainResponse = await fetchDomain(baseUrl, "/", "machine.example.test");
+  assertResponse(domainResponse, 200, "machine status domain root");
+  if (
+    domainResponse.headers["x-alphaping-domain-route"] !== "machine" ||
+    !domainResponse.body.includes("Edge E2E")
+  ) {
+    throw new Error("machine domain root did not render the public machine status page");
+  }
+  domainResponse = await fetchDomain(baseUrl, "/", "service.example.test");
+  assertResponse(domainResponse, 200, "service status domain root");
+  if (
+    domainResponse.headers["x-alphaping-domain-route"] !== "service" ||
+    !domainResponse.body.includes("AlphaPing API E2E")
+  ) {
+    throw new Error("service domain root did not render the public service status page");
+  }
+  domainResponse = await fetchDomain(baseUrl, "/login", "machine.example.test");
+  assertResponse(domainResponse, 404, "guest domain management isolation");
+  domainResponse = await fetchDomain(baseUrl, "/", "admin.example.test");
+  assertResponse(domainResponse, 303, "admin domain root login");
+  if (domainResponse.headers.location !== "/login?returnTo=%2F") {
+    throw new Error("admin domain root did not route unauthenticated users to login");
+  }
+  domainResponse = await fetchDomain(baseUrl, "/", "admin.example.test", adminCookie);
+  assertResponse(domainResponse, 303, "admin domain root workspace");
+  if (domainResponse.headers.location !== "/operations") {
+    throw new Error("admin domain root did not route to its configured workspace");
+  }
   response = await fetch(`${baseUrl}/status/operations`);
   assertResponse(response, 200, "public status page");
   if (response.headers.get("cache-control") !== "public, max-age=30, must-revalidate") {
@@ -1670,6 +1737,38 @@ export async function runWebManagementE2e({
   }
   for (const privateValue of ["192.0.2.10", "e2e-private-value", "Expired maintenance notice"]) {
     if (publicPage.includes(privateValue)) throw new Error(`public status leaked ${privateValue}`);
+  }
+  if (!publicPage.includes("/status/operations/machines")) {
+    throw new Error("public status page omitted the all-machines dashboard entry");
+  }
+  response = await fetch(`${baseUrl}/status/operations/machines`);
+  assertResponse(response, 200, "public machine dashboard");
+  if (
+    response.headers.get("cache-control") !== "public, max-age=30, must-revalidate" ||
+    response.headers.get("x-alphaping-status-source") !== "live"
+  ) {
+    throw new Error("public machine dashboard cache policy is incorrect");
+  }
+  const publicMachineDashboard = await response.text();
+  if (
+    !publicMachineDashboard.includes("Edge E2E") ||
+    !publicMachineDashboard.includes(`/status/operations/machines/${machine.public_slug}`) ||
+    publicMachineDashboard.includes(machine.id) ||
+    publicMachineDashboard.includes("192.0.2.10")
+  ) {
+    throw new Error("public machine dashboard was incomplete or leaked private machine data");
+  }
+  response = await fetch(
+    `${baseUrl}/status/operations/machines/${encodeURIComponent(machine.public_slug)}`,
+  );
+  assertResponse(response, 200, "public machine detail from dashboard");
+  const publicMachineDetail = await response.text();
+  if (
+    !publicMachineDetail.includes("Edge E2E") ||
+    !publicMachineDetail.includes("/status/operations/machines") ||
+    publicMachineDetail.includes(machine.id)
+  ) {
+    throw new Error("public machine dashboard detail link was incomplete or leaked internal IDs");
   }
   response = await fetch(`${baseUrl}/status/operations?fresh-cache=${Date.now()}`);
   assertResponse(response, 200, "fresh public status cache");

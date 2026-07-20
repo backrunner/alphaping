@@ -149,6 +149,20 @@ try {
           LIVE_TICKET_SECRET: "e2e-live-ticket-secret-that-is-at-least-32-bytes-long",
           INGEST_ORIGIN: "https://ingest.example.com",
           LIVE_ORIGIN: "wss://live.example.com",
+          DOMAIN_ROUTES_JSON: JSON.stringify({
+            "admin.example.test": { kind: "admin", workspace: "operations" },
+            "status.example.test": { kind: "status", workspace: "operations" },
+            "machine.example.test": {
+              kind: "machine",
+              workspace: "operations",
+              resource: "edge-e2e",
+            },
+            "service.example.test": {
+              kind: "service",
+              workspace: "operations",
+              resource: "api-e2e",
+            },
+          }),
           AGENT_RELEASE_MANIFEST_JSON:
             '{"linux-x86_64":{"version":"0.1.0","length":0,"sha256":"0000000000000000000000000000000000000000000000000000000000000000"}}',
         },

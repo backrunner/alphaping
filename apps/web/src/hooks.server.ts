@@ -4,6 +4,12 @@ import { svelteKitHandler } from "better-auth/svelte-kit";
 
 import { createAuth } from "$lib/server/auth";
 import { allowCredentialAttempt, emailFromBetterAuthRequest } from "$lib/server/auth-rate-limit";
+import {
+  DomainRoutingConfigError,
+  domainRouteAllowsPath,
+  domainRouteForRequest,
+  type DomainRoute,
+} from "$lib/server/domain-routing";
 import { requestBodyLimit, withBoundedRequestBody } from "$lib/server/request-body";
 
 const SECURITY_HEADERS: Readonly<Record<string, string>> = {
@@ -30,6 +36,10 @@ export function isPublicStatusPath(pathname: string): boolean {
   return pathname.startsWith("/status/");
 }
 
+export function isPublicDomainRoot(route: DomainRoute | null, pathname: string): boolean {
+  return route !== null && route.kind !== "admin" && pathname === "/";
+}
+
 function applySecurityHeaders(response: Response): void {
   for (const [name, value] of Object.entries(SECURITY_HEADERS)) response.headers.set(name, value);
 }
@@ -38,9 +48,31 @@ export const handle: Handle = async ({ event, resolve }) => {
   const pathname = event.url.pathname;
   event.request = await withBoundedRequestBody(event.request, requestBodyLimit(pathname));
   event.locals.auth = null;
+  event.locals.domainRoute = null;
   event.locals.session = null;
   const platform = event.platform;
   if (!platform) return resolve(event);
+
+  try {
+    event.locals.domainRoute = domainRouteForRequest(
+      platform.env.DOMAIN_ROUTES_JSON,
+      event.url.hostname,
+    );
+  } catch (cause) {
+    if (!(cause instanceof DomainRoutingConfigError)) throw cause;
+    const response = new Response("Domain routing is unavailable", { status: 503 });
+    applySecurityHeaders(response);
+    response.headers.set("cache-control", "private, no-store");
+    return response;
+  }
+  if (
+    event.locals.domainRoute &&
+    !domainRouteAllowsPath(event.locals.domainRoute, event.url.pathname)
+  ) {
+    const response = new Response("Not found", { status: 404 });
+    applySecurityHeaders(response);
+    return response;
+  }
 
   if (pathname === "/api/auth/sign-in/email" && event.request.method === "POST") {
     const email = await emailFromBetterAuthRequest(event.request);
@@ -71,7 +103,7 @@ export const handle: Handle = async ({ event, resolve }) => {
     return response;
   }
 
-  if (isPublicStatusPath(pathname)) {
+  if (isPublicStatusPath(pathname) || isPublicDomainRoot(event.locals.domainRoute, pathname)) {
     const response = await resolve(event);
     applySecurityHeaders(response);
     return response;

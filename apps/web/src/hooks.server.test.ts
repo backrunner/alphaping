@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isPublicStatusPath, requiresPrivateCaching } from "./hooks.server.js";
+import { isPublicDomainRoot, isPublicStatusPath, requiresPrivateCaching } from "./hooks.server.js";
 
 describe("private response caching", () => {
   it("keeps authenticated and credential-bearing routes out of shared caches", () => {
@@ -14,5 +14,13 @@ describe("private response caching", () => {
     expect(requiresPrivateCaching("/status/operations", false)).toBe(false);
     expect(isPublicStatusPath("/status/operations")).toBe(true);
     expect(isPublicStatusPath("/operations/status")).toBe(false);
+    expect(isPublicDomainRoot({ kind: "status", workspace: "operations" }, "/")).toBe(true);
+    expect(
+      isPublicDomainRoot(
+        { kind: "machine", workspace: "operations", resource: "edge" },
+        "/machines",
+      ),
+    ).toBe(false);
+    expect(isPublicDomainRoot({ kind: "admin", workspace: "operations" }, "/")).toBe(false);
   });
 });
