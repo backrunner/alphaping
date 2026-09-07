@@ -44,7 +44,7 @@ proto                Canonical protobuf definitions
 Prerequisites:
 
 - Node.js 22 or newer
-- pnpm 11.10.0
+- pnpm 12.3.4
 - Rust 1.96 with the `wasm32-unknown-unknown` target
 - A Cloudflare account for deployment
 
