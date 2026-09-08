@@ -1,0 +1,138 @@
+[
+  {
+    "name": "public",
+    "width": 1440,
+    "height": 900,
+    "theme": "light",
+    "status": 200,
+    "document": 1440,
+    "main": 1,
+    "title": "All systems operational",
+    "logos": [
+      {
+        "complete": true,
+        "width": 48
+      }
+    ],
+    "orbitCaption": "",
+    "overflow": false,
+    "errors": [],
+    "violations": []
+  },
+  {
+    "name": "public",
+    "width": 1440,
+    "height": 900,
+    "theme": "dark",
+    "status": 200,
+    "document": 1440,
+    "main": 1,
+    "title": "All systems operational",
+    "logos": [
+      {
+        "complete": true,
+        "width": 48
+      }
+    ],
+    "orbitCaption": "",
+    "overflow": false,
+    "errors": [],
+    "violations": []
+  },
+  {
+    "name": "public",
+    "width": 390,
+    "height": 844,
+    "theme": "light",
+    "status": 200,
+    "document": 390,
+    "main": 1,
+    "title": "All systems operational",
+    "logos": [
+      {
+        "complete": true,
+        "width": 48
+      }
+    ],
+    "orbitCaption": "",
+    "overflow": false,
+    "errors": [],
+    "violations": []
+  },
+  {
+    "name": "public",
+    "width": 390,
+    "height": 844,
+    "theme": "dark",
+    "status": 200,
+    "document": 390,
+    "main": 1,
+    "title": "All systems operational",
+    "logos": [
+      {
+        "complete": true,
+        "width": 48
+      }
+    ],
+    "orbitCaption": "",
+    "overflow": false,
+    "errors": [],
+    "violations": []
+  },
+  {
+    "name": "appearance",
+    "width": 1440,
+    "height": 900,
+    "theme": "light",
+    "status": 200,
+    "document": 1440,
+    "main": 1,
+    "title": "Operations",
+    "logos": [],
+    "overflow": false,
+    "errors": [],
+    "violations": []
+  },
+  {
+    "name": "appearance",
+    "width": 1440,
+    "height": 900,
+    "theme": "dark",
+    "status": 200,
+    "document": 1440,
+    "main": 1,
+    "title": "Operations",
+    "logos": [],
+    "overflow": false,
+    "errors": [],
+    "violations": []
+  },
+  {
+    "name": "appearance",
+    "width": 390,
+    "height": 844,
+    "theme": "light",
+    "status": 200,
+    "document": 390,
+    "main": 1,
+    "title": "Operations",
+    "logos": [],
+    "overflow": false,
+    "errors": [],
+    "violations": []
+  },
+  {
+    "name": "appearance",
+    "width": 390,
+    "height": 844,
+    "theme": "dark",
+    "status": 200,
+    "document": 390,
+    "main": 1,
+    "title": "Operations",
+    "logos": [],
+    "overflow": false,
+    "errors": [],
+    "violations": []
+  }
+]

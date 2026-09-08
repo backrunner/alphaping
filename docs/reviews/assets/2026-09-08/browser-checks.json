@@ -1,0 +1,1501 @@
+{
+  "matrix": [
+    {
+      "name": "overview",
+      "w": 1440,
+      "theme": "light",
+      "status": 200,
+      "heading": "Overview",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "overview",
+      "w": 1440,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Overview",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "overview",
+      "w": 1280,
+      "theme": "light",
+      "status": 200,
+      "heading": "Overview",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "overview",
+      "w": 1280,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Overview",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "overview",
+      "w": 768,
+      "theme": "light",
+      "status": 200,
+      "heading": "Overview",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "overview",
+      "w": 768,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Overview",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "overview",
+      "w": 390,
+      "theme": "light",
+      "status": 200,
+      "heading": "Overview",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "overview",
+      "w": 390,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Overview",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "machines",
+      "w": 1440,
+      "theme": "light",
+      "status": 200,
+      "heading": "Machines",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "machines",
+      "w": 1440,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Machines",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "machines",
+      "w": 1280,
+      "theme": "light",
+      "status": 200,
+      "heading": "Machines",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "machines",
+      "w": 1280,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Machines",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "machines",
+      "w": 768,
+      "theme": "light",
+      "status": 200,
+      "heading": "Machines",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "machines",
+      "w": 768,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Machines",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "machines",
+      "w": 390,
+      "theme": "light",
+      "status": 200,
+      "heading": "Machines",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "machines",
+      "w": 390,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Machines",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "machine",
+      "w": 1440,
+      "theme": "light",
+      "status": 200,
+      "heading": "Edge E2E",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "machine",
+      "w": 1440,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Edge E2E",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "machine",
+      "w": 1280,
+      "theme": "light",
+      "status": 200,
+      "heading": "Edge E2E",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "machine",
+      "w": 1280,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Edge E2E",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "machine",
+      "w": 768,
+      "theme": "light",
+      "status": 200,
+      "heading": "Edge E2E",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "machine",
+      "w": 768,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Edge E2E",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "machine",
+      "w": 390,
+      "theme": "light",
+      "status": 200,
+      "heading": "Edge E2E",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "machine",
+      "w": 390,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Edge E2E",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "services",
+      "w": 1440,
+      "theme": "light",
+      "status": 200,
+      "heading": "Services",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "services",
+      "w": 1440,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Services",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "services",
+      "w": 1280,
+      "theme": "light",
+      "status": 200,
+      "heading": "Services",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "services",
+      "w": 1280,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Services",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "services",
+      "w": 768,
+      "theme": "light",
+      "status": 200,
+      "heading": "Services",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "services",
+      "w": 768,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Services",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "services",
+      "w": 390,
+      "theme": "light",
+      "status": 200,
+      "heading": "Services",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "services",
+      "w": 390,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Services",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "service",
+      "w": 1440,
+      "theme": "light",
+      "status": 200,
+      "heading": "AlphaPing API E2E",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "service",
+      "w": 1440,
+      "theme": "dark",
+      "status": 200,
+      "heading": "AlphaPing API E2E",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "service",
+      "w": 1280,
+      "theme": "light",
+      "status": 200,
+      "heading": "AlphaPing API E2E",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "service",
+      "w": 1280,
+      "theme": "dark",
+      "status": 200,
+      "heading": "AlphaPing API E2E",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "service",
+      "w": 768,
+      "theme": "light",
+      "status": 200,
+      "heading": "AlphaPing API E2E",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "service",
+      "w": 768,
+      "theme": "dark",
+      "status": 200,
+      "heading": "AlphaPing API E2E",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "service",
+      "w": 390,
+      "theme": "light",
+      "status": 200,
+      "heading": "AlphaPing API E2E",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "service",
+      "w": 390,
+      "theme": "dark",
+      "status": 200,
+      "heading": "AlphaPing API E2E",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "admin",
+      "w": 1440,
+      "theme": "light",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "admin",
+      "w": 1440,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "admin",
+      "w": 1280,
+      "theme": "light",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "admin",
+      "w": 1280,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "admin",
+      "w": 768,
+      "theme": "light",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "admin",
+      "w": 768,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "admin",
+      "w": 390,
+      "theme": "light",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "admin",
+      "w": 390,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "access",
+      "w": 1440,
+      "theme": "light",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "access",
+      "w": 1440,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "access",
+      "w": 1280,
+      "theme": "light",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "access",
+      "w": 1280,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "access",
+      "w": 768,
+      "theme": "light",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "access",
+      "w": 768,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "access",
+      "w": 390,
+      "theme": "light",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "access",
+      "w": 390,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "incidents",
+      "w": 1440,
+      "theme": "light",
+      "status": 200,
+      "heading": "Incidents",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "incidents",
+      "w": 1440,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Incidents",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "incidents",
+      "w": 1280,
+      "theme": "light",
+      "status": 200,
+      "heading": "Incidents",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "incidents",
+      "w": 1280,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Incidents",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "incidents",
+      "w": 768,
+      "theme": "light",
+      "status": 200,
+      "heading": "Incidents",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "incidents",
+      "w": 768,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Incidents",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "incidents",
+      "w": 390,
+      "theme": "light",
+      "status": 200,
+      "heading": "Incidents",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "incidents",
+      "w": 390,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Incidents",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "settings",
+      "w": 1440,
+      "theme": "light",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "settings",
+      "w": 1440,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "settings",
+      "w": 1280,
+      "theme": "light",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "settings",
+      "w": 1280,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "settings",
+      "w": 768,
+      "theme": "light",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "settings",
+      "w": 768,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "settings",
+      "w": 390,
+      "theme": "light",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "settings",
+      "w": 390,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "audit",
+      "w": 1440,
+      "theme": "light",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "audit",
+      "w": 1440,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "audit",
+      "w": 1280,
+      "theme": "light",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "audit",
+      "w": 1280,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "audit",
+      "w": 768,
+      "theme": "light",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "audit",
+      "w": 768,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "audit",
+      "w": 390,
+      "theme": "light",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "audit",
+      "w": 390,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "notifications",
+      "w": 1440,
+      "theme": "light",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "notifications",
+      "w": 1440,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "notifications",
+      "w": 1280,
+      "theme": "light",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "notifications",
+      "w": 1280,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "notifications",
+      "w": 768,
+      "theme": "light",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "notifications",
+      "w": 768,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "notifications",
+      "w": 390,
+      "theme": "light",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "notifications",
+      "w": 390,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "public",
+      "w": 1440,
+      "theme": "light",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "public",
+      "w": 1440,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "public",
+      "w": 1280,
+      "theme": "light",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "public",
+      "w": 1280,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "public",
+      "w": 768,
+      "theme": "light",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "public",
+      "w": 768,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "public",
+      "w": 390,
+      "theme": "light",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "public",
+      "w": 390,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Operations",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "public-machines",
+      "w": 1440,
+      "theme": "light",
+      "status": 200,
+      "heading": "Machines",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "public-machines",
+      "w": 1440,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Machines",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "public-machines",
+      "w": 1280,
+      "theme": "light",
+      "status": 200,
+      "heading": "Machines",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "public-machines",
+      "w": 1280,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Machines",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "public-machines",
+      "w": 768,
+      "theme": "light",
+      "status": 200,
+      "heading": "Machines",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "public-machines",
+      "w": 768,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Machines",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "public-machines",
+      "w": 390,
+      "theme": "light",
+      "status": 200,
+      "heading": "Machines",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "public-machines",
+      "w": 390,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Machines",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "public-machine",
+      "w": 1440,
+      "theme": "light",
+      "status": 200,
+      "heading": "Edge E2E",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "public-machine",
+      "w": 1440,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Edge E2E",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "public-machine",
+      "w": 1280,
+      "theme": "light",
+      "status": 200,
+      "heading": "Edge E2E",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "public-machine",
+      "w": 1280,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Edge E2E",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "public-machine",
+      "w": 768,
+      "theme": "light",
+      "status": 200,
+      "heading": "Edge E2E",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "public-machine",
+      "w": 768,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Edge E2E",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "public-machine",
+      "w": 390,
+      "theme": "light",
+      "status": 200,
+      "heading": "Edge E2E",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "public-machine",
+      "w": 390,
+      "theme": "dark",
+      "status": 200,
+      "heading": "Edge E2E",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "public-service",
+      "w": 1440,
+      "theme": "light",
+      "status": 200,
+      "heading": "AlphaPing API E2E",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "public-service",
+      "w": 1440,
+      "theme": "dark",
+      "status": 200,
+      "heading": "AlphaPing API E2E",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "public-service",
+      "w": 1280,
+      "theme": "light",
+      "status": 200,
+      "heading": "AlphaPing API E2E",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "public-service",
+      "w": 1280,
+      "theme": "dark",
+      "status": 200,
+      "heading": "AlphaPing API E2E",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "public-service",
+      "w": 768,
+      "theme": "light",
+      "status": 200,
+      "heading": "AlphaPing API E2E",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "public-service",
+      "w": 768,
+      "theme": "dark",
+      "status": 200,
+      "heading": "AlphaPing API E2E",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "public-service",
+      "w": 390,
+      "theme": "light",
+      "status": 200,
+      "heading": "AlphaPing API E2E",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    },
+    {
+      "name": "public-service",
+      "w": 390,
+      "theme": "dark",
+      "status": 200,
+      "heading": "AlphaPing API E2E",
+      "mainCount": 1,
+      "overflow": false,
+      "errors": [],
+      "violations": []
+    }
+  ],
+  "interactions": [
+    "Mobile navigation: open focus, forward/reverse focus wrap, Escape/focus return, desktop resize clears inert",
+    "Theme: System \u2192 Light \u2192 Dark \u2192 System, each persists across reload",
+    "Global search: URL-backed filter and no-match state",
+    "Synthetic dashboard published using authenticated settings forms",
+    {
+      "enrollment": "Creation, platform selection, exact clipboard copy, clipboard failure feedback, mobile layout",
+      "overflow": false,
+      "violations": []
+    }
+  ],
+  "details": [
+    {
+      "history": "No request before expansion; real history endpoint requested after expansion",
+      "body": "History\nLoad on demand\n1 hour\n6 hours\n24 hours\n7 days\n30 days\nCPU average\n1 hour\nMemory\n2.0 KiB peak\nStorage\n4.0 KiB peak\nNetwork throughput\ndownload + upload\nMachine history values\nTime\tCPU\tMemory\tStorage\tNetwork\n9\u67088\u65e5 01:02\t41.7%\t2.0 KiB\t4.0 KiB\t768 B/s"
+    },
+    {
+      "tab": "Probes",
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "tab": "Containers",
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "tab": "Events",
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "tab": "Config",
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "editor": "Expand target/assertions, add and remove assertion",
+      "overflow": false,
+      "violations": []
+    },
+    "Unauthenticated console redirects to login; public dashboard works and omits selected fixture-only internal fields"
+  ],
+  "errorPages": {
+    "404": [
+      {
+        "status": 404,
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "overflow": false,
+        "violations": []
+      },
+      {
+        "status": 404,
+        "width": 1440,
+        "height": 900,
+        "theme": "dark",
+        "overflow": false,
+        "violations": []
+      },
+      {
+        "status": 404,
+        "width": 1280,
+        "height": 720,
+        "theme": "light",
+        "overflow": false,
+        "violations": []
+      },
+      {
+        "status": 404,
+        "width": 1280,
+        "height": 720,
+        "theme": "dark",
+        "overflow": false,
+        "violations": []
+      },
+      {
+        "status": 404,
+        "width": 768,
+        "height": 1024,
+        "theme": "light",
+        "overflow": false,
+        "violations": []
+      },
+      {
+        "status": 404,
+        "width": 768,
+        "height": 1024,
+        "theme": "dark",
+        "overflow": false,
+        "violations": []
+      },
+      {
+        "status": 404,
+        "width": 390,
+        "height": 844,
+        "theme": "light",
+        "overflow": false,
+        "violations": []
+      },
+      {
+        "status": 404,
+        "width": 390,
+        "height": 844,
+        "theme": "dark",
+        "overflow": false,
+        "violations": []
+      }
+    ],
+    "server": [
+      {
+        "status": 500,
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "overflow": false,
+        "violations": []
+      },
+      {
+        "status": 500,
+        "width": 1440,
+        "height": 900,
+        "theme": "dark",
+        "overflow": false,
+        "violations": []
+      },
+      {
+        "status": 500,
+        "width": 1280,
+        "height": 720,
+        "theme": "light",
+        "overflow": false,
+        "violations": []
+      },
+      {
+        "status": 500,
+        "width": 1280,
+        "height": 720,
+        "theme": "dark",
+        "overflow": false,
+        "violations": []
+      },
+      {
+        "status": 500,
+        "width": 768,
+        "height": 1024,
+        "theme": "light",
+        "overflow": false,
+        "violations": []
+      },
+      {
+        "status": 500,
+        "width": 768,
+        "height": 1024,
+        "theme": "dark",
+        "overflow": false,
+        "violations": []
+      },
+      {
+        "status": 500,
+        "width": 390,
+        "height": 844,
+        "theme": "light",
+        "overflow": false,
+        "violations": []
+      },
+      {
+        "status": 500,
+        "width": 390,
+        "height": 844,
+        "theme": "dark",
+        "overflow": false,
+        "violations": []
+      }
+    ]
+  }
+}

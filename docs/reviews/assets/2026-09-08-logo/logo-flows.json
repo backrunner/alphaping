@@ -1,0 +1,116 @@
+[
+  {
+    "name": "guest-logo-write-denied",
+    "actionStatus": 401
+  },
+  {
+    "name": "custom-logo-preview",
+    "width": 1440,
+    "document": 1440,
+    "violations": []
+  },
+  {
+    "name": "admin-save-and-reload",
+    "passed": true
+  },
+  {
+    "name": "public-custom-logo",
+    "width": 1440,
+    "document": 1440,
+    "violations": []
+  },
+  {
+    "name": "machines-custom-logo",
+    "width": 1440,
+    "document": 1440,
+    "violations": []
+  },
+  {
+    "name": "machine-custom-logo",
+    "width": 1440,
+    "document": 1440,
+    "violations": []
+  },
+  {
+    "name": "service-custom-logo",
+    "width": 1440,
+    "document": 1440,
+    "violations": []
+  },
+  {
+    "name": "custom-logo-mobile-dark",
+    "width": 320,
+    "document": 320,
+    "violations": []
+  },
+  {
+    "name": "same-site-logo-preview",
+    "passed": true
+  },
+  {
+    "name": "broken-logo-fallback",
+    "width": 320,
+    "document": 320,
+    "violations": []
+  },
+  {
+    "name": "broken-logo-preview-and-guest-fallback",
+    "passed": true
+  },
+  {
+    "name": "unsafe-logo-preview-blocked",
+    "passed": true
+  },
+  {
+    "name": "restore-default-logo",
+    "passed": true
+  },
+  {
+    "name": "appearance-mobile-320",
+    "width": 320,
+    "document": 320,
+    "violations": []
+  },
+  {
+    "name": "image-referrer-policy-and-page-errors",
+    "requests": [
+      {
+        "path": "/custom.svg",
+        "referer": null
+      },
+      {
+        "path": "/custom.svg",
+        "referer": null
+      },
+      {
+        "path": "/custom.svg",
+        "referer": null
+      },
+      {
+        "path": "/custom.svg",
+        "referer": null
+      },
+      {
+        "path": "/custom.svg",
+        "referer": null
+      },
+      {
+        "path": "/custom.svg",
+        "referer": null
+      },
+      {
+        "path": "/missing.svg",
+        "referer": null
+      },
+      {
+        "path": "/missing.svg",
+        "referer": null
+      },
+      {
+        "path": "/missing.svg",
+        "referer": null
+      }
+    ],
+    "errors": []
+  }
+]

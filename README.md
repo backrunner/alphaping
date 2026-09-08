@@ -25,6 +25,34 @@ The default 30-machine plus 30-check model fits the Cloudflare Workers Paid
 included usage at an expected platform cost of 5 USD/month. The current cost
 ledger is documented in [`.agents/06-cloudflare-storage-cost.md`](.agents/06-cloudflare-storage-cost.md).
 
+## Install the Agent
+
+Create a machine in the control plane, generate its short-lived enrollment token,
+then copy the Shell or PowerShell command. It downloads and verifies the installer
+before enrollment and service startup. Linux supports systemd and OpenRC, macOS
+uses launchd, and Windows uses a native Windows Service. Existing installations
+are preserved; upgrades use the signed Agent updater.
+
+See the [platform matrix and recovery guide](.agents/14-agent-installation.md)
+for requirements, bootstrap trust, service locations, and native-test coverage.
+
+## Customize your public page
+
+Open **Admin → Appearance** to set a site title, introduction, color palette,
+default light/dark mode, and comfortable or compact layout. Five palettes are
+included: Iris, Ocean, Mint, Sunset, and Rose. Changes apply to published status
+pages and resource details, including custom-domain entry points.
+
+Visitors can use **Appearance** to personalize their view. Their preferences
+stay in the browser and can be reset to the site defaults. Publishing and resource
+permissions remain controlled by **Data & visibility**.
+
+Existing deployments must apply CONTROL_DB migration
+`0024_dashboard_appearance.sql` before deploying the updated Web Worker.
+See the [latest UI review and screenshots](docs/reviews/2026-09-08-glass-logo.md).
+Validation results and remaining platform coverage are recorded in the
+[final verification report](docs/reviews/2026-09-08-final-verification.md).
+
 ## Repository
 
 ```text
@@ -43,7 +71,7 @@ proto                Canonical protobuf definitions
 
 Prerequisites:
 
-- Node.js 22 or newer
+- Node.js 22.12 or newer
 - pnpm 12.3.4
 - Rust 1.96 with the `wasm32-unknown-unknown` target
 - A Cloudflare account for deployment
