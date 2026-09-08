@@ -7,7 +7,8 @@
   } from "@alphaping/contracts";
   import type { DashboardMachine } from "@alphaping/db";
   import { Radio } from "@lucide/svelte";
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
+  import { createRequestScope } from "$lib/state/request-scope";
 
   import {
     liveReconnectCeiling,
@@ -39,7 +40,9 @@
 
   let state = $state<LiveState>("idle");
   let socket: WebSocket | null = null;
-  let abortController: AbortController | null = null;
+  let ticketRequest: ReturnType<typeof createRequestScope> | null = null;
+  let fallbackRequest: ReturnType<typeof createRequestScope> | null = null;
+  let resourceKey = "";
   let lifecycle = 0;
   let reconnectAttempt = 0;
   let cachedTicket: MachineLiveTicket | null = null;
@@ -49,6 +52,7 @@
 
   let newestObservedAt = initialObservation();
   let fallbackEtag: string | null = null;
+  let handshakeTimer: Timer | undefined;
   let staleTimer: Timer | undefined;
   let demandTimer: Timer | undefined;
   let reconnectTimer: Timer | undefined;
@@ -64,6 +68,8 @@
   });
 
   function clearTimers() {
+    if (handshakeTimer !== undefined) clearTimeout(handshakeTimer);
+    handshakeTimer = undefined;
     if (staleTimer !== undefined) clearTimeout(staleTimer);
     if (demandTimer !== undefined) clearInterval(demandTimer);
     if (reconnectTimer !== undefined) clearTimeout(reconnectTimer);
@@ -77,20 +83,32 @@
   }
 
   async function pollFallback() {
+    if (fallbackRequest || !active || document.visibilityState !== "visible") return;
+    const generation = lifecycle;
+    const request = createRequestScope();
+    fallbackRequest = request;
     try {
       const headers = new Headers();
       if (fallbackEtag) headers.set("if-none-match", fallbackEtag);
-      const response = await fetch(fallbackEndpoint, { headers, cache: "no-store" });
+      const response = await fetch(fallbackEndpoint, {
+        headers,
+        cache: "no-store",
+        signal: request.signal,
+      });
       if (response.status === 304) return;
       if (!response.ok) throw new Error("fallback_failed");
-      fallbackEtag = response.headers.get("etag");
       const latest = parseMachineLiveFallback(await response.json());
+      if (request.signal.aborted || generation !== lifecycle || fallbackRequest !== request) return;
+      fallbackEtag = response.headers.get("etag");
       if ((latest.observedAt ?? 0) >= newestObservedAt) {
         newestObservedAt = latest.observedAt ?? newestObservedAt;
         onFallback(latest);
       }
     } catch {
       // The existing durable snapshot remains visible until a later poll succeeds.
+    } finally {
+      request.dispose();
+      if (fallbackRequest === request) fallbackRequest = null;
     }
   }
 
@@ -103,6 +121,8 @@
   function stopFallback() {
     if (fallbackTimer !== undefined) clearInterval(fallbackTimer);
     fallbackTimer = undefined;
+    fallbackRequest?.cancel();
+    fallbackRequest = null;
   }
 
   function markStale() {
@@ -134,34 +154,45 @@
     ) {
       throw new Error("live_unavailable");
     }
-    cachedTicket = parseMachineLiveTicket(ticketBody);
-    return cachedTicket;
+    signal.throwIfAborted();
+    return parseMachineLiveTicket(ticketBody);
   }
 
   async function connect() {
-    if (!active || document.visibilityState !== "visible" || socket) return;
+    if (!active || document.visibilityState !== "visible" || socket || ticketRequest) return;
     const generation = lifecycle;
     state = "connecting";
-    abortController?.abort();
-    abortController = new AbortController();
+    const request = createRequestScope();
+    ticketRequest = request;
     try {
-      const ticket = await currentTicket(abortController.signal);
+      const ticket = await currentTicket(request.signal);
       if (generation !== lifecycle || !active || document.visibilityState !== "visible") return;
+      request.signal.throwIfAborted();
+      cachedTicket = ticket;
       const connected = new WebSocket(ticket.url, [
         LIVE_PROTOCOL,
         `${LIVE_TICKET_PROTOCOL_PREFIX}${ticket.ticket}`,
       ]);
       socket = connected;
       connected.binaryType = "arraybuffer";
+      const isCurrent = () => generation === lifecycle && socket === connected;
+      handshakeTimer = setTimeout(() => {
+        if (!isCurrent()) return;
+        state = "degraded";
+        startFallback();
+        connected.close(1000, "Connection timed out");
+      }, 15_000);
       connected.onopen = () => {
-        if (generation !== lifecycle || connected.protocol !== LIVE_PROTOCOL) {
+        if (!isCurrent() || connected.protocol !== LIVE_PROTOCOL) {
           connected.close(1002, "Protocol mismatch");
           return;
         }
+        if (handshakeTimer !== undefined) clearTimeout(handshakeTimer);
+        handshakeTimer = undefined;
         reconnectAttempt = 0;
         state = "waiting";
         const refreshDemand = () => {
-          if (connected.readyState === WebSocket.OPEN) {
+          if (isCurrent() && connected.readyState === WebSocket.OPEN) {
             connected.send(JSON.stringify({ type: "demand_refresh" }));
           }
         };
@@ -174,6 +205,7 @@
         markStale();
       };
       connected.onmessage = (event) => {
+        if (!isCurrent()) return;
         try {
           if (typeof event.data !== "string") throw new Error("invalid_live_projection");
           const snapshot = parseLiveViewerMessage(event.data);
@@ -188,10 +220,17 @@
         }
       };
       connected.onerror = () => {
+        if (!isCurrent()) return;
         state = "degraded";
+        connected.close();
       };
       connected.onclose = () => {
-        if (socket === connected) socket = null;
+        if (!isCurrent()) return;
+        socket = null;
+        if (handshakeTimer !== undefined) clearTimeout(handshakeTimer);
+        if (staleTimer !== undefined) clearTimeout(staleTimer);
+        handshakeTimer = undefined;
+        staleTimer = undefined;
         if (cachedTicket && cachedTicket.expiresAt <= Date.now() + 10_000) cachedTicket = null;
         if (demandTimer !== undefined) clearInterval(demandTimer);
         if (credentialTimer !== undefined) clearTimeout(credentialTimer);
@@ -203,22 +242,22 @@
           scheduleReconnect(generation);
         }
       };
-    } catch (cause) {
-      if (
-        generation !== lifecycle ||
-        (cause instanceof DOMException && cause.name === "AbortError")
-      )
-        return;
+    } catch {
+      if (generation !== lifecycle) return;
       state = "degraded";
       startFallback();
       scheduleReconnect(generation);
+    } finally {
+      request.dispose();
+      if (ticketRequest === request) ticketRequest = null;
     }
   }
 
   function stop() {
     lifecycle += 1;
-    abortController?.abort();
-    abortController = null;
+    ticketRequest?.cancel();
+    ticketRequest = null;
+    stopFallback();
     clearTimers();
     socket?.close(1000, "Live metrics paused");
     socket = null;
@@ -226,8 +265,19 @@
   }
 
   $effect(() => {
-    if (active) void connect();
-    else stop();
+    const key = `${ticketEndpoint}\n${fallbackEndpoint}`;
+    const enabled = active;
+    untrack(() => {
+      if (resourceKey !== key) {
+        resourceKey = key;
+        cachedTicket = null;
+        fallbackEtag = null;
+        newestObservedAt = initialObservation();
+        reconnectAttempt = 0;
+      }
+      if (enabled) void connect();
+      else stop();
+    });
     return stop;
   });
 

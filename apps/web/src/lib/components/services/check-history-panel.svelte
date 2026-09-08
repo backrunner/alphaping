@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { untrack } from "svelte";
+  import { createRequestScope } from "$lib/state/request-scope";
   import type { CheckHistoryPoint } from "@alphaping/db";
   import { AlertCircle, BarChart3, ChevronDown, RefreshCw } from "@lucide/svelte";
 
@@ -20,6 +22,24 @@
   let loadState = $state<"idle" | "loading" | "loaded" | "error">("idle");
   let points = $state<readonly CheckHistoryPoint[]>([]);
   let errorMessage = $state("");
+  let request: ReturnType<typeof createRequestScope> | null = null;
+  let resourceEndpoint = "";
+
+  $effect(() => {
+    const currentEndpoint = endpoint;
+    untrack(() => {
+      if (resourceEndpoint !== currentEndpoint) {
+        resourceEndpoint = currentEndpoint;
+        points = [];
+        errorMessage = "";
+        loadState = "idle";
+      }
+    });
+    return () => {
+      request?.cancel();
+      request = null;
+    };
+  });
 
   const chartPoints = $derived(compact(points));
   const maximumLatency = $derived(Math.max(1, ...chartPoints.map((point) => point.latencyMs ?? 0)));
@@ -118,6 +138,9 @@
   }
 
   async function loadHistory() {
+    request?.cancel();
+    const pending = createRequestScope(30_000);
+    request = pending;
     loadState = "loading";
     errorMessage = "";
     const to = Date.now();
@@ -130,9 +153,15 @@
       let cursor: string | null = null;
       for (let pageNumber = 0; pageNumber < 8; pageNumber += 1) {
         if (cursor) url.searchParams.set("cursor", cursor);
-        const response = await fetch(url, { headers: { accept: "application/json" } });
+        const response = await fetch(url, {
+          headers: { accept: "application/json" },
+          signal: pending.signal,
+        });
         if (!response.ok) throw new Error("History request failed");
-        const page = parsePage(await response.json());
+        const body: unknown = await response.json();
+        pending.signal.throwIfAborted();
+        if (request !== pending) return;
+        const page = parsePage(body);
         if (!page) throw new Error("History response is invalid");
         loaded.push(...page.points);
         cursor = page.nextCursor;
@@ -142,8 +171,12 @@
       points = loaded;
       loadState = "loaded";
     } catch (cause) {
+      if (request !== pending) return;
       errorMessage = cause instanceof Error ? cause.message : "History is unavailable";
       loadState = "error";
+    } finally {
+      pending.dispose();
+      if (request === pending) request = null;
     }
   }
 

@@ -17,22 +17,20 @@
   import { formatRelativeTime } from "$lib/utils/format";
 
   let { data, form } = $props();
-  function initialTab(): "overview" | "config" {
-    return data.canManage &&
+  function initialTab(detail: typeof data): "overview" | "config" {
+    return detail.canManage &&
       (form?.kind === "machineConfig" ||
         form?.kind === "enrollment" ||
         form?.command !== undefined ||
-        data.requestedTab === "config")
+        detail.requestedTab === "config")
       ? "config"
       : "overview";
   }
 
-  let activeTab = $state<"overview" | "probes" | "containers" | "events" | "config">(initialTab());
-  function initialLatest(): DashboardMachine {
-    return data.latest;
-  }
-
-  let currentLatest = $state<DashboardMachine>(initialLatest());
+  let activeTab = $derived<"overview" | "probes" | "containers" | "events" | "config">(
+    initialTab(data),
+  );
+  let currentLatest = $derived<DashboardMachine>(data.latest);
   const deleteError = $derived(form?.kind === "delete" && "message" in form ? form.message : null);
 
   const tabs = $derived([
@@ -63,101 +61,104 @@
   }
 
   function applyDurableFallback(latest: DashboardMachine) {
-    if ((latest.observedAt ?? 0) < (currentLatest.observedAt ?? 0)) return;
+    if (latest.id !== data.machine.id || (latest.observedAt ?? 0) < (currentLatest.observedAt ?? 0))
+      return;
     currentLatest = latest;
   }
 </script>
 
 <svelte:head><title>{data.machine.name} · {data.workspace.name}</title></svelte:head>
 
-<main>
-  <header class="page-header">
-    <a href={`/${data.workspace.slug}/machines`}><ArrowLeft size={14} />Machines</a>
-    <div class="title-row">
-      <h1>{data.machine.name}</h1>
-      <StatusLabel status={currentLatest.state} />
-      {#if data.canManage}
-        <form
-          method="POST"
-          action="?/delete"
-          onsubmit={(event) => {
-            if (
-              !window.confirm(
-                `Delete ${data.machine.name}? It can be restored during the recovery window.`,
-              )
-            ) {
-              event.preventDefault();
-            }
-          }}
-        >
-          <Button type="submit" variant="secondary"><Trash2 size={13} />Delete machine</Button>
-        </form>
-      {/if}
+{#key `${data.workspace.id}:${data.machine.id}`}
+  <main>
+    <header class="page-header">
+      <a href={`/${data.workspace.slug}/machines`}><ArrowLeft size={14} />Machines</a>
+      <div class="title-row">
+        <h1>{data.machine.name}</h1>
+        <StatusLabel status={currentLatest.state} />
+        {#if data.canManage}
+          <form
+            method="POST"
+            action="?/delete"
+            onsubmit={(event) => {
+              if (
+                !window.confirm(
+                  `Delete ${data.machine.name}? It can be restored during the recovery window.`,
+                )
+              ) {
+                event.preventDefault();
+              }
+            }}
+          >
+            <Button type="submit" variant="secondary"><Trash2 size={13} />Delete machine</Button>
+          </form>
+        {/if}
+      </div>
+      <p>
+        {data.agent ? `${data.agent.platform} · ${data.agent.arch}` : "Agent not enrolled"}
+        <span>Last report {formatRelativeTime(data.latest.observedAt)}</span>
+      </p>
+      <MachineLive
+        active={activeTab === "overview" && data.agent !== null}
+        ticketEndpoint={`/${data.workspace.slug}/machines/${data.machine.id}/live-ticket`}
+        fallbackEndpoint={`/${data.workspace.slug}/machines/${data.machine.id}/latest`}
+        initialObservedAt={data.latest.observedAt}
+        onSnapshot={applyLiveSnapshot}
+        onFallback={applyDurableFallback}
+      />
+    </header>
+
+    {#if deleteError}<p class="page-error" role="alert">{deleteError}</p>{/if}
+
+    <div class="machine-tabs">
+      <Tabs.Root bind:value={activeTab}>
+        <Tabs.List class="tabs" aria-label="Machine details">
+          {#each tabs as tab}
+            <Tabs.Trigger class="tab" value={tab.id}>{tab.label}</Tabs.Trigger>
+          {/each}
+        </Tabs.List>
+
+        <Tabs.Content class="panel" value="overview">
+          <MachineOverview detail={data} latest={currentLatest} />
+        </Tabs.Content>
+        <Tabs.Content class="panel" value="probes">
+          <MachineProbes tasks={data.probeTasks} />
+        </Tabs.Content>
+        {#if data.machine.containersEnabled}
+          <Tabs.Content class="panel" value="containers">
+            <MachineContainers inventory={data.containerInventory} />
+          </Tabs.Content>
+        {/if}
+        <Tabs.Content class="panel" value="events">
+          <MachineEvents events={data.events} />
+        </Tabs.Content>
+        {#if data.canManage}
+          <Tabs.Content class="panel" value="config">
+            <MachineConfig machine={data.machine} result={form ?? null} />
+            {#if data.canAdministerAgent}
+              <MachineEnrollment
+                tokens={data.enrollmentTokens}
+                result={form ?? null}
+                ingestOrigin={data.ingestOrigin}
+                installOrigin={data.installOrigin}
+                checksums={data.installerChecksums}
+                manageHref={`/${data.workspace.slug}/machines/${data.machine.id}?tab=config`}
+              />
+            {/if}
+            {#if data.agent}
+              <AgentUpdateControls
+                agent={data.agent}
+                commands={data.agentCommands}
+                result={form}
+                canInstall={data.canAdministerAgent}
+              />
+            {/if}
+          </Tabs.Content>
+        {/if}
+      </Tabs.Root>
     </div>
-    <p>
-      {data.agent ? `${data.agent.platform} · ${data.agent.arch}` : "Agent not enrolled"}
-      <span>Last report {formatRelativeTime(data.latest.observedAt)}</span>
-    </p>
-    <MachineLive
-      active={activeTab === "overview" && data.agent !== null}
-      ticketEndpoint={`/${data.workspace.slug}/machines/${data.machine.id}/live-ticket`}
-      fallbackEndpoint={`/${data.workspace.slug}/machines/${data.machine.id}/latest`}
-      initialObservedAt={data.latest.observedAt}
-      onSnapshot={applyLiveSnapshot}
-      onFallback={applyDurableFallback}
-    />
-  </header>
-
-  {#if deleteError}<p class="page-error" role="alert">{deleteError}</p>{/if}
-
-  <div class="machine-tabs">
-    <Tabs.Root bind:value={activeTab}>
-      <Tabs.List class="tabs" aria-label="Machine details">
-        {#each tabs as tab}
-          <Tabs.Trigger class="tab" value={tab.id}>{tab.label}</Tabs.Trigger>
-        {/each}
-      </Tabs.List>
-
-      <Tabs.Content class="panel" value="overview">
-        <MachineOverview detail={data} latest={currentLatest} />
-      </Tabs.Content>
-      <Tabs.Content class="panel" value="probes">
-        <MachineProbes tasks={data.probeTasks} />
-      </Tabs.Content>
-      {#if data.machine.containersEnabled}
-        <Tabs.Content class="panel" value="containers">
-          <MachineContainers inventory={data.containerInventory} />
-        </Tabs.Content>
-      {/if}
-      <Tabs.Content class="panel" value="events">
-        <MachineEvents events={data.events} />
-      </Tabs.Content>
-      {#if data.canManage}
-        <Tabs.Content class="panel" value="config">
-          <MachineConfig machine={data.machine} result={form ?? null} />
-          {#if data.canAdministerAgent}
-            <MachineEnrollment
-              tokens={data.enrollmentTokens}
-              result={form ?? null}
-              ingestOrigin={data.ingestOrigin}
-              installOrigin={data.installOrigin}
-              checksums={data.installerChecksums}
-              manageHref={`/${data.workspace.slug}/machines/${data.machine.id}?tab=config`}
-            />
-          {/if}
-          {#if data.agent}
-            <AgentUpdateControls
-              agent={data.agent}
-              commands={data.agentCommands}
-              result={form}
-              canInstall={data.canAdministerAgent}
-            />
-          {/if}
-        </Tabs.Content>
-      {/if}
-    </Tabs.Root>
-  </div>
-</main>
+  </main>
+{/key}
 
 <style>
   main {
