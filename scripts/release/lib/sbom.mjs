@@ -77,7 +77,7 @@ export function createSpdxDocument(metadata, input) {
     dataLicense: "CC0-1.0",
     SPDXID: "SPDXRef-DOCUMENT",
     name: `${input.assetName}-${input.version}`,
-    documentNamespace: `https://github.com/alkinum/alphaping/releases/download/v${input.version}/${input.assetName}.spdx.json`,
+    documentNamespace: `https://github.com/BackRunner/alphaping/releases/download/v${input.version}/${input.assetName}.spdx.json`,
     creationInfo: {
       created: new Date(input.sourceDateEpoch * 1000).toISOString(),
       creators: ["Organization: AlphaPing contributors", "Tool: alphaping-release-tool/1"],

@@ -44,7 +44,7 @@ export const GET: RequestHandler = ({ params, platform }) => {
   }
   const suffix = params.target.startsWith("windows-") ? ".exe" : "";
   const asset = `alphaping-agent-${params.target}${suffix}`;
-  const url = `https://github.com/alkinum/alphaping/releases/download/v${target.version}/${asset}`;
+  const url = `https://github.com/BackRunner/alphaping/releases/download/v${target.version}/${asset}`;
   return new Response(`${target.version} ${target.length} ${target.sha256} ${url}\n`, {
     headers: {
       "cache-control": "public, max-age=300",

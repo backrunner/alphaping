@@ -115,7 +115,7 @@ case "$LENGTH" in ''|*[!0-9]*) fail "Agent release manifest fields are invalid" 
 case "$EXPECTED" in ''|*[!0-9a-f]*) fail "Agent release manifest fields are invalid" ;; esac
 [ "${#LENGTH}" -le 8 ] || fail "Agent release manifest target is invalid"
 [ "${#EXPECTED}" -eq 64 ] && [ "$LENGTH" -gt 0 ] && [ "$LENGTH" -le 67108864 ] || fail "Agent release manifest target is invalid"
-[ "$DOWNLOAD_URL" = "https://github.com/alkinum/alphaping/releases/download/v$VERSION/$ASSET" ] || fail "Agent release manifest target is invalid"
+[ "$DOWNLOAD_URL" = "https://github.com/BackRunner/alphaping/releases/download/v$VERSION/$ASSET" ] || fail "Agent release manifest target is invalid"
 download "$LENGTH" "$DOWNLOAD_URL" "$TMP_DIR/alphaping-agent"
 if command -v sha256sum >/dev/null 2>&1; then
   ACTUAL=$(sha256sum "$TMP_DIR/alphaping-agent" | awk '{print $1}')

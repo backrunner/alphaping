@@ -33,7 +33,7 @@
 7. R2 不作为在线遥测主存储，只保存用户主动生成的导出或备份 artifact。独立 retention Worker 负责 `TELEMETRY_DB` 分批清理和两个固定 R2 artifact prefix 的到期删除。
 8. Agent 到 Cloudflare 使用 TLS 1.3 `X25519MLKEM768` 混合密钥协商，并用轮换的 AES-256-GCM 应用数据密钥加密 Protobuf 报文。
 9. 权限模型包含管理员、普通用户和游客。普通用户获得资源级 `view`/`manage` 权限，游客只能访问显式公开的投影数据。
-10. 项目使用 Apache-2.0 发布，目标仓库为 `alkinum/alphaping`，开发提交身份为 `BackRunner <dev@backrunner.top>`。
+10. 项目使用 Apache-2.0 发布，目标仓库为 `BackRunner/alphaping`，开发提交身份为 `BackRunner <dev@backrunner.top>`。
 11. Agent 使用 SQLite WAL 本地 outbox 持续收集。网络失败无限重试，equal-jitter 指数退避绝对上限为 5 分钟。
 12. Agent 更新使用编译期嵌入的离线 public root、threshold-signed metadata 和固定 GitHub versioned artifacts；未嵌入 production root 的构建必须拒绝更新。
 

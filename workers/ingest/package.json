@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "license": "Apache-2.0",
-  "repository": "https://github.com/alkinum/alphaping",
+  "repository": "https://github.com/BackRunner/alphaping",
   "scripts": {
     "build": "wrangler deploy --dry-run --env= --config wrangler.ingest.template.toml --outdir dist",
     "check": "node ../../scripts/run-cargo.mjs check -p alphaping-ingest",

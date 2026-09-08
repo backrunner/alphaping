@@ -148,7 +148,7 @@
 - 更新包损坏、签名错误、健康检查失败均自动回滚。
 - 备份恢复演练能重建用户、配置、授权、密钥包裹记录和可查询历史。
 - 开源扫描没有 secret、真实 Cloudflare ID、测试用户凭据或不兼容许可证。
-- `alkinum/alphaping` 发布 Apache-2.0 的首个签名 tag。
+- `BackRunner/alphaping` 发布 Apache-2.0 的首个签名 tag。
 
 ## 10. V1.x 后续候选
 

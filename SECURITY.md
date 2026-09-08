@@ -9,7 +9,7 @@ window.
 ## Reporting a Vulnerability
 
 Do not open a public issue for a suspected vulnerability. Use GitHub private
-vulnerability reporting for `alkinum/alphaping`. If that is unavailable, email
+vulnerability reporting for `BackRunner/alphaping`. If that is unavailable, email
 `dev@backrunner.top` with the subject `AlphaPing security report`.
 
 Include the affected component and version, reproduction steps, impact, and any

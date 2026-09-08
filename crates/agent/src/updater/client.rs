@@ -10,7 +10,7 @@ use super::metadata::{
     SnapshotMetadata, TargetDescription, TargetsMetadata, TimestampMetadata, TrustedRoot,
 };
 
-const RELEASE_BASE_URL: &str = "https://github.com/alkinum/alphaping/releases/latest/download";
+const RELEASE_BASE_URL: &str = "https://github.com/BackRunner/alphaping/releases/latest/download";
 const MAX_METADATA_BYTES: usize = 256 * 1024;
 const MAX_ARTIFACT_BYTES: usize = 64 * 1024 * 1024;
 

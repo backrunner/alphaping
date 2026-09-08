@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "license": "Apache-2.0",
-  "repository": "https://github.com/alkinum/alphaping",
+  "repository": "https://github.com/BackRunner/alphaping",
   "type": "module",
   "scripts": {
     "build": "wrangler deploy --dry-run --env= --config wrangler.live.template.toml --outdir dist",

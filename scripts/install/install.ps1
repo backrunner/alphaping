@@ -107,7 +107,7 @@ try {
   $Length = [long]$Manifest[1]
   $Expected = $Manifest[2]
   $DownloadUrl = $Manifest[3]
-  $ExpectedUrl = "https://github.com/alkinum/alphaping/releases/download/v$Version/$Asset"
+  $ExpectedUrl = "https://github.com/BackRunner/alphaping/releases/download/v$Version/$Asset"
   if ($Version -cnotmatch '^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$' -or
       $Length -le 0 -or $Length -gt 67108864 -or
       $Expected -cnotmatch '^[0-9a-f]{64}$' -or $DownloadUrl -cne $ExpectedUrl) {

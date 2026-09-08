@@ -225,7 +225,7 @@ PR 描述包含：
 
 ## 15. 开源和 Apache-2.0
 
-目标仓库：`alkinum/alphaping`。
+目标仓库：`BackRunner/alphaping`。
 
 必须包含：
 

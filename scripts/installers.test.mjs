@@ -113,7 +113,7 @@ printf '${command} %s\n' "$*" >>"$INSTALL_TEST_SERVICE_LOG"
 
 function unixEnvironment(fixture_, os, arch, target, manifestVersion = version) {
   const assetName = `alphaping-agent-${target}`;
-  const download = `https://github.com/alkinum/alphaping/releases/download/v${manifestVersion}/${assetName}`;
+  const download = `https://github.com/BackRunner/alphaping/releases/download/v${manifestVersion}/${assetName}`;
   return {
     ...process.env,
     PATH: `${fixture_.bin}:/usr/bin:/bin:/usr/sbin:/sbin`,
@@ -228,7 +228,7 @@ test("Unix installer rejects plaintext origins and non-SemVer manifests", () => 
 
     const invalidManifest = runUnixInstaller({
       ...environment,
-      INSTALL_TEST_MANIFEST: `release ${fixture_.length} ${fixture_.checksum} https://github.com/alkinum/alphaping/releases/download/vrelease/alphaping-agent-linux-x86_64`,
+      INSTALL_TEST_MANIFEST: `release ${fixture_.length} ${fixture_.checksum} https://github.com/BackRunner/alphaping/releases/download/vrelease/alphaping-agent-linux-x86_64`,
     });
     assert.equal(invalidManifest.status, 1);
     assert.match(invalidManifest.stderr, /manifest fields are invalid/);
@@ -259,7 +259,7 @@ printf '${command} %s\n' "$*" >>"$INSTALL_TEST_SERVICE_LOG"
     }
     const target = process.arch === "arm64" ? "windows-aarch64" : "windows-x86_64";
     const assetName = `alphaping-agent-${target}.exe`;
-    const manifest = `${version} ${fixture_.length} ${fixture_.checksum} https://github.com/alkinum/alphaping/releases/download/v${version}/${assetName}`;
+    const manifest = `${version} ${fixture_.length} ${fixture_.checksum} https://github.com/BackRunner/alphaping/releases/download/v${version}/${assetName}`;
     // Replace only platform/network adapters in a temporary fixture copy; the
     // production script retains its native privilege checks and bounded downloader.
     const fixtureInstaller = join(fixture_.directory, "install.ps1");

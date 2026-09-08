@@ -55,7 +55,7 @@ Also run deterministic protobuf generation/breaking checks, D1 migration validat
 
 - Confirm `LICENSE` contains Apache License 2.0 and metadata uses `Apache-2.0`.
 - Confirm `NOTICE`, `README`, `CONTRIBUTING`, `CODE_OF_CONDUCT`, and `SECURITY` exist for public release.
-- Confirm target repository references `alkinum/alphaping`.
+- Confirm target repository references `BackRunner/alphaping`.
 - Confirm real Wrangler configs and `.dev.vars` are ignored while templates/examples remain tracked.
 - Confirm no private seeders, local databases, build output, coverage, update keys, signing keys, or release credentials are tracked.
 - Confirm third-party license/notice obligations and distributable asset licenses.

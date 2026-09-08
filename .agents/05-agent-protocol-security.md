@@ -249,7 +249,7 @@ WebSocket 连接仍使用 TLS 1.3 `X25519MLKEM768`。Live channel 失败不改�
 - 使用 GitHub API/静态 metadata 的 ETag 和 `If-None-Match`。
 - 面板强制检查可显式绕过时间间隔与 rollout 百分比，不绕过签名、expiry、版本存在性、平台或 hash。
 - 支持 stable channel 和显式 pinned version。
-- Release origin 固定为 `alkinum/alphaping` 的 versioned assets，Agent command 不包含 URL；`bypass_rollout` 只绕过灰度百分比，不能绕过 metadata expiry、threshold signature、长度或 hash。
+- Release origin 固定为 `BackRunner/alphaping` 的 versioned assets，Agent command 不包含 URL；`bypass_rollout` 只绕过灰度百分比，不能绕过 metadata expiry、threshold signature、长度或 hash。
 - Production build 必须通过 `ALPHAPING_UPDATE_ROOT_JSON` 编译期嵌入 public root；缺少 root 时监控继续运行，但所有更新 fail closed。
 
 ### 10.3 安装和回滚
