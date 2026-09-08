@@ -39,6 +39,7 @@ if [ "\${1:-}" = "--version" ]; then
   echo "alphaping-agent ${version}"
   exit 0
 fi
+if [ "\${1:-}" = "self-test" ]; then exit 0; fi
 if [ "\${1:-}" != "enroll" ]; then exit 2; fi
 shift
 CONFIG=""
@@ -71,21 +72,25 @@ function installUnixCommands(fixture_) {
     `#!/bin/sh
 set -eu
 OUT=""
+URL=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     -o) OUT=$2; shift 2 ;;
     --proto) shift 2 ;;
     --tlsv1.2|-f|-L|-fsSL|-fL) shift ;;
+    https://*) URL=$1; shift ;;
     *) shift ;;
   esac
 done
-if [ -z "$OUT" ]; then
-  printf '%s\n' "$INSTALL_TEST_MANIFEST"
+if [ -z "$OUT" ]; then exit 2; fi
+if [ "\${URL#*/agent-release/}" != "$URL" ]; then
+  printf '%s\n' "$INSTALL_TEST_MANIFEST" >"$OUT"
 else
   cp "$INSTALL_TEST_ASSET" "$OUT"
 fi
 `,
   );
+  executable(join(fixture_.bin, "sysctl"), "#!/bin/sh\nexit 1\n");
   executable(
     join(fixture_.bin, "uname"),
     `#!/bin/sh
@@ -191,7 +196,7 @@ test("macOS installer bootstraps a persistent launch daemon", () => {
     assert.match(plist, /\/Library\/Application Support\/AlphaPing\/agent\.toml/);
     assert.equal(statSync(plistPath).mode & 0o777, 0o600);
     const service = readFileSync(fixture_.serviceLog, "utf8");
-    assert.match(service, /launchctl bootout system\/top\.backrunner\.alphaping\.agent/);
+    assert.doesNotMatch(service, /bootout/);
     assert.match(service, /launchctl bootstrap system/);
   } finally {
     rmSync(fixture_.directory, { force: true, recursive: true });
@@ -255,21 +260,41 @@ printf '${command} %s\n' "$*" >>"$INSTALL_TEST_SERVICE_LOG"
     const target = process.arch === "arm64" ? "windows-aarch64" : "windows-x86_64";
     const assetName = `alphaping-agent-${target}.exe`;
     const manifest = `${version} ${fixture_.length} ${fixture_.checksum} https://github.com/alkinum/alphaping/releases/download/v${version}/${assetName}`;
-    const command = `& {
-      function global:Invoke-WebRequest {
-        param([string]$Uri, [string]$OutFile)
-        if ($OutFile) { Copy-Item -LiteralPath $env:INSTALL_TEST_ASSET -Destination $OutFile -Force; return }
-        return [pscustomobject]@{ Content = $env:INSTALL_TEST_MANIFEST }
+    // Replace only platform/network adapters in a temporary fixture copy; the
+    // production script retains its native privilege checks and bounded downloader.
+    const fixtureInstaller = join(fixture_.directory, "install.ps1");
+    const script = readFileSync(windowsInstaller, "utf8")
+      .replace(
+        /function Assert-InstallEnvironment \{[\s\S]*?\n}\nAssert-InstallEnvironment/,
+        "function Assert-InstallEnvironment {}\nAssert-InstallEnvironment",
+      )
+      .replace(
+        /function Download-BoundedFile[\s\S]*?\n}\n\n\$TemporaryDirectory/,
+        `function Download-BoundedFile([string]$Url, [string]$Destination, [long]$MaximumBytes) {
+        if ($Url.Contains('/agent-release/')) { [IO.File]::WriteAllText($Destination, $env:INSTALL_TEST_MANIFEST) }
+        else { Copy-Item -LiteralPath $env:INSTALL_TEST_ASSET -Destination $Destination }
       }
-      function global:Get-Service { return $null }
-      function global:Start-Sleep { param([int]$Seconds) }
-      & '${windowsInstaller.replaceAll("'", "''")}' -Endpoint 'https://ingest.example.test' -ManifestOrigin 'https://monitor.example.test' -Machine '018f5f7e-7d28-7e12-a521-23456789abcd' -Token 'installer-e2e-token'
+
+$TemporaryDirectory`,
+      );
+    writeFileSync(fixtureInstaller, script);
+    const command = `& {
+      $global:ServiceQueries = 0
+      function global:Get-Service {
+        $global:ServiceQueries++
+        if ($global:ServiceQueries -eq 1) { return $null }
+        $Service = [pscustomobject]@{}
+        $Service | Add-Member -MemberType ScriptMethod -Name WaitForStatus -Value {}
+        return $Service
+      }
+      & '${fixtureInstaller.replaceAll("'", "''")}' -Endpoint 'https://ingest.example.test' -ManifestOrigin 'https://monitor.example.test' -Machine '018f5f7e-7d28-7e12-a521-23456789abcd' -Token 'installer-e2e-token'
     }`;
     const result = spawnSync("pwsh", ["-NoProfile", "-Command", command], {
       encoding: "utf8",
       env: {
         ...process.env,
         PATH: `${fixture_.bin}:${process.env.PATH ?? ""}`,
+        PROCESSOR_ARCHITEW6432: process.arch === "arm64" ? "ARM64" : "AMD64",
         ProgramFiles: programFiles,
         ProgramData: programData,
         INSTALL_TEST_ASSET: fixture_.asset,
@@ -286,6 +311,102 @@ printf '${command} %s\n' "$*" >>"$INSTALL_TEST_SERVICE_LOG"
     assert.match(service, /restart\/5000\/restart\/30000\/restart\/60000/);
     assert.match(service, /sc\.exe start AlphaPingAgent/);
     assert.equal(statSync(join(programData, "AlphaPing", "agent.toml")).mode & 0o777, 0o600);
+  } finally {
+    rmSync(fixture_.directory, { force: true, recursive: true });
+  }
+});
+
+for (const [os, arch, target] of [
+  ["Linux", "aarch64", "linux-aarch64"],
+  ["Darwin", "x86_64", "macos-x86_64"],
+]) {
+  test(`Unix installer selects ${target}`, () => {
+    const fixture_ = fixture();
+    try {
+      installUnixCommands(fixture_);
+      const result = runUnixInstaller(unixEnvironment(fixture_, os, arch, target));
+      assert.equal(result.status, 0, result.stderr);
+      assert.match(result.stdout, new RegExp(target));
+    } finally {
+      rmSync(fixture_.directory, { force: true, recursive: true });
+    }
+  });
+}
+
+test("Unix installer preserves an existing service and enrollment before downloading", () => {
+  const fixture_ = fixture();
+  try {
+    installUnixCommands(fixture_);
+    const environment = unixEnvironment(fixture_, "Linux", "x86_64", "linux-x86_64");
+    assert.equal(runUnixInstaller(environment).status, 0);
+    const logBefore = readFileSync(fixture_.serviceLog, "utf8");
+    const config = join(environment.ALPHAPING_INSTALL_ROOT, "etc/alphaping/agent.toml");
+    const before = readFileSync(config, "utf8");
+    const result = runUnixInstaller(environment);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /already exists/);
+    assert.equal(readFileSync(fixture_.serviceLog, "utf8"), logBefore);
+    assert.equal(readFileSync(config, "utf8"), before);
+  } finally {
+    rmSync(fixture_.directory, { force: true, recursive: true });
+  }
+});
+
+test("Unix installer rejects a corrupt download and unsupported architecture before enrollment", () => {
+  const fixture_ = fixture();
+  try {
+    installUnixCommands(fixture_);
+    const environment = unixEnvironment(fixture_, "Linux", "x86_64", "linux-x86_64");
+    const result = runUnixInstaller({
+      ...environment,
+      INSTALL_TEST_MANIFEST: environment.INSTALL_TEST_MANIFEST.replace(
+        fixture_.checksum,
+        "0".repeat(64),
+      ),
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /checksum verification failed/);
+    const unsupported = runUnixInstaller({ ...environment, INSTALL_TEST_ARCH: "i686" });
+    assert.equal(unsupported.status, 1);
+    assert.match(unsupported.stderr, /Unsupported platform/);
+    assert.equal(spawnSync("test", ["-e", fixture_.enrollmentLog]).status, 1);
+  } finally {
+    rmSync(fixture_.directory, { force: true, recursive: true });
+  }
+});
+
+test("OpenRC installer uses supervised respawn and starts the default runlevel service", (context) => {
+  const fixture_ = fixture();
+  try {
+    installUnixCommands(fixture_);
+    // The fixture runs on macOS, where systemctl is absent outside the fixture PATH.
+    if (
+      spawnSync("/bin/sh", ["-c", "command -v systemctl"], { env: { PATH: "/usr/bin:/bin" } })
+        .status === 0
+    ) {
+      context.skip("OpenRC fixture requires a host without systemctl in the base PATH");
+      return;
+    }
+    rmSync(join(fixture_.bin, "systemctl"));
+    for (const command of ["rc-service", "rc-update"]) {
+      executable(
+        join(fixture_.bin, command),
+        `#!/bin/sh\nprintf '${command} %s\\n' "$*" >>"$INSTALL_TEST_SERVICE_LOG"\n`,
+      );
+    }
+    const environment = unixEnvironment(fixture_, "Linux", "aarch64", "linux-aarch64");
+    const result = runUnixInstaller(environment);
+    assert.equal(result.status, 0, result.stderr);
+    const unit = readFileSync(
+      join(environment.ALPHAPING_INSTALL_ROOT, "etc/init.d/alphaping-agent"),
+      "utf8",
+    );
+    assert.match(unit, /supervisor="supervise-daemon"/);
+    assert.match(unit, /respawn_max=10/);
+    assert.match(
+      readFileSync(fixture_.serviceLog, "utf8"),
+      /rc-update add alphaping-agent default/,
+    );
   } finally {
     rmSync(fixture_.directory, { force: true, recursive: true });
   }

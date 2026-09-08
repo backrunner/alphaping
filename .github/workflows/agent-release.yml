@@ -24,7 +24,7 @@ jobs:
       version: ${{ steps.release.outputs.version }}
       source_date_epoch: ${{ steps.release.outputs.source_date_epoch }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - id: release
         shell: bash
         env:
@@ -48,13 +48,13 @@ jobs:
       matrix:
         include:
           - target: linux-x86_64
-            rust_target: x86_64-unknown-linux-gnu
+            rust_target: x86_64-unknown-linux-musl
             runner: ubuntu-24.04
-            binary: target/x86_64-unknown-linux-gnu/release/alphaping-agent
+            binary: target/x86_64-unknown-linux-musl/release/alphaping-agent
           - target: linux-aarch64
-            rust_target: aarch64-unknown-linux-gnu
+            rust_target: aarch64-unknown-linux-musl
             runner: ubuntu-24.04-arm
-            binary: target/aarch64-unknown-linux-gnu/release/alphaping-agent
+            binary: target/aarch64-unknown-linux-musl/release/alphaping-agent
           - target: macos-x86_64
             rust_target: x86_64-apple-darwin
             runner: macos-15-intel
@@ -74,15 +74,15 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          node-version: 24
       - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
         with:
           toolchain: 1.96.0
           targets: ${{ matrix.rust_target }}
-      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: agent-release-${{ matrix.rust_target }}
       - name: Validate public update root
@@ -92,12 +92,29 @@ jobs:
         run: |
           test -n "$ALPHAPING_UPDATE_ROOT_JSON"
           node -e 'JSON.parse(process.env.ALPHAPING_UPDATE_ROOT_JSON)'
+      - name: Install static Linux toolchain
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
       - name: Build Agent
         shell: bash
         env:
           ALPHAPING_UPDATE_ROOT_JSON: ${{ vars.ALPHAPING_UPDATE_ROOT_JSON }}
           SOURCE_DATE_EPOCH: ${{ needs.prepare.outputs.source_date_epoch }}
-        run: cargo build --locked --release -p alphaping-agent --target ${{ matrix.rust_target }}
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            export CC=musl-gcc
+            export CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc
+            export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc
+          elif [[ "$RUNNER_OS" == "macOS" ]]; then
+            export MACOSX_DEPLOYMENT_TARGET=11.0
+          fi
+          cargo build --locked --release -p alphaping-agent --target ${{ matrix.rust_target }}
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            if readelf -l "${{ matrix.binary }}" | grep -q INTERP; then
+              echo "Agent unexpectedly requires a dynamic loader" >&2
+              exit 1
+            fi
+          fi
       - name: Package and verify Agent
         shell: bash
         run: >-
@@ -108,7 +125,7 @@ jobs:
           --source-commit "$GITHUB_SHA"
           --source-date-epoch "${{ needs.prepare.outputs.source_date_epoch }}"
           --output "release-package"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: agent-${{ matrix.target }}
           path: release-package/*
@@ -120,11 +137,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+          node-version: 24
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: agent-*
           path: release-packages
@@ -134,7 +151,7 @@ jobs:
           --input release-packages
           --output release-artifacts
           --version "${{ needs.prepare.outputs.version }}"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: alphaping-agent-release-${{ needs.prepare.outputs.version }}
           path: release-artifacts/*

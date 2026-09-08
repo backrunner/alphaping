@@ -6,14 +6,14 @@ export const RELEASE_TARGETS = Object.freeze([
     name: "linux-x86_64",
     platform: "linux",
     arch: "x86_64",
-    rustTarget: "x86_64-unknown-linux-gnu",
+    rustTarget: "x86_64-unknown-linux-musl",
     suffix: "",
   }),
   Object.freeze({
     name: "linux-aarch64",
     platform: "linux",
     arch: "aarch64",
-    rustTarget: "aarch64-unknown-linux-gnu",
+    rustTarget: "aarch64-unknown-linux-musl",
     suffix: "",
   }),
   Object.freeze({
