@@ -186,7 +186,16 @@ impl UpdateClient {
         if !valid_target_path(path) || maximum == 0 || maximum > MAX_ARTIFACT_BYTES {
             bail!("update download path or bound is invalid");
         }
-        let cached = if maximum == MAX_METADATA_BYTES {
+        // Only these three fixed-size documents belong in the long-lived cache.
+        // Release binaries may be much larger and change paths on every update.
+        let cache_metadata = maximum == MAX_METADATA_BYTES
+            && matches!(
+                path,
+                "alphaping-tuf-timestamp.json"
+                    | "alphaping-tuf-snapshot.json"
+                    | "alphaping-tuf-targets.json"
+            );
+        let cached = if cache_metadata {
             self.metadata_cache
                 .lock()
                 .map_err(|_| anyhow::anyhow!("update metadata cache lock failed"))?
@@ -230,7 +239,7 @@ impl UpdateClient {
             }
             bytes.extend_from_slice(&chunk);
         }
-        if let Some(etag) = etag {
+        if cache_metadata && let Some(etag) = etag {
             self.metadata_cache
                 .lock()
                 .map_err(|_| anyhow::anyhow!("update metadata cache lock failed"))?
@@ -256,4 +265,75 @@ fn valid_target_path(path: &str) -> bool {
         && path
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b'.' | b'_' | b'-'))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ed25519_dalek::SigningKey;
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpListener,
+    };
+
+    #[tokio::test]
+    async fn etag_cache_retains_only_metadata_and_reuses_conditional_responses() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            for index in 0..5 {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut request = [0_u8; 8192];
+                let length = stream.read(&mut request).await.unwrap();
+                let request = String::from_utf8_lossy(&request[..length]);
+                let response = if index == 4 {
+                    assert!(
+                        request
+                            .to_ascii_lowercase()
+                            .contains("if-none-match: \"fixture\"")
+                    );
+                    "HTTP/1.1 304 Not Modified\r\nConnection: close\r\n\r\n"
+                } else {
+                    assert!(!request.to_ascii_lowercase().contains("if-none-match:"));
+                    "HTTP/1.1 200 OK\r\nContent-Length: 4\r\nETag: \"fixture\"\r\nConnection: close\r\n\r\ndata"
+                };
+                stream.write_all(response.as_bytes()).await.unwrap();
+            }
+        });
+        let keys = [
+            ("a".to_owned(), SigningKey::from_bytes(&[7; 32])),
+            ("b".to_owned(), SigningKey::from_bytes(&[9; 32])),
+        ];
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+        let client = UpdateClient::with_base_url(
+            Client::builder()
+                .timeout(std::time::Duration::from_secs(5))
+                .build()
+                .unwrap(),
+            super::super::tests::root(&keys, 1_800_000_000_000),
+            "cache-test".into(),
+            format!("http://{address}"),
+        );
+        for path in [
+            "alphaping-tuf-timestamp.json",
+            "agent-v1",
+            "agent-v2",
+            "agent-v3",
+            "alphaping-tuf-timestamp.json",
+        ] {
+            // An artifact can have the same byte limit as metadata; the limit
+            // alone must not decide whether its payload stays in memory.
+            assert_eq!(
+                client
+                    .fetch_bounded(path, MAX_METADATA_BYTES)
+                    .await
+                    .unwrap(),
+                b"data"
+            );
+        }
+        server.await.unwrap();
+        let cache = client.metadata_cache.lock().unwrap();
+        assert_eq!(cache.len(), 1);
+        assert!(cache.contains_key("alphaping-tuf-timestamp.json"));
+    }
 }

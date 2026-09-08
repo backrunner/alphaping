@@ -26,7 +26,7 @@ fn signed(value: Value, keys: &[(String, SigningKey)]) -> Vec<u8> {
     .expect("signed metadata")
 }
 
-fn root(keys: &[(String, SigningKey)], now: i64) -> TrustedRoot {
+pub(super) fn root(keys: &[(String, SigningKey)], now: i64) -> TrustedRoot {
     let public_keys = keys
         .iter()
         .map(|(id, key)| {

@@ -33,12 +33,14 @@ pub enum UploadError {
     Authentication,
 }
 
+#[derive(Clone)]
 pub struct Uploader {
     client: Client,
     endpoint: String,
     codec: EnvelopeCodec,
 }
 
+#[derive(Clone)]
 pub struct EnvelopeCodec {
     agent_id: Vec<u8>,
     key_epoch: u32,

@@ -182,7 +182,10 @@ async fn run_live_session(
                             expires_at_ms: demand_expires_at,
                         });
                     }
-                    Message::Ping(payload) => writer.send(Message::Pong(payload)).await?,
+                    Message::Ping(payload) => {
+                        timeout(Duration::from_secs(5), writer.send(Message::Pong(payload)))
+                            .await.context("live WebSocket write timed out")??;
+                    }
                     Message::Pong(_) => {}
                     Message::Close(_) => return Ok(()),
                     Message::Binary(_) | Message::Frame(_) => {
@@ -193,11 +196,13 @@ async fn run_live_session(
             outbound = outbound_rx.recv() => {
                 let frame = outbound.context("live outbound channel closed")?;
                 if frame.session_id == credential.session_id && demand_expires_at > unix_time_ms() {
-                    writer.send(Message::binary(frame.bytes)).await?;
+                    timeout(Duration::from_secs(5), writer.send(Message::binary(frame.bytes)))
+                        .await.context("live WebSocket write timed out")??;
                 }
             }
             _ = ping_tick.tick() => {
-                writer.send(Message::Ping(Vec::new().into())).await?;
+                timeout(Duration::from_secs(5), writer.send(Message::Ping(Vec::new().into())))
+                    .await.context("live WebSocket write timed out")??;
             }
             _ = sleep(Duration::from_millis(u64::try_from(expires_in).unwrap_or(1))) => {
                 return Ok(());

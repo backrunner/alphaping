@@ -4,11 +4,12 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use alphaping_protocol::v1::{AgentCommandType, AgentConfigSnapshot};
+use alphaping_protocol::v1::{AgentCommandType, AgentConfigSnapshot, DurableAck};
 use anyhow::{Context, Result, bail};
 use rand::RngExt;
 use tokio::{
     sync::{mpsc, watch},
+    task::JoinSet,
     time::{Instant, MissedTickBehavior, interval, interval_at},
 };
 use tracing::{error, info, warn};
@@ -22,7 +23,7 @@ use crate::{
     live::LiveHandle,
     probes::{ProbeMonitor, validate_config},
     sampler::Sampler,
-    spool::Spool,
+    spool::{PendingDelivery, Spool},
     updater::{UpdateRequest, Updater},
     uploader::{UploadError, Uploader},
 };
@@ -93,6 +94,7 @@ pub async fn run(
     automatic_update_tick.set_missed_tick_behavior(MissedTickBehavior::Delay);
     let (command_result_tx, mut command_result_rx) = mpsc::channel::<CommandExecution>(1);
     let (automatic_result_tx, mut automatic_result_rx) = mpsc::channel::<bool>(1);
+    let mut uploads = JoinSet::new();
     let mut command_in_flight = false;
     let mut automatic_update_in_flight = false;
     info!("agent started");
@@ -134,8 +136,20 @@ pub async fn run(
                     error!(error = %error, "failed to create durable report");
                 }
             }
-            _ = upload_tick.tick() => {
-                let schedule_changed = upload_due_report(
+            _ = upload_tick.tick(), if uploads.is_empty() => {
+                start_due_upload(
+                    &mut uploads,
+                    &mut spool,
+                    &uploader,
+                    &mut config,
+                    config_path,
+                    unix_time_ms()?,
+                )?;
+            }
+            Some(completion) = uploads.join_next(), if !uploads.is_empty() => {
+                let completion = completion.context("durable upload task failed")?;
+                let schedule_changed = finish_upload(
+                    completion,
                     &mut spool,
                     &mut uploader,
                     &mut RuntimeControl {
@@ -146,7 +160,7 @@ pub async fn run(
                         container_monitor: &mut container_monitor,
                     },
                     unix_time_ms()?,
-                ).await?;
+                )?;
                 if schedule_changed {
                     sample_tick = interval(Duration::from_secs(config.sample_interval_seconds));
                     sample_tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -217,23 +231,60 @@ pub async fn run(
     Ok(())
 }
 
-async fn upload_due_report(
+struct UploadCompletion {
+    delivery: PendingDelivery,
+    result: std::result::Result<DurableAck, UploadError>,
+    retry_delay: Duration,
+}
+
+fn start_due_upload(
+    uploads: &mut JoinSet<UploadCompletion>,
+    spool: &mut Spool,
+    uploader: &Uploader,
+    config: &mut AgentConfig,
+    config_path: &Path,
+    now_ms: i64,
+) -> Result<()> {
+    if !uploads.is_empty() {
+        return Ok(());
+    }
+    let Some(delivery) = spool.due_delivery(now_ms)? else {
+        return Ok(());
+    };
+    let random = rand::rng().random_range(0.0..=1.0);
+    let retry_delay = equal_jitter_delay(delivery.attempt_count, random);
+    let next_attempt_at =
+        now_ms.saturating_add(i64::try_from(retry_delay.as_millis()).unwrap_or(300_000));
+    // Reserve the nonce and persist the attempt before handing off network I/O.
+    // Only the main loop owns the spool and applies authenticated ACKs/key rotation.
+    ensure_sequence_reservation(spool, config, config_path)?;
+    let sequence = spool.begin_delivery_attempt(&delivery.report_id, next_attempt_at)?;
+    let uploader = uploader.clone();
+    uploads.spawn(async move {
+        let result = uploader.upload(&delivery, sequence, now_ms).await;
+        UploadCompletion {
+            delivery,
+            result,
+            retry_delay,
+        }
+    });
+    Ok(())
+}
+
+fn finish_upload(
+    completion: UploadCompletion,
     spool: &mut Spool,
     uploader: &mut Uploader,
     control: &mut RuntimeControl<'_>,
     now_ms: i64,
 ) -> Result<bool> {
-    let Some(delivery) = spool.due_delivery(now_ms)? else {
-        return Ok(false);
-    };
+    let UploadCompletion {
+        delivery,
+        result,
+        retry_delay,
+    } = completion;
     let mut schedule_changed = false;
-    let random = rand::rng().random_range(0.0..=1.0);
-    let delay = equal_jitter_delay(delivery.attempt_count, random);
-    let next_attempt_at =
-        now_ms.saturating_add(i64::try_from(delay.as_millis()).unwrap_or(300_000));
-    ensure_sequence_reservation(spool, control.config, control.config_path)?;
-    let sequence = spool.begin_delivery_attempt(&delivery.report_id, next_attempt_at)?;
-    match uploader.upload(&delivery, sequence, now_ms).await {
+    match result {
         Ok(acknowledgement) => {
             match apply_ack(
                 spool,
@@ -270,7 +321,12 @@ async fn upload_due_report(
             );
         }
         Err(error) => {
-            warn!(error = %error, retry_seconds = delay.as_secs(), "durable report upload failed");
+            spool.reschedule_delivery(
+                &delivery.report_id,
+                now_ms.saturating_add(i64::try_from(retry_delay.as_millis()).unwrap_or(300_000)),
+                "upload_failed",
+            )?;
+            warn!(error = %error, retry_seconds = retry_delay.as_secs(), "durable report upload failed");
         }
     }
     Ok(schedule_changed)
@@ -505,6 +561,167 @@ mod tests {
         spool::Spool,
     };
 
+    fn test_config(spool_path: &std::path::Path) -> AgentConfig {
+        AgentConfig {
+            endpoint: "https://ingest.example.test/v1/reports".to_owned(),
+            agent_id: "018f5f7e-7d28-7e12-a521-123456789abc".to_owned(),
+            machine_pk: 7,
+            workspace_pk: 3,
+            key_epoch: 1,
+            data_key_hex: hex::encode([1; 32]),
+            nonce_prefix_hex: hex::encode([2; 4]),
+            identity_private_key_hex: hex::encode([3; 32]),
+            transport_sequence_checkpoint: 0,
+            credential_storage: CredentialStorage::RestrictedFile,
+            spool_path: spool_path.to_string_lossy().into_owned(),
+            sample_interval_seconds: 10,
+            report_interval_seconds: 60,
+            max_spool_bytes: 512 * 1024 * 1024,
+            container_monitoring_enabled: false,
+            auto_update: false,
+            update_channel: "stable".to_owned(),
+            pinned_version: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn stalled_upload_keeps_spool_available_and_only_one_attempt_in_flight() {
+        use super::start_due_upload;
+        use crate::uploader::{UploadError, Uploader};
+        use std::time::Duration;
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::TcpListener,
+            sync::oneshot,
+            task::JoinSet,
+            time::timeout,
+        };
+
+        let directory = tempdir().expect("temporary directory");
+        let config_path = directory.path().join("agent.toml");
+        let spool_path = directory.path().join("spool.db");
+        let mut config = test_config(&spool_path);
+        let mut spool = Spool::create(&spool_path, 1).expect("spool");
+        spool
+            .append_sample(
+                &MetricSample {
+                    observed_at_ms: 60_000,
+                    ..MetricSample::default()
+                },
+                120_000,
+            )
+            .expect("sample");
+        spool
+            .create_next_delivery(7, 3, 120_000)
+            .expect("delivery")
+            .expect("pending");
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+        let uploader = Uploader::new(
+            format!(
+                "http://{}/v1/reports",
+                listener.local_addr().expect("address")
+            ),
+            config.agent_id.as_bytes().to_vec(),
+            1,
+            [1; 32],
+            [2; 4],
+        )
+        .expect("uploader");
+        let (received_tx, received_rx) = oneshot::channel();
+        let (release_tx, release_rx) = oneshot::channel();
+        let mut servers = JoinSet::new();
+        servers.spawn(async move {
+            let (mut socket, _) = listener.accept().await.expect("accept upload");
+            let mut request = [0; 4096];
+            assert!(socket.read(&mut request).await.expect("request") > 0);
+            received_tx.send(()).expect("notify request");
+            release_rx.await.expect("release slow server");
+            socket.write_all(b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await.expect("response");
+        });
+        let mut uploads = JoinSet::new();
+        start_due_upload(
+            &mut uploads,
+            &mut spool,
+            &uploader,
+            &mut config,
+            &config_path,
+            120_000,
+        )
+        .expect("start upload");
+        timeout(Duration::from_secs(2), received_rx)
+            .await
+            .expect("network started independently")
+            .expect("request received");
+        let sequence = spool.transport_sequence().expect("reserved sequence");
+        // The runtime can keep sampling and making durable reports while the peer stalls.
+        for minute in 2..=4 {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            let observed_at_ms = minute * 60_000;
+            spool
+                .append_sample(
+                    &MetricSample {
+                        observed_at_ms,
+                        ..MetricSample::default()
+                    },
+                    observed_at_ms + 60_000,
+                )
+                .expect("sample during upload");
+            spool
+                .create_next_delivery(7, 3, observed_at_ms + 60_000)
+                .expect("report during upload");
+            start_due_upload(
+                &mut uploads,
+                &mut spool,
+                &uploader,
+                &mut config,
+                &config_path,
+                observed_at_ms + 60_000,
+            )
+            .expect("bounded concurrent upload");
+            assert_eq!(uploads.len(), 1);
+            assert_eq!(spool.transport_sequence().expect("sequence"), sequence);
+        }
+        assert!(
+            timeout(Duration::from_millis(20), uploads.join_next())
+                .await
+                .is_err()
+        );
+        assert_eq!(spool.delivery_count().expect("retained deliveries"), 4);
+        release_tx.send(()).expect("unblock server");
+        let completion = timeout(Duration::from_secs(2), uploads.join_next())
+            .await
+            .expect("upload completed")
+            .expect("upload exists")
+            .expect("task finished");
+        assert!(matches!(completion.result, Err(UploadError::ServerStatus)));
+        assert_eq!(
+            spool
+                .delivery_count()
+                .expect("no unauthenticated ACK deletion"),
+            4
+        );
+        servers
+            .join_next()
+            .await
+            .expect("server")
+            .expect("server completed");
+
+        // Dropping the task set on shutdown cancels I/O without losing the durable report.
+        start_due_upload(
+            &mut uploads,
+            &mut spool,
+            &uploader,
+            &mut config,
+            &config_path,
+            360_000,
+        )
+        .expect("retry");
+        drop(uploads);
+        assert_eq!(spool.delivery_count().expect("retained on cancellation"), 4);
+        assert!(spool.transport_sequence().expect("fresh retry nonce") > sequence);
+    }
+
     #[test]
     fn sequence_range_is_persisted_before_use_and_skipped_after_rollback() {
         let directory = tempdir().expect("temporary directory");
@@ -524,26 +741,7 @@ mod tests {
             .create_next_delivery(7, 3, 120_000)
             .expect("create delivery")
             .expect("delivery exists");
-        let mut config = AgentConfig {
-            endpoint: "https://ingest.example.test/v1/reports".to_owned(),
-            agent_id: "018f5f7e-7d28-7e12-a521-123456789abc".to_owned(),
-            machine_pk: 7,
-            workspace_pk: 3,
-            key_epoch: 1,
-            data_key_hex: hex::encode([1; 32]),
-            nonce_prefix_hex: hex::encode([2; 4]),
-            identity_private_key_hex: hex::encode([3; 32]),
-            transport_sequence_checkpoint: 0,
-            credential_storage: CredentialStorage::RestrictedFile,
-            spool_path: spool_path.to_string_lossy().into_owned(),
-            sample_interval_seconds: 10,
-            report_interval_seconds: 60,
-            max_spool_bytes: 512 * 1024 * 1024,
-            container_monitoring_enabled: false,
-            auto_update: false,
-            update_channel: "stable".to_owned(),
-            pinned_version: None,
-        };
+        let mut config = test_config(&spool_path);
 
         ensure_sequence_reservation(&mut spool, &mut config, &config_path)
             .expect("first sequence reservation");
