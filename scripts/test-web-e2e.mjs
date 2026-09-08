@@ -211,7 +211,7 @@ try {
       "--port",
       String(port),
       "--log-level",
-      "error",
+      "info",
       "--show-interactive-dev-session=false",
     ],
     {
@@ -483,6 +483,8 @@ try {
   );
 } catch (cause) {
   if (!(cause instanceof SetupInspectionComplete)) {
+    // Let the Worker's stderr drain before reporting a failed response.
+    await delay(100);
     const workerOutput = processOutput.text.trim();
     if (workerOutput) {
       console.error(`Web Worker output tail:\n${workerOutput.slice(-4_000)}`);
