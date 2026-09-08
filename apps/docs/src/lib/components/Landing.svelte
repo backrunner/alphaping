@@ -84,6 +84,8 @@
       <img
         class="ap-preview-light"
         src="/images/dashboard-light.webp"
+        srcset="/images/dashboard-light.webp 1440w, /images/dashboard-light@2x.webp 2880w"
+        sizes="(max-width: 560px) calc(100vw - 38px), (max-width: 800px) calc(100vw - 42px), (max-width: 1224px) calc(100vw - 66px), 1158px"
         alt={context.t("ap.preview.alt")}
         width="1440"
         height="1120"
@@ -92,6 +94,8 @@
       <img
         class="ap-preview-dark"
         src="/images/dashboard-dark.webp"
+        srcset="/images/dashboard-dark.webp 1440w, /images/dashboard-dark@2x.webp 2880w"
+        sizes="(max-width: 560px) calc(100vw - 38px), (max-width: 800px) calc(100vw - 42px), (max-width: 1224px) calc(100vw - 66px), 1158px"
         alt={context.t("ap.preview.alt")}
         width="1440"
         height="1120"

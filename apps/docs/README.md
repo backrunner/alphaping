@@ -78,10 +78,14 @@ Turbo passes this variable to builds and includes it in the cache key, so changi
 the public origin cannot reuse pages generated for another hostname.
 
 The Logo and favicon are copies of the product's accepted brand assets. Update
-both apps when the canonical Logo changes. Preview images derive from the
-synthetic dashboards in `docs/images`, compressed to local WebP files; they are
-explicitly labeled as sample data and follow the chosen theme. Fonts are hosted
-locally. Runtime dependencies: svedocs (MIT), Geist fonts (SIL OFL-1.1) and Lucide
+both apps when the canonical Logo changes. Preview images are captured from the
+actual public status page components with synthetic sample data at a 1440 × 1120
+CSS viewport and device pixel ratio 2. Keep the native 2880 × 2240 captures and
+1440 × 1120 variants as lossless WebP files in `static/images`; do not upscale the
+older README images in `docs/images`. The landing page uses `srcset` and `sizes`
+to load the appropriate resolution for the viewport and screen density. Previews
+are explicitly labeled as sample data and follow the chosen theme. Fonts are
+hosted locally. Runtime dependencies: svedocs (MIT), Geist fonts (SIL OFL-1.1) and Lucide
 (ISC); see the repository's third-party notices.
 Production builds publish bundled dependency licenses at `/third-party-licenses.txt`
 and repository notices at `/third-party-notices.txt`.
