@@ -496,8 +496,6 @@ fn unix_time_ms() -> Result<i64> {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-
     use alphaping_protocol::v1::MetricSample;
     use tempfile::tempdir;
 
@@ -556,9 +554,7 @@ mod tests {
             1
         );
         assert_eq!(config.transport_sequence_checkpoint, 1_024);
-        let stored: AgentConfig =
-            toml::from_str(&fs::read_to_string(&config_path).expect("persisted Agent config"))
-                .expect("stored Agent config");
+        let stored = AgentConfig::load(&config_path).expect("stored Agent config");
         assert_eq!(stored.transport_sequence_checkpoint, 1_024);
 
         assert_eq!(
