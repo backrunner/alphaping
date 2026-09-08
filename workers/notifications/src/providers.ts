@@ -192,9 +192,13 @@ export async function sendNotification(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
-    return resultForResponse(
-      await fetcher(target.url, { ...target.init, signal: controller.signal }),
-    );
+    const response = await fetcher(target.url, {
+      ...target.init,
+      redirect: "manual",
+      signal: controller.signal,
+    });
+    await response.body?.cancel();
+    return resultForResponse(response);
   } catch (cause) {
     return {
       ok: false,

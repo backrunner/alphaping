@@ -21,13 +21,7 @@ export interface CheckConfigRow {
 
 export type AssertionSource = "header" | "jsonpath" | "body";
 export type AssertionOperator =
-  | "exists"
-  | "equals"
-  | "contains"
-  | "matches"
-  | "type"
-  | "greater_than"
-  | "less_than";
+  "exists" | "equals" | "contains" | "matches" | "type" | "greater_than" | "less_than";
 
 export interface CheckAssertion {
   source: AssertionSource;

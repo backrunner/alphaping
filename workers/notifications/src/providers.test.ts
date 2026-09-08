@@ -15,6 +15,29 @@ const payload: NotificationPayload = {
 };
 
 describe("notification providers", () => {
+  it("rejects redirects without forwarding secrets and releases the response stream", async () => {
+    const cancel = vi.fn();
+    const response = new Response(new ReadableStream({ cancel }), {
+      status: 307,
+      headers: { location: "https://untrusted.example/collect" },
+    });
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(response);
+    await expect(
+      sendNotification(
+        "slack",
+        {
+          webhookUrl: "https://hooks.slack.com/services/T/B/secret",
+        },
+        payload,
+        fetcher,
+      ),
+    ).resolves.toMatchObject({ ok: false, retryable: false, status: 307 });
+    expect(fetcher).toHaveBeenCalledExactlyOnceWith(
+      "https://hooks.slack.com/services/T/B/secret",
+      expect.objectContaining({ redirect: "manual" }),
+    );
+    expect(cancel).toHaveBeenCalledOnce();
+  });
   it("sends Resend email through its HTTPS API", async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 202 }));
     await expect(

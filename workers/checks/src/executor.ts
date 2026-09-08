@@ -52,7 +52,11 @@ function redirectHeaders(
 }
 
 function assertPublicUrl(url: URL): void {
-  if (url.username !== "" || url.password !== "") {
+  if (
+    (url.protocol !== "http:" && url.protocol !== "https:") ||
+    url.username !== "" ||
+    url.password !== ""
+  ) {
     throw new Error("url_credentials_unsupported");
   }
   assertPublicHostname(url.hostname);
@@ -87,18 +91,20 @@ export async function executeHttp(
   const signal = AbortSignal.timeout(timeoutMs);
   let target = new URL(config.url);
   let headers = new Headers(config.headers);
+  let method = config.method;
+  let body = method === "GET" || method === "HEAD" ? null : config.body;
 
   try {
     for (let redirect = 0; redirect <= config.maxRedirects; redirect += 1) {
       assertPublicUrl(target);
       const response = await fetch(target, {
-        method: config.method,
+        method,
         headers,
-        body: config.method === "GET" || config.method === "HEAD" ? null : config.body,
+        body,
         redirect: "manual",
         signal,
       });
-      if (response.status >= 300 && response.status < 400) {
+      if ([301, 302, 303, 307, 308].includes(response.status)) {
         const location = response.headers.get("location");
         await response.body?.cancel();
         if (location === null || redirect === config.maxRedirects) {
@@ -106,11 +112,33 @@ export async function executeHttp(
         }
         const nextTarget = new URL(location, target);
         assertPublicUrl(nextTarget);
+        if (target.protocol === "https:" && nextTarget.protocol !== "https:") {
+          return outcome("down", null, "redirect_downgrade");
+        }
+        if (
+          ((response.status === 301 || response.status === 302) && method === "POST") ||
+          (response.status === 303 && method !== "HEAD")
+        ) {
+          method = "GET";
+          body = null;
+          for (const name of [
+            "content-type",
+            "content-length",
+            "content-encoding",
+            "content-language",
+            "content-location",
+          ]) {
+            headers.delete(name);
+          }
+        }
+        if (body && target.origin !== nextTarget.origin) {
+          return outcome("down", null, "redirect_body_blocked");
+        }
         headers = redirectHeaders(headers, target, nextTarget, config.sensitiveHeaders);
         target = nextTarget;
         continue;
       }
-      const latencyMs = Math.max(0, Math.round(performance.now() - startedAt));
+      let latencyMs = Math.max(0, Math.round(performance.now() - startedAt));
       if (!config.expectedStatus.includes(response.status)) {
         await response.body?.cancel();
         return outcome("down", latencyMs, "unexpected_status", `status:${response.status}`);
@@ -118,9 +146,12 @@ export async function executeHttp(
       const needsBody = config.assertions.some(
         (assertion) => assertion.source === "body" || assertion.source === "jsonpath",
       );
-      const body = needsBody ? await readBoundedText(response, config.maxResponseBytes) : "";
+      const responseBody = needsBody
+        ? await readBoundedText(response, config.maxResponseBytes)
+        : "";
       if (!needsBody) await response.body?.cancel();
-      const assertions = evaluateAssertions(config.assertions, response.headers, body);
+      latencyMs = Math.max(0, Math.round(performance.now() - startedAt));
+      const assertions = evaluateAssertions(config.assertions, response.headers, responseBody);
       if (config.downAfterMs !== null && latencyMs >= config.downAfterMs) {
         return outcome("down", latencyMs, "latency_threshold", `latency>=${config.downAfterMs}ms`);
       }

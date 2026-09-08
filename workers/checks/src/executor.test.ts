@@ -26,6 +26,58 @@ describe("check retry policy", () => {
 });
 
 describe("HTTP check execution", () => {
+  it.each([307, 308])("blocks a %i cross-origin body replay", async (status) => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(null, {
+        status,
+        headers: { location: "https://untrusted.example/collect" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const config = parseHttpRequest(
+      JSON.stringify({ url: "https://api.example.com", method: "POST", body: "secret" }),
+    );
+    await expect(executeHttp(config, 1_000)).resolves.toMatchObject({
+      failureCode: "redirect_body_blocked",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([301, 302, 303])("converts a redirected POST to GET for %i", async (status) => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status, headers: { location: "/ready" } }))
+      .mockResolvedValueOnce(new Response(null, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const config = parseHttpRequest(
+      JSON.stringify({
+        url: "https://api.example.com",
+        method: "POST",
+        body: "secret",
+        headers: { "content-type": "text/plain" },
+      }),
+    );
+    await expect(executeHttp(config, 1_000)).resolves.toMatchObject({ state: "healthy" });
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ method: "GET", body: null });
+    expect(new Headers(fetchMock.mock.calls[1]?.[1].headers).has("content-type")).toBe(false);
+  });
+
+  it("blocks HTTPS downgrade and accepts an explicitly expected 304", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(null, { status: 302, headers: { location: "http://api.example.com" } }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const config = parseHttpRequest(
+      JSON.stringify({ url: "https://api.example.com", expectedStatus: [304] }),
+    );
+    await expect(executeHttp(config, 1_000)).resolves.toMatchObject({
+      failureCode: "redirect_downgrade",
+    });
+    fetchMock.mockResolvedValue(new Response(null, { status: 304 }));
+    await expect(executeHttp(config, 1_000)).resolves.toMatchObject({ state: "healthy" });
+  });
   it("evaluates bounded JSON assertions", async () => {
     vi.stubGlobal(
       "fetch",
