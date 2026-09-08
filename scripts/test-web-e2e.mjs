@@ -1,3 +1,4 @@
+import { forwardTerminationSignals, stopProcessTree } from "./lib/stop-process-tree.mjs";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -34,7 +35,9 @@ function run(command, args, label, options = {}) {
   });
   if (result.error) throw new Error(`${label} could not start`, { cause: result.error });
   if (result.status !== 0) {
-    throw new Error(`${label} failed${options.quiet ? `: ${result.stderr?.trim() ?? ""}` : ""}`);
+    throw new Error(
+      `${label} failed (status ${result.status}, signal ${result.signal ?? "none"})${options.quiet ? `: ${(result.stderr || result.stdout || "").trim().slice(-8_192)}` : ""}`,
+    );
   }
   return result;
 }
@@ -60,25 +63,20 @@ function assertResponse(response, expectedStatus, label) {
 }
 
 async function waitForServer(url, processOutput) {
-  for (let attempt = 0; attempt < 150; attempt += 1) {
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
     if (processOutput.exited)
       throw new Error(`Web Worker exited before startup\n${processOutput.text}`);
     try {
-      const response = await fetch(`${url}/setup`);
+      const response = await fetch(`${url}/setup`, {
+        signal: AbortSignal.timeout(Math.max(1, Math.min(3_000, deadline - Date.now()))),
+      });
+      await response.body?.cancel();
       if (response.ok) return;
     } catch {}
     await delay(200);
   }
   throw new Error(`Web Worker did not start within 30 seconds\n${processOutput.text}`);
-}
-
-async function stopServer(child) {
-  if (child.exitCode !== null) return;
-  child.kill("SIGTERM");
-  await Promise.race([
-    new Promise((resolveExit) => child.once("exit", resolveExit)),
-    delay(5_000).then(() => child.kill("SIGKILL")),
-  ]);
 }
 
 function form(values) {
@@ -220,8 +218,10 @@ try {
       cwd: root,
       env: { ...process.env, CI: "true", NO_COLOR: "1" },
       stdio: ["ignore", "pipe", "pipe"],
+      detached: process.platform !== "win32",
     },
   );
+  forwardTerminationSignals(child);
   const recordOutput = (chunk) => {
     processOutput.text = `${processOutput.text}${chunk}`.slice(-16_384);
   };
@@ -490,6 +490,6 @@ try {
     throw cause;
   }
 } finally {
-  if (child) await stopServer(child);
+  if (child) await stopProcessTree(child);
   rmSync(temporary, { force: true, recursive: true });
 }

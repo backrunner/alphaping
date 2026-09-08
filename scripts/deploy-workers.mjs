@@ -3,24 +3,26 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { basename, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
-const workersRoot = resolve(root, "workers");
+const deployableRoots = [resolve(root, "workers"), resolve(root, "apps")];
 const WORKER_PATTERN = /^wrangler\.([a-z0-9-]+)\.template\.toml$/;
 const SAFE_NAME = /^[a-z0-9][a-z0-9-]*$/;
 
 function discoverWorkers() {
   const workers = [];
-  for (const directory of readdirSync(workersRoot, { withFileTypes: true })) {
-    if (!directory.isDirectory()) continue;
-    const workerDirectory = resolve(workersRoot, directory.name);
-    for (const file of readdirSync(workerDirectory)) {
-      const match = WORKER_PATTERN.exec(file);
-      if (!match?.[1]) continue;
-      workers.push({
-        name: match[1],
-        directory: workerDirectory,
-        template: resolve(workerDirectory, file),
-        local: resolve(workerDirectory, `wrangler.${match[1]}.toml`),
-      });
+  for (const deployableRoot of deployableRoots) {
+    for (const directory of readdirSync(deployableRoot, { withFileTypes: true })) {
+      if (!directory.isDirectory()) continue;
+      const workerDirectory = resolve(deployableRoot, directory.name);
+      for (const file of readdirSync(workerDirectory)) {
+        const match = WORKER_PATTERN.exec(file);
+        if (!match?.[1]) continue;
+        workers.push({
+          name: match[1],
+          directory: workerDirectory,
+          template: resolve(workerDirectory, file),
+          local: resolve(workerDirectory, `wrangler.${match[1]}.toml`),
+        });
+      }
     }
   }
   return workers.sort((left, right) => left.name.localeCompare(right.name));
@@ -54,9 +56,15 @@ function parseArguments(argv) {
 
 function validateProductionConfig(worker, configPath) {
   const config = readFileSync(configPath, "utf8");
-  const placeholderRateLimitNamespace = ["1001", "1002", "1003", "1004", "1005"].some((namespace) =>
-    config.includes(`namespace_id = "${namespace}"`),
-  );
+  const placeholderRateLimitNamespace = [
+    "1001",
+    "1002",
+    "1003",
+    "1004",
+    "1005",
+    "1010",
+    "1011",
+  ].some((namespace) => config.includes(`namespace_id = "${namespace}"`));
   if (
     config.includes("-template") ||
     config.includes("00000000-0000-0000-0000-000000000000") ||
@@ -82,7 +90,19 @@ function deploy(worker, options) {
   const command = ["exec", "wrangler", "deploy", "--config", basename(config)];
   command.push(options.env === "production" ? "--env=production" : "--env=");
   if (options.dryRun) command.push("--dry-run");
-  const result = spawnSync("pnpm", command, {
+  if (worker.name === "web") {
+    const build = spawnSync(
+      process.platform === "win32" ? "pnpm.cmd" : "pnpm",
+      ["exec", "vite", "build"],
+      {
+        cwd: worker.directory,
+        stdio: "inherit",
+        env: process.env,
+      },
+    );
+    if (build.status !== 0) throw new Error("web build failed before deployment");
+  }
+  const result = spawnSync(process.platform === "win32" ? "pnpm.cmd" : "pnpm", command, {
     cwd: worker.directory,
     stdio: "inherit",
     env: process.env,
