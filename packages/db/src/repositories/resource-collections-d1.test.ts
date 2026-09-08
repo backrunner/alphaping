@@ -193,6 +193,57 @@ afterEach(async () => {
 });
 
 describe("authorized resource collection bounds", () => {
+  it("loads at most 300 history buckets after prioritizing the ten dashboard services", async () => {
+    const now = 30 * 300_000;
+    await telemetryDb.batch([
+      telemetryDb.prepare(`CREATE UNIQUE INDEX status_bucket_lookup ON status_buckets
+        (resource_type, resource_pk, bucket_seconds, bucket_start)`),
+      telemetryDb.prepare(`INSERT INTO service_latest VALUES (1450, 1, 'down', 0, '', 0)`),
+      telemetryDb.prepare(`WITH RECURSIVE services(pk) AS (
+          VALUES (1001) UNION ALL SELECT pk + 1 FROM services WHERE pk < 1501
+        ), buckets(time) AS (
+          VALUES (-300000) UNION ALL SELECT time + 300000 FROM buckets WHERE time < 9000000
+        )
+        INSERT INTO status_buckets
+        SELECT 2, pk, 1, time, 300, 'healthy', 1000, NULL, NULL, '' FROM services, buckets`),
+    ]);
+    let historyRows = 0;
+    const measuredDb = {
+      prepare: (sql: string) => telemetryDb.prepare(sql),
+      batch: async <T>(statements: D1PreparedStatement[]) => {
+        const results = await telemetryDb.batch<T>(statements);
+        for (const result of results) {
+          historyRows += result.results.filter(
+            (row) => row && typeof row === "object" && "bucket_start" in row,
+          ).length;
+        }
+        return results;
+      },
+    } as D1Database;
+    const dashboard = await loadDashboardSnapshot(
+      controlDb,
+      measuredDb,
+      "operations",
+      "admin-1",
+      now,
+    );
+    expect(dashboard.summary.services).toBe(500);
+    expect(dashboard.summary.servicesDown).toBe(1);
+    expect(dashboard.services).toHaveLength(10);
+    expect(dashboard.services[0]?.id).toBe("service-450");
+    expect(historyRows).toBe(300);
+    expect(
+      dashboard.services.every(
+        (service) =>
+          service.timeline.length === 30 &&
+          service.timeline.every(
+            (bucket) =>
+              bucket.state === "healthy" && bucket.bucketStart >= 0 && bucket.bucketStart < now,
+          ),
+      ),
+    ).toBe(true);
+  });
+
   it("applies machine and service visibility before collection limits", async () => {
     const [machines, services] = await Promise.all([
       loadMachineCollection(controlDb, telemetryDb, "operations", "member-1"),

@@ -272,7 +272,7 @@ export async function loadDashboardSnapshot(
   const checkPks = checks.map((check) => check.telemetry_pk);
   const historyStart = Math.floor((now - 30 * 300_000) / 300_000) * 300_000;
   const servicePks = allowedServices.map((service) => service.telemetry_pk);
-  const [latestChecks, latestServices, serviceBuckets] = await Promise.all([
+  const [latestChecks, latestServices] = await Promise.all([
     queryInBatches<CheckLatestRow>(telemetryDb, checkPks, (batch) =>
       telemetryDb
         .prepare(
@@ -289,16 +289,6 @@ export async function loadDashboardSnapshot(
         )
         .bind(workspace.telemetry_pk, ...batch),
     ),
-    queryInBatches<ServiceBucketRow>(telemetryDb, servicePks, (batch) =>
-      telemetryDb
-        .prepare(
-          `SELECT resource_pk, bucket_start, state FROM status_buckets
-             WHERE workspace_pk = ? AND resource_type = 2 AND bucket_seconds = 300
-               AND resource_pk IN (${placeholders(batch.length)}) AND bucket_start >= ?
-             ORDER BY bucket_start`,
-        )
-        .bind(workspace.telemetry_pk, ...batch, historyStart),
-    ),
   ]);
   const checksByService = new Map<string, number[]>();
   for (const check of checks) {
@@ -312,9 +302,6 @@ export async function loadDashboardSnapshot(
   );
   const latestByService = new Map(
     latestServices.map((latest) => [latest.service_pk, latest.state]),
-  );
-  const bucketByServiceAndTime = new Map(
-    serviceBuckets.map((bucket) => [`${bucket.resource_pk}:${bucket.bucket_start}`, bucket.state]),
   );
   const services: readonly DashboardService[] = allowedServices.map((service) => {
     const serviceChecks = checksByService.get(service.id) ?? [];
@@ -334,12 +321,6 @@ export async function loadDashboardSnapshot(
       service.maintenance_until !== null && service.maintenance_until > now
         ? "maintenance"
         : (latestByService.get(service.telemetry_pk) ?? fallbackState);
-    const timeline = Array.from({ length: 30 }, (_, index) => {
-      const bucketStart = historyStart + index * 300_000;
-      const bucketState =
-        bucketByServiceAndTime.get(`${service.telemetry_pk}:${bucketStart}`) ?? "unknown";
-      return { bucketStart, state: bucketState };
-    });
     return {
       id: service.id,
       name: service.name,
@@ -348,7 +329,7 @@ export async function loadDashboardSnapshot(
         (latest, check) => Math.max(latest ?? 0, check.observed_at),
         null,
       ),
-      timeline,
+      timeline: [],
     };
   });
   const machinePreview = machines
@@ -365,6 +346,39 @@ export async function loadDashboardSnapshot(
         left.name.localeCompare(right.name),
     )
     .slice(0, DASHBOARD_SERVICE_PREVIEW);
+  // Only the ten visible previews need history. Summary counts use latest state.
+  const previewIds = new Set(servicePreview.map((service) => service.id));
+  const previewPks = allowedServices
+    .filter((service) => previewIds.has(service.id))
+    .map((service) => service.telemetry_pk);
+  const serviceBuckets = await queryInBatches<ServiceBucketRow>(telemetryDb, previewPks, (batch) =>
+    telemetryDb
+      .prepare(
+        `SELECT resource_pk, bucket_start, state FROM status_buckets
+       WHERE workspace_pk = ? AND resource_type = 2 AND bucket_seconds = 300
+         AND resource_pk IN (${placeholders(batch.length)})
+         AND bucket_start >= ? AND bucket_start < ? ORDER BY bucket_start`,
+      )
+      .bind(workspace.telemetry_pk, ...batch, historyStart, historyStart + 30 * 300_000),
+  );
+  const bucketByServiceAndTime = new Map(
+    serviceBuckets.map((bucket) => [`${bucket.resource_pk}:${bucket.bucket_start}`, bucket.state]),
+  );
+  const pkByServiceId = new Map(
+    allowedServices.map((service) => [service.id, service.telemetry_pk]),
+  );
+  const previewsWithHistory = servicePreview.map((service) => ({
+    ...service,
+    timeline: Array.from({ length: 30 }, (_, index) => {
+      const bucketStart = historyStart + index * 300_000;
+      return {
+        bucketStart,
+        state:
+          bucketByServiceAndTime.get(`${pkByServiceId.get(service.id)}:${bucketStart}`) ??
+          ("unknown" as const),
+      };
+    }),
+  }));
   return {
     workspace: {
       id: workspace.id,
@@ -388,7 +402,7 @@ export async function loadDashboardSnapshot(
       activeIncidents: activeIncidents.length,
     },
     machines: machinePreview,
-    services: servicePreview,
+    services: previewsWithHistory,
   };
 }
 

@@ -472,3 +472,7 @@ D1 storage overage at 0.75 USD/GB       4.1048 USD/month
 6. 对 24 小时离线后的补报进行压测，确认 D1 不 overloaded 且 live data 优先。
 7. 用 Worker Analytics 记录公开状态 live/cache/snapshot source、活跃 edge location、cache expiry burst 和每个分页 key 的请求量。
 8. 在发布门禁中重算 30/100/200/1000 台和对应 check 档位，以及 100+100 的 1/5/20 edge location 档位；实测值与本基线偏差超过 20% 时阻止发布。
+
+## 2026-09 审查：Dashboard 历史读取
+
+Dashboard 的服务时间线只读取异常优先排序后的 10 个预览服务，每个 30 个已关闭的五分钟桶，同时添加上界。按每个桶一行估算，30/100/200/1000 个服务对应 900/3000/6000/30000 行降至最多 300 行/加载；1000 个服务是扩容评估场景，超过 V1 的每 workspace 200 个服务上限。此变更不增加 Worker 请求、D1/DO 写入或 R2 操作；汇总数字仍基于授权资源的 latest。实际 rows_read 应以 D1 meta 和性能 E2E 验证。
