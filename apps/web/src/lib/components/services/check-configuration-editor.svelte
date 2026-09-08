@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { ServiceCheckSummary } from "@alphaping/db";
-  import { Save, Settings2 } from "lucide-svelte";
+  import { Save, Settings2 } from "@lucide/svelte";
 
   import Button from "$components/ui/button/button.svelte";
 

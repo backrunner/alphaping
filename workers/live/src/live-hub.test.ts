@@ -1,4 +1,5 @@
-import { env, runInDurableObject, SELF } from "cloudflare:test";
+import { env, exports } from "cloudflare:workers";
+import { runInDurableObject } from "cloudflare:test";
 import { signViewerLiveTicket } from "@alphaping/contracts";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -72,7 +73,7 @@ async function agentTicket(machinePk: number, now = Date.now()): Promise<string>
 }
 
 async function connect(ticket: string): Promise<WebSocket> {
-  const response = await SELF.fetch(`https://live.example.test/v1/live/${WORKSPACE}`, {
+  const response = await exports.default.fetch(`https://live.example.test/v1/live/${WORKSPACE}`, {
     headers: {
       Upgrade: "websocket",
       "Sec-WebSocket-Protocol": `alphaping.v1, alphaping.ticket.${ticket}`,
@@ -211,8 +212,7 @@ describe("LiveHub", () => {
     const persistedState = await runInDurableObject(stub, (_instance, state) => {
       const agentSocket = state.getWebSockets("agent")[0];
       const agentAttachment = agentSocket?.deserializeAttachment() as
-        | { highestSequence?: unknown }
-        | undefined;
+        { highestSequence?: unknown } | undefined;
       return Promise.resolve({
         databaseSize: state.storage.sql.databaseSize,
         highestSequence: agentAttachment?.highestSequence,

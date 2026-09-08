@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from "$app/state";
-  import { ChevronLeft, ChevronRight, ExternalLink, Save, ShieldCheck } from "lucide-svelte";
+  import { ChevronLeft, ChevronRight, ExternalLink, Save, ShieldCheck } from "@lucide/svelte";
   import { SvelteURLSearchParams } from "svelte/reactivity";
 
   import type { DashboardVisibility, PublicResourceSetting } from "$lib/server/workspace-settings";

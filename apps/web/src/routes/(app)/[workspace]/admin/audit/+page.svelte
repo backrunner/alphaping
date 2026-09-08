@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ChevronLeft, ChevronRight, FileClock } from "lucide-svelte";
+  import { ChevronLeft, ChevronRight, FileClock } from "@lucide/svelte";
 
   let { data } = $props();
 

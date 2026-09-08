@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { ServiceHistoryPoint } from "@alphaping/db";
-  import { AlertCircle, BarChart3, ChevronDown, RefreshCw } from "lucide-svelte";
+  import { AlertCircle, BarChart3, ChevronDown, RefreshCw } from "@lucide/svelte";
 
   let { endpoint }: { endpoint: string } = $props();
 

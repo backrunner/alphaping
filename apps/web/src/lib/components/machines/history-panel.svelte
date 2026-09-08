@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { AlertCircle, BarChart3, ChevronDown, RefreshCw } from "lucide-svelte";
+  import { AlertCircle, BarChart3, ChevronDown, RefreshCw } from "@lucide/svelte";
   import type { MachineHistoryPoint } from "@alphaping/db";
 
   import MachineHistoryCharts from "$components/machines/machine-history-charts.svelte";

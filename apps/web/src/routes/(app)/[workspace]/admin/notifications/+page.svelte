@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { BellRing, Mail, MessageCircle, RadioTower, Send, Trash2, Webhook } from "lucide-svelte";
+  import { BellRing, Mail, MessageCircle, RadioTower, Send, Trash2, Webhook } from "@lucide/svelte";
 
   import Button from "$components/ui/button/button.svelte";
   import EmptyState from "$components/ui/empty-state/empty-state.svelte";

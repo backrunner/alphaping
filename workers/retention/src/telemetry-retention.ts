@@ -17,13 +17,7 @@ interface ResourceRow {
 }
 
 export type RetentionKind =
-  | "machine_raw"
-  | "machine_5m"
-  | "machine_1h"
-  | "check_raw"
-  | "check_5m"
-  | "check_1h"
-  | "status_5m";
+  "machine_raw" | "machine_5m" | "machine_1h" | "check_raw" | "check_5m" | "check_1h" | "status_5m";
 
 export interface RetentionTarget {
   kind: RetentionKind;

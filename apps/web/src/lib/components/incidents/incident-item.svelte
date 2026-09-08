@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Send } from "lucide-svelte";
+  import { Send } from "@lucide/svelte";
 
   import Button from "$components/ui/button/button.svelte";
 

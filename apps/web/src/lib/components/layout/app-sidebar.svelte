@@ -9,7 +9,7 @@
     MonitorCog,
     Server,
     X,
-  } from "lucide-svelte";
+  } from "@lucide/svelte";
   import type { WorkspaceShellData } from "@alphaping/db";
 
   let { shell, open, onclose }: { shell: WorkspaceShellData; open: boolean; onclose: () => void } =

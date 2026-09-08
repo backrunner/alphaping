@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ArrowLeft, Box, Cpu, HardDrive, MemoryStick, Network, Radio } from "lucide-svelte";
+  import { ArrowLeft, Box, Cpu, HardDrive, MemoryStick, Network, Radio } from "@lucide/svelte";
 
   import StatusLabel from "$components/status/status-label.svelte";
   import { formatBytes, formatPercent, formatRate, formatRelativeTime } from "$lib/utils/format";

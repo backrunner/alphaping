@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ArrowLeft, Trash2 } from "lucide-svelte";
+  import { ArrowLeft, Trash2 } from "@lucide/svelte";
   import { Tabs } from "bits-ui";
   import type { LiveViewerSnapshot } from "@alphaping/contracts";
   import type { DashboardMachine } from "@alphaping/db";

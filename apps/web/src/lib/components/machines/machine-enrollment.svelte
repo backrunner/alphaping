@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Ban, ExternalLink, KeyRound, RefreshCw } from "lucide-svelte";
+  import { Ban, ExternalLink, KeyRound, RefreshCw } from "@lucide/svelte";
 
   import Button from "$components/ui/button/button.svelte";
   import EnrollmentCommand from "$components/machines/enrollment-command.svelte";

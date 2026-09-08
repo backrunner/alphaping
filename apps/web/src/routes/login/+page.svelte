@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Activity } from "lucide-svelte";
+  import { Activity } from "@lucide/svelte";
 
   import Button from "$components/ui/button/button.svelte";
 

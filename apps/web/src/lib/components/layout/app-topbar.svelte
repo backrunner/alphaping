@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Menu, Search } from "lucide-svelte";
+  import { Menu, Search } from "@lucide/svelte";
   import type { WorkspaceShellData } from "@alphaping/db";
 
   let {

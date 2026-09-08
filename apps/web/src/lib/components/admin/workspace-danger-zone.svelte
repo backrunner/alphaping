@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Trash2, TriangleAlert } from "lucide-svelte";
+  import { Trash2, TriangleAlert } from "@lucide/svelte";
 
   import Button from "$components/ui/button/button.svelte";
 

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from "$app/state";
-  import { ArrowLeft, ChevronLeft, ChevronRight, Search, Server } from "lucide-svelte";
+  import { ArrowLeft, ChevronLeft, ChevronRight, Search, Server } from "@lucide/svelte";
   import { SvelteURLSearchParams } from "svelte/reactivity";
 
   import PublicMachineCard from "$components/status/public-machine-card.svelte";

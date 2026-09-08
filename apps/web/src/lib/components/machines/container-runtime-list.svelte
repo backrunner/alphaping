@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { MachineContainerInventory } from "@alphaping/db";
-  import { CheckCircle2, CircleHelp, PauseCircle, ShieldAlert, TriangleAlert } from "lucide-svelte";
+  import { CheckCircle2, CircleHelp, PauseCircle, ShieldAlert, TriangleAlert } from "@lucide/svelte";
 
   let { runtimes }: { runtimes: MachineContainerInventory["runtimes"] } = $props();
 

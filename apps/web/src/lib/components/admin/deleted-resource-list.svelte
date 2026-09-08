@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { RotateCcw, Trash2 } from "lucide-svelte";
+  import { RotateCcw, Trash2 } from "@lucide/svelte";
 
   import Button from "$components/ui/button/button.svelte";
 

@@ -11,7 +11,7 @@
     MemoryStick,
     Radio,
     TriangleAlert,
-  } from "lucide-svelte";
+  } from "@lucide/svelte";
   import type { DashboardMachine, MachineDetail } from "@alphaping/db";
 
   import HistoryPanel from "$components/machines/history-panel.svelte";

@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { MachineProbeTask } from "@alphaping/db";
-  import { Activity, Clock3, Globe2, Network, RadioTower } from "lucide-svelte";
+  import { Activity, Clock3, Globe2, Network, RadioTower } from "@lucide/svelte";
 
   import ProbeVisuals from "$components/machines/probe-visuals.svelte";
   import StatusLabel from "$components/status/status-label.svelte";

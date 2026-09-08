@@ -7,7 +7,7 @@
     Plus,
     Search,
     SquareActivity,
-  } from "lucide-svelte";
+  } from "@lucide/svelte";
   import { SvelteURLSearchParams } from "svelte/reactivity";
 
   import ServiceMonitorTable from "$components/services/service-monitor-table.svelte";

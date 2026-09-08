@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Activity, Globe2, RadioTower, Server, ShieldCheck } from "lucide-svelte";
+  import { Activity, Globe2, RadioTower, Server, ShieldCheck } from "@lucide/svelte";
 
   import ServiceRequestFields from "$components/admin/service-request-fields.svelte";
   import ServiceScheduleFields from "$components/admin/service-schedule-fields.svelte";

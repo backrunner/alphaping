@@ -7,7 +7,7 @@
     PauseCircle,
     TriangleAlert,
     XCircle,
-  } from "lucide-svelte";
+  } from "@lucide/svelte";
 
   import { formatBytes, formatPercent, formatRate } from "$lib/utils/format";
 

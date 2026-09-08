@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ArrowDown, ArrowUp, Box, Cpu, HardDrive, MemoryStick } from "lucide-svelte";
+  import { ArrowDown, ArrowUp, Box, Cpu, HardDrive, MemoryStick } from "@lucide/svelte";
   import type { DashboardMachine } from "@alphaping/db";
 
   import StatusLabel from "$components/status/status-label.svelte";

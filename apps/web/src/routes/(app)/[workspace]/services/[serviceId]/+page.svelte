@@ -8,7 +8,7 @@
     LockKeyhole,
     Save,
     Trash2,
-  } from "lucide-svelte";
+  } from "@lucide/svelte";
 
   import ServiceCheckForm from "$components/services/service-check-form.svelte";
   import ServiceCheckList from "$components/services/service-check-list.svelte";

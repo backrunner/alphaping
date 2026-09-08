@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Server } from "lucide-svelte";
+  import { Server } from "@lucide/svelte";
 
   import DeletedResourceList from "$components/admin/deleted-resource-list.svelte";
   import ServiceMonitorForm from "$components/admin/service-monitor-form.svelte";

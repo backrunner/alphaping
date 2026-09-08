@@ -9,7 +9,7 @@
     ShieldAlert,
     TimerReset,
     Trash2,
-  } from "lucide-svelte";
+  } from "@lucide/svelte";
 
   import CheckConfigurationEditor from "$components/services/check-configuration-editor.svelte";
   import CheckHistoryPanel from "$components/services/check-history-panel.svelte";

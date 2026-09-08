@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ArrowRight, Check, KeyRound, LogIn, UserPlus } from "lucide-svelte";
+  import { ArrowRight, Check, KeyRound, LogIn, UserPlus } from "@lucide/svelte";
 
   import Button from "$components/ui/button/button.svelte";
 

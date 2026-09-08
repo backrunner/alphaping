@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from "$app/state";
-  import { Database, FileClock, ServerCog, ShieldCheck } from "lucide-svelte";
+  import { Database, FileClock, ServerCog, ShieldCheck } from "@lucide/svelte";
 
   let { data, children } = $props();
   const root = $derived(`/${data.shell.workspace.slug}/admin`);

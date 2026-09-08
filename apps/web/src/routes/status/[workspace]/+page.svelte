@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { TriangleAlert } from "lucide-svelte";
+  import { TriangleAlert } from "@lucide/svelte";
 
   import PublicAnnouncements from "$components/status/public-announcements.svelte";
   import PublicIncidentList from "$components/status/public-incident-list.svelte";

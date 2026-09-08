@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from "$app/state";
-  import { ChevronLeft, ChevronRight } from "lucide-svelte";
+  import { ChevronLeft, ChevronRight } from "@lucide/svelte";
   import { SvelteURLSearchParams } from "svelte/reactivity";
 
   let {

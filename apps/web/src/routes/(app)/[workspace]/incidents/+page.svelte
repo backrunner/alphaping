@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from "$app/state";
-  import { ArrowLeft, Bell, Megaphone, Plus } from "lucide-svelte";
+  import { ArrowLeft, Bell, Megaphone, Plus } from "@lucide/svelte";
 
   import AnnouncementCreateForm from "$components/incidents/announcement-create-form.svelte";
   import IncidentCreateForm from "$components/incidents/incident-create-form.svelte";

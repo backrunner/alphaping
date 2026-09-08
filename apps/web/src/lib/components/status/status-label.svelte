@@ -7,7 +7,7 @@
     WifiOff,
     Wrench,
     Check,
-  } from "lucide-svelte";
+  } from "@lucide/svelte";
 
   type Status = "healthy" | "degraded" | "down" | "offline" | "maintenance" | "unknown";
   let { status, compact = false }: { status: Status; compact?: boolean } = $props();

@@ -6,7 +6,7 @@
     type LiveViewerSnapshot,
   } from "@alphaping/contracts";
   import type { DashboardMachine } from "@alphaping/db";
-  import { Radio } from "lucide-svelte";
+  import { Radio } from "@lucide/svelte";
   import { onMount } from "svelte";
 
   import {

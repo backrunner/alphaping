@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Clock3, Gauge, Radio } from "lucide-svelte";
+  import { Clock3, Gauge, Radio } from "@lucide/svelte";
   import type { ServiceDetail } from "@alphaping/db";
 
   import StatusCapsules from "$components/status/status-capsules.svelte";

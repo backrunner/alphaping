@@ -8,7 +8,7 @@
     LogOut,
     Plus,
     RotateCcw,
-  } from "lucide-svelte";
+  } from "@lucide/svelte";
 
   import Button from "$components/ui/button/button.svelte";
 

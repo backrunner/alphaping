@@ -14,9 +14,9 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "catalog:",
-    "@cloudflare/vitest-pool-workers": "0.8.69",
     "typescript": "catalog:",
-    "vitest": "catalog:"
+    "vitest": "catalog:",
+    "@cloudflare/vitest-plugin": "1.1.4"
   },
   "dependencies": {
     "@alphaping/contracts": "workspace:*"

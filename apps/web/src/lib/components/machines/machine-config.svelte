@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { Save, Settings } from "lucide-svelte";
+  import { Save, Settings } from "@lucide/svelte";
   import type { MachineDetail } from "@alphaping/db";
 
   import Button from "$components/ui/button/button.svelte";

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ArrowLeft, Clock3, Gauge, History } from "lucide-svelte";
+  import { ArrowLeft, Clock3, Gauge, History } from "@lucide/svelte";
 
   import StatusCapsules from "$components/status/status-capsules.svelte";
   import StatusLabel from "$components/status/status-label.svelte";

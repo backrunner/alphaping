@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { MachineDetail } from "@alphaping/db";
-  import { Boxes, Download, RefreshCw } from "lucide-svelte";
+  import { Boxes, Download, RefreshCw } from "@lucide/svelte";
 
   import Button from "$components/ui/button/button.svelte";
   import { formatRelativeTime } from "$lib/utils/format";

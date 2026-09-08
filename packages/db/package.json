@@ -11,7 +11,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit",
     "check": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run --maxWorkers=2 --testTimeout=15000 --hookTimeout=30000"
   },
   "dependencies": {
     "@alphaping/authz": "workspace:*",
@@ -20,7 +20,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "catalog:",
-    "miniflare": "4.20260710.0",
+    "miniflare": "4.20260730.0",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

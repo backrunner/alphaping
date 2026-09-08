@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Boxes, Plus } from "lucide-svelte";
+  import { Boxes, Plus } from "@lucide/svelte";
 
   import Metric from "$components/dashboard/metric.svelte";
   import MachineCard from "$components/machines/machine-card.svelte";

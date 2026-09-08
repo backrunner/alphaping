@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { MachineDetail } from "@alphaping/db";
-  import { Boxes, Clock3 } from "lucide-svelte";
+  import { Boxes, Clock3 } from "@lucide/svelte";
 
   import ContainerList from "$components/machines/container-list.svelte";
   import ContainerRuntimeList from "$components/machines/container-runtime-list.svelte";

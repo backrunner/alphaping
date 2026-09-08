@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { AlertTriangle, CheckCircle2, Clock3, Wrench } from "lucide-svelte";
+  import { AlertTriangle, CheckCircle2, Clock3, Wrench } from "@lucide/svelte";
   import type { PublicStatusPage } from "@alphaping/db";
 
   import StatusLabel from "$components/status/status-label.svelte";

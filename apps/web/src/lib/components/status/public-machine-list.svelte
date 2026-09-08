@@ -8,7 +8,7 @@
     HardDrive,
     MemoryStick,
     Network,
-  } from "lucide-svelte";
+  } from "@lucide/svelte";
   import type { PublicStatusMachine } from "@alphaping/db";
 
   import StatusLabel from "$components/status/status-label.svelte";

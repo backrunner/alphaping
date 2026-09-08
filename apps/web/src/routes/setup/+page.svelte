@@ -10,7 +10,7 @@
     Server,
     ShieldCheck,
     UserRound,
-  } from "lucide-svelte";
+  } from "@lucide/svelte";
 
   import Button from "$components/ui/button/button.svelte";
 
