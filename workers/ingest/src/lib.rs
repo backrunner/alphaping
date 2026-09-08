@@ -3,7 +3,7 @@ use alphaping_protocol::{
     v1::{EnrollmentRequest, MachineReport, MetricSample},
 };
 use ed25519_dalek::{Signature, VerifyingKey};
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
 use thiserror::Error;
 
@@ -117,7 +117,7 @@ pub fn enrollment_token_digest(
     pepper: &[u8; 32],
     token: &[u8],
 ) -> Result<[u8; 32], hmac::digest::InvalidLength> {
-    let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(pepper)?;
+    let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(pepper)?;
     mac.update(token);
     Ok(mac.finalize().into_bytes().into())
 }

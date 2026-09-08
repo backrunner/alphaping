@@ -18,9 +18,24 @@ pub struct CapacityOutcome {
 struct StorageUsage {
     live_bytes: u64,
     free_pages: u64,
+    page_limit_bytes: u64,
 }
 
 impl Spool {
+    pub fn configure_capacity(&self, max_bytes: u64) -> Result<()> {
+        // Leave room for the bounded WAL outside the main database page budget.
+        let page_size: u32 = self
+            .connection
+            .query_row("PRAGMA page_size", [], |row| row.get(0))?;
+        let pages = max_bytes.saturating_sub(8 * 1024 * 1024) / u64::from(page_size);
+        anyhow::ensure!(pages >= 128, "spool capacity is too small");
+        self.connection
+            .pragma_update(None, "max_page_count", i64::try_from(pages)?)?;
+        self.connection
+            .pragma_update(None, "journal_size_limit", 4 * 1024 * 1024)?;
+        Ok(())
+    }
+
     pub fn enforce_capacity(&mut self, max_bytes: u64, now_ms: i64) -> Result<CapacityOutcome> {
         let storage = self.storage_usage()?;
         let parent = self.path.parent();
@@ -33,7 +48,9 @@ impl Spool {
             .transpose()?
             .unwrap_or(u64::MAX);
         let reserve = MIN_FREE_BYTES.max(total / 20);
-        let ratio = storage.live_bytes as f64 / max_bytes.max(1) as f64;
+        // Pressure thresholds must use the actual main-DB budget, after the WAL reserve.
+        let budget = max_bytes.min(storage.page_limit_bytes).max(1);
+        let ratio = storage.live_bytes as f64 / budget as f64;
         if ratio < 0.70 && free >= reserve {
             return Ok(CapacityOutcome::default());
         }
@@ -110,7 +127,7 @@ impl Spool {
             .transpose()?
             .unwrap_or(u64::MAX);
         let mut dropped = 0;
-        if after_compaction.live_bytes >= max_bytes.max(1)
+        if after_compaction.live_bytes >= budget
             || (free_after < reserve && after_compaction.free_pages == 0)
         {
             dropped = self.connection.execute(
@@ -129,7 +146,7 @@ impl Spool {
                  ON CONFLICT(hour_start) DO UPDATE SET
                    dropped_samples = data_gaps.dropped_samples + excluded.dropped_samples,
                    updated_at = excluded.updated_at",
-                params![hour, dropped, now_ms],
+                params![hour, i64::try_from(dropped)?, now_ms],
             )?;
         }
         Ok(CapacityOutcome {
@@ -139,20 +156,28 @@ impl Spool {
     }
 
     fn storage_usage(&self) -> Result<StorageUsage> {
-        let page_count: u64 = self
-            .connection
-            .query_row("PRAGMA page_count", [], |row| row.get(0))?;
-        let page_size: u64 = self
-            .connection
-            .query_row("PRAGMA page_size", [], |row| row.get(0))?;
+        let page_count: u64 = self.connection.query_row("PRAGMA page_count", [], |row| {
+            row.get::<_, u32>(0).map(u64::from)
+        })?;
+        let page_size: u64 = self.connection.query_row("PRAGMA page_size", [], |row| {
+            row.get::<_, u32>(0).map(u64::from)
+        })?;
         let free_pages: u64 = self
             .connection
-            .query_row("PRAGMA freelist_count", [], |row| row.get(0))?;
+            .query_row("PRAGMA freelist_count", [], |row| {
+                row.get::<_, u32>(0).map(u64::from)
+            })?;
+        let page_limit: u64 = self
+            .connection
+            .query_row("PRAGMA max_page_count", [], |row| {
+                row.get::<_, u32>(0).map(u64::from)
+            })?;
         Ok(StorageUsage {
             live_bytes: page_count
                 .saturating_sub(free_pages)
                 .saturating_mul(page_size),
             free_pages,
+            page_limit_bytes: page_limit.saturating_mul(page_size),
         })
     }
 }

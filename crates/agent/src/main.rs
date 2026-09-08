@@ -36,7 +36,11 @@ async fn main() -> Result<()> {
         return Ok(());
     }
     if arguments.len() == 1 && arguments[0] == "diagnose-runtimes" {
-        let inventory = alphaping_runtime_adapters::RuntimeCollector::new().collect(now_ms()?);
+        let observed_at = now_ms()?;
+        let inventory = tokio::task::spawn_blocking(move || {
+            alphaping_runtime_adapters::RuntimeCollector::new().collect(observed_at)
+        })
+        .await?;
         println!("{}", serde_json::to_string_pretty(&inventory)?);
         return Ok(());
     }

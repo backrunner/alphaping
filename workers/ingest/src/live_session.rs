@@ -1,6 +1,6 @@
 use alphaping_protocol::v1::LiveSessionCredential;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use serde::Serialize;
 use sha2::Sha256;
 use thiserror::Error;
@@ -42,7 +42,7 @@ fn keyed_digest(
     parts: &[&[u8]],
 ) -> Result<[u8; 32], LiveSessionError> {
     let mut mac =
-        <Hmac<Sha256> as Mac>::new_from_slice(secret).map_err(|_| LiveSessionError::Signing)?;
+        <Hmac<Sha256> as KeyInit>::new_from_slice(secret).map_err(|_| LiveSessionError::Signing)?;
     mac.update(label);
     for part in parts {
         mac.update(&[0]);

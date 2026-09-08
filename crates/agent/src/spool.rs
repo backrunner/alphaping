@@ -27,6 +27,7 @@ pub struct PendingDelivery {
 pub struct Spool {
     connection: Connection,
     path: PathBuf,
+    config_key: Option<[u8; 32]>,
 }
 
 impl Spool {
@@ -37,7 +38,9 @@ impl Spool {
             fs::create_dir_all(parent)?;
         }
         let connection = Connection::open(&path)?;
-        Self::from_connection(connection, path)
+        let mut spool = Self::from_connection(connection, path)?;
+        spool.protect_probe_config(&[7; 32])?;
+        Ok(spool)
     }
 
     pub fn create(path: impl AsRef<Path>, initial_client_sequence: u64) -> Result<Self> {
@@ -50,16 +53,19 @@ impl Spool {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&path)
-            .with_context(|| {
-                format!(
-                    "spool already exists or cannot be created at {}",
-                    path.display()
-                )
-            })?;
+        let mut options = fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        options.open(&path).with_context(|| {
+            format!(
+                "spool already exists or cannot be created at {}",
+                path.display()
+            )
+        })?;
         let mut spool = match Self::open_existing(&path) {
             Ok(spool) => spool,
             Err(error) => {
@@ -73,6 +79,7 @@ impl Spool {
 
     pub fn open_existing(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref().to_path_buf();
+        protect_spool_files(&path)?;
         let connection = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_WRITE)
             .with_context(|| {
                 format!(
@@ -88,6 +95,7 @@ impl Spool {
             "PRAGMA auto_vacuum = INCREMENTAL;
              PRAGMA journal_mode = WAL;
              PRAGMA synchronous = FULL;
+             PRAGMA secure_delete = ON;
              PRAGMA foreign_keys = ON;
              PRAGMA busy_timeout = 5000;
              PRAGMA temp_store = MEMORY;
@@ -196,7 +204,23 @@ impl Spool {
             "INSERT OR IGNORE INTO meta (key, value) VALUES ('live_sequence', 0)",
             [],
         )?;
-        Ok(Self { connection, path })
+        let has_encrypted = connection
+            .prepare("PRAGMA table_info(probe_config)")?
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<rusqlite::Result<Vec<_>>>()?
+            .iter()
+            .any(|name| name == "encrypted");
+        if !has_encrypted {
+            connection.execute(
+                "ALTER TABLE probe_config ADD COLUMN encrypted INTEGER NOT NULL DEFAULT 0",
+                [],
+            )?;
+        }
+        Ok(Self {
+            connection,
+            path,
+            config_key: None,
+        })
     }
 
     fn set_transport_sequence(&mut self, sequence: u64) -> Result<()> {
@@ -673,10 +697,35 @@ impl Spool {
     }
 
     pub fn delivery_count(&self) -> Result<u64> {
-        self.connection
+        let count: i64 = self
+            .connection
             .query_row("SELECT COUNT(*) FROM deliveries", [], |row| row.get(0))
-            .context("failed to count deliveries")
+            .context("failed to count deliveries")?;
+        u64::try_from(count).context("invalid delivery count")
     }
+}
+
+fn protect_spool_files(path: &Path) -> Result<()> {
+    for suffix in ["", "-wal", "-shm"] {
+        let mut file_path = path.as_os_str().to_os_string();
+        file_path.push(suffix);
+        let metadata = match fs::symlink_metadata(&file_path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound && !suffix.is_empty() => {
+                continue;
+            }
+            Err(error) => return Err(error.into()),
+        };
+        if !metadata.is_file() {
+            bail!("spool files must be regular files, not symlinks");
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&file_path, fs::Permissions::from_mode(0o600))?;
+        }
+    }
+    Ok(())
 }
 
 fn ensure_delivery_columns(connection: &Connection) -> Result<()> {

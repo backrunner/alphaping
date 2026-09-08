@@ -4,7 +4,7 @@ use alphaping_protocol::v1::LiveSessionCredential;
 use anyhow::{Context, Result, bail};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use futures_util::{SinkExt, StreamExt};
-use rand::Rng;
+use rand::RngExt;
 use serde::Deserialize;
 use tokio::{
     sync::{mpsc, watch},

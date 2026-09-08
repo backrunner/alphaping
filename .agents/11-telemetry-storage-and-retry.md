@@ -178,7 +178,7 @@ Live WebSocket 不进入上述确认链：它不删除 SQLite frame/delivery，�
 
 ```sql
 PRAGMA journal_mode = WAL;
-PRAGMA synchronous = NORMAL;
+PRAGMA synchronous = FULL;
 PRAGMA busy_timeout = 5000;
 PRAGMA temp_store = MEMORY;
 PRAGMA wal_autocheckpoint = 1000;
@@ -187,8 +187,8 @@ PRAGMA auto_vacuum = INCREMENTAL;
 
 - Agent 只有一个 SQLite writer task。
 - DB/WAL/SHM 文件只允许 service identity 访问。
-- payload 使用 local spool key 的 AES-256-GCM 加密。
-- `NORMAL` 避免数据库损坏，并接受极端断电时最近 transaction 可能丢失的监控数据取舍。
+- 当前敏感 probe configuration 使用从 identity 派生的独立 HKDF key 做 AES-256-GCM 加密；普通 telemetry payload 由受限文件权限保护，不能宣称整个 DB 已加密。完整本地存储加密仍需单独的兼容迁移。
+- `FULL` 保证 nonce/sequence 的持久预占不因断电回退；不能为了减少 fsync 将传输 sequence 与普通样本一起切换为 `NORMAL`。
 
 ### 6.2 `spool_frames`
 

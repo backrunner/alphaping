@@ -11,20 +11,19 @@ use alphaping_runtime_adapters::{RuntimeCollector, RuntimeInventory};
 
 pub struct ContainerMonitor {
     latest: Arc<RwLock<Option<ContainerInventory>>>,
-    control: Option<mpsc::Sender<MonitorCommand>>,
+    control: Option<mpsc::SyncSender<MonitorCommand>>,
     handle: Option<thread::JoinHandle<()>>,
 }
 
 enum MonitorCommand {
     Refresh,
-    Stop,
 }
 
 impl ContainerMonitor {
     pub fn start() -> Self {
         let latest = Arc::new(RwLock::new(None));
         let thread_latest = Arc::clone(&latest);
-        let (control, receiver) = mpsc::channel();
+        let (control, receiver) = mpsc::sync_channel(1);
         let handle = thread::Builder::new()
             .name("alphaping-containers".to_owned())
             .spawn(move || {
@@ -36,7 +35,7 @@ impl ContainerMonitor {
                     }
                     match receiver.recv_timeout(Duration::from_secs(60)) {
                         Ok(MonitorCommand::Refresh) | Err(mpsc::RecvTimeoutError::Timeout) => {}
-                        Ok(MonitorCommand::Stop) | Err(mpsc::RecvTimeoutError::Disconnected) => {
+                        Err(mpsc::RecvTimeoutError::Disconnected) => {
                             break;
                         }
                     }
@@ -55,17 +54,18 @@ impl ContainerMonitor {
     }
 
     pub fn refresh(&self) -> bool {
-        self.control
-            .as_ref()
-            .is_some_and(|control| control.send(MonitorCommand::Refresh).is_ok())
+        self.control.as_ref().is_some_and(|control| {
+            matches!(
+                control.try_send(MonitorCommand::Refresh),
+                Ok(()) | Err(mpsc::TrySendError::Full(_))
+            )
+        })
     }
 }
 
 impl Drop for ContainerMonitor {
     fn drop(&mut self) {
-        if let Some(control) = self.control.take() {
-            let _ = control.send(MonitorCommand::Stop);
-        }
+        self.control.take();
         if let Some(handle) = self.handle.take() {
             let _ = handle.join();
         }

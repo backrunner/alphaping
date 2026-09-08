@@ -24,7 +24,7 @@ pub async fn execute(request: &HttpProbeRequest, timeout: Duration) -> ProbeOutc
         Ok(client) => client,
         Err(_) => return ProbeOutcome::failed("invalid_config"),
     };
-    let method = match Method::from_bytes(request.method.as_bytes()) {
+    let mut method = match Method::from_bytes(request.method.as_bytes()) {
         Ok(method) => method,
         Err(_) => return ProbeOutcome::failed("invalid_config"),
     };
@@ -43,6 +43,7 @@ pub async fn execute(request: &HttpProbeRequest, timeout: Duration) -> ProbeOutc
         .map(|header| header.name.to_ascii_lowercase())
         .collect::<HashSet<_>>();
     let started = Instant::now();
+    let mut send_body = method != Method::GET && method != Method::HEAD && !request.body.is_empty();
     for redirect in 0..=request.max_redirects {
         let remaining = timeout.saturating_sub(started.elapsed());
         if remaining.is_zero() {
@@ -52,7 +53,7 @@ pub async fn execute(request: &HttpProbeRequest, timeout: Duration) -> ProbeOutc
             .request(method.clone(), target.clone())
             .headers(headers.clone())
             .timeout(remaining);
-        if method != Method::GET && method != Method::HEAD && !request.body.is_empty() {
+        if send_body {
             builder = builder.body(request.body.clone());
         }
         let mut response = match builder.send().await {
@@ -65,7 +66,7 @@ pub async fn execute(request: &HttpProbeRequest, timeout: Duration) -> ProbeOutc
                 });
             }
         };
-        if response.status().is_redirection() {
+        if matches!(response.status().as_u16(), 301 | 302 | 303 | 307 | 308) {
             let location = response
                 .headers()
                 .get("location")
@@ -86,6 +87,27 @@ pub async fn execute(request: &HttpProbeRequest, timeout: Duration) -> ProbeOutc
                 }
                 _ => return ProbeOutcome::failed("redirect_target"),
             };
+            if target.scheme() == "https" && next.scheme() != "https" {
+                return ProbeOutcome::failed("redirect_downgrade");
+            }
+            if (matches!(response.status().as_u16(), 301 | 302) && method == Method::POST)
+                || (response.status().as_u16() == 303 && method != Method::HEAD)
+            {
+                method = Method::GET;
+                send_body = false;
+                for name in [
+                    "content-type",
+                    "content-length",
+                    "content-encoding",
+                    "content-language",
+                    "content-location",
+                ] {
+                    headers.remove(name);
+                }
+            }
+            if send_body && target.origin() != next.origin() {
+                return ProbeOutcome::failed("redirect_body_blocked");
+            }
             if target.origin() != next.origin() {
                 let remove = headers
                     .keys()
@@ -128,6 +150,7 @@ pub async fn execute(request: &HttpProbeRequest, timeout: Duration) -> ProbeOutc
         } else {
             Vec::new()
         };
+        let latency_ms = elapsed_ms(started);
         match assertions::evaluate(&request.assertions, &response_headers, &body) {
             Ok(Some(failure)) => {
                 return ProbeOutcome {
@@ -195,4 +218,120 @@ async fn read_bounded(
         body.extend_from_slice(&chunk);
     }
     Ok(body)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alphaping_protocol::v1::ProbeHeader;
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpListener,
+        task::JoinHandle,
+    };
+
+    async fn server(responses: Vec<String>) -> (String, JoinHandle<Vec<String>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let origin = format!("http://{}", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move {
+            let mut requests = Vec::new();
+            for response in responses {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut bytes = Vec::new();
+                loop {
+                    let mut buffer = [0; 1024];
+                    let count = stream.read(&mut buffer).await.unwrap();
+                    assert!(count > 0, "request ended before body");
+                    bytes.extend_from_slice(&buffer[..count]);
+                    if let Some(end) = bytes.windows(4).position(|part| part == b"\r\n\r\n") {
+                        let headers = String::from_utf8_lossy(&bytes[..end]);
+                        let length = headers
+                            .lines()
+                            .find_map(|line| {
+                                let (name, value) = line.split_once(':')?;
+                                name.eq_ignore_ascii_case("content-length")
+                                    .then(|| value.trim().parse::<usize>().unwrap())
+                            })
+                            .unwrap_or(0);
+                        if bytes.len() >= end + 4 + length {
+                            break;
+                        }
+                    }
+                    assert!(bytes.len() < 16_384);
+                }
+                requests.push(String::from_utf8(bytes).unwrap());
+                stream.write_all(response.as_bytes()).await.unwrap();
+            }
+            requests
+        });
+        (origin, task)
+    }
+
+    fn response(status: u16, location: &str) -> String {
+        format!(
+            "HTTP/1.1 {status} Test\r\nContent-Length: 0\r\nConnection: close\r\nLocation: {location}\r\n\r\n"
+        )
+    }
+
+    fn request(url: String) -> HttpProbeRequest {
+        HttpProbeRequest {
+            url,
+            method: "POST".to_owned(),
+            body: b"private payload".to_vec(),
+            max_redirects: 3,
+            max_response_bytes: 1024,
+            expected_status: vec![200],
+            headers: vec![ProbeHeader {
+                name: "content-type".to_owned(),
+                value: "text/plain".to_owned(),
+                sensitive: false,
+            }],
+            ..Default::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn post_redirects_drop_the_body_and_content_headers() {
+        for status in [301, 302, 303] {
+            let (origin, task) = server(vec![response(status, "/ready"), response(200, "")]).await;
+            let outcome = execute(&request(origin), Duration::from_secs(3)).await;
+            assert_eq!(outcome.state, ProbeState::Healthy, "{outcome:?}");
+            let requests = task.await.unwrap();
+            assert!(requests[0].ends_with("private payload"));
+            assert!(requests[1].starts_with("GET /ready HTTP/1.1\r\n"));
+            assert!(!requests[1].to_ascii_lowercase().contains("content-type:"));
+            assert!(!requests[1].contains("private payload"));
+        }
+    }
+
+    #[tokio::test]
+    async fn cross_origin_redirects_do_not_replay_private_bodies() {
+        let destination = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        for status in [307, 308] {
+            let (origin, task) = server(vec![response(
+                status,
+                &format!("http://{}/collect", destination.local_addr().unwrap()),
+            )])
+            .await;
+            let outcome = execute(&request(origin), Duration::from_secs(3)).await;
+            assert_eq!(outcome.failure_code, "redirect_body_blocked");
+            assert_eq!(task.await.unwrap().len(), 1);
+        }
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), destination.accept())
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn explicitly_expected_not_modified_is_successful() {
+        let (origin, task) = server(vec![response(304, "")]).await;
+        let mut request = request(origin);
+        request.method = "GET".to_owned();
+        request.expected_status = vec![304];
+        let outcome = execute(&request, Duration::from_secs(3)).await;
+        assert_eq!(outcome.state, ProbeState::Healthy, "{outcome:?}");
+        task.await.unwrap();
+    }
 }

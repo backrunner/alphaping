@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
 const toolsRoot = resolve(repositoryRoot, "target", "worker-tools");
+const workerBuildVersion = "0.8.5";
 const executable = resolve(
   toolsRoot,
   "bin",
@@ -41,9 +42,16 @@ function run(command, args, cwd) {
   }
 }
 
-if (!existsSync(executable)) {
+const installedVersion = existsSync(executable)
+  ? spawnSync(executable, ["--version"], { encoding: "utf8", env: buildEnvironment })
+  : undefined;
+if (installedVersion?.status !== 0 || installedVersion.stdout.trim() !== workerBuildVersion) {
   mkdirSync(toolsRoot, { recursive: true });
-  run("cargo", ["install", "worker-build@0.8.4", "--locked", "--root", toolsRoot], repositoryRoot);
+  run(
+    "cargo",
+    ["install", `worker-build@${workerBuildVersion}`, "--locked", "--root", toolsRoot],
+    repositoryRoot,
+  );
 }
 
 run(executable, ["--release"], process.cwd());

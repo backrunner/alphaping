@@ -9,6 +9,14 @@ use thiserror::Error;
 const CLIENT_INFO: &[u8] = b"alphaping/v1/client-to-server";
 const SERVER_INFO: &[u8] = b"alphaping/v1/server-to-client";
 
+pub fn local_config_key(identity_secret: &[u8; 32]) -> Result<[u8; 32], CryptoError> {
+    let mut key = [0_u8; 32];
+    Hkdf::<Sha256>::new(None, identity_secret)
+        .expand(b"alphaping/v1/local-probe-config", &mut key)
+        .map_err(|_| CryptoError::InvalidKey)?;
+    Ok(key)
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DirectionalKeys {
     pub client_to_server: [u8; 32],
@@ -63,7 +71,7 @@ pub fn seal(
     let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| CryptoError::InvalidKey)?;
     cipher
         .encrypt(
-            Nonce::from_slice(&nonce(nonce_prefix, sequence)),
+            &Nonce::from(nonce(nonce_prefix, sequence)),
             Payload {
                 msg: plaintext,
                 aad,
@@ -82,7 +90,7 @@ pub fn open(
     let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| CryptoError::InvalidKey)?;
     cipher
         .decrypt(
-            Nonce::from_slice(&nonce(nonce_prefix, sequence)),
+            &Nonce::from(nonce(nonce_prefix, sequence)),
             Payload {
                 msg: ciphertext,
                 aad,
@@ -100,7 +108,7 @@ pub fn open_with_nonce(
     let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| CryptoError::InvalidKey)?;
     cipher
         .decrypt(
-            Nonce::from_slice(&nonce),
+            &Nonce::from(nonce),
             Payload {
                 msg: ciphertext,
                 aad,
@@ -118,7 +126,7 @@ pub fn wrap_key(
     let cipher = Aes256Gcm::new_from_slice(wrapping_key).map_err(|_| CryptoError::InvalidKey)?;
     cipher
         .encrypt(
-            Nonce::from_slice(&wrapping_nonce),
+            &Nonce::from(wrapping_nonce),
             Payload {
                 msg: key_to_wrap,
                 aad,
@@ -136,7 +144,7 @@ pub fn unwrap_key(
     let cipher = Aes256Gcm::new_from_slice(wrapping_key).map_err(|_| CryptoError::InvalidKey)?;
     let plaintext = cipher
         .decrypt(
-            Nonce::from_slice(&wrapping_nonce),
+            &Nonce::from(wrapping_nonce),
             Payload {
                 msg: wrapped_key,
                 aad,

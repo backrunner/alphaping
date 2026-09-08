@@ -267,6 +267,10 @@ Windows 使用独立 updater helper 完成正在运行 executable 的替换。
 
 ## 11. 中央 HTTP/TCP 检查安全
 
+HTTP 探针只跟随 301/302/303/307/308。301/302 的 POST 和 303 的非 HEAD 请求改为 GET 并移除 body/content headers；保留 body 的跨 origin 重定向及 HTTPS 降级直接拒绝。通知 provider 一律使用 manual redirect，响应头处理后取消未消费 body，防止凭据转发和连接占用。
+
+首次安装以部署者通过 HTTPS 发布的 release manifest 中的固定 hash/length 为 bootstrap 信任锚；manifest 必须来自离线签名 release bundle 的验证结果，不能宣称脚本独立验证 TUF。安装前检查平台、权限、服务管理器及已有 identity/spool，已有安装不自动重新 enrollment 或覆盖。下载限制 HTTPS（含 redirect）、总时长及文件体积；失败保留 enrollment 状态以便诊断恢复。后续自动更新仍独立验证嵌入的 TUF root 和签名。
+
 - URL 只允许 `http`/`https`。
 - 解析 DNS 后拒绝 loopback、link-local、multicast、unspecified、Cloudflare metadata 和 RFC1918/ULA 地址，除非未来由明确私网产品提供。
 - 重定向每一跳重新执行地址分类，防止 DNS rebinding/redirect SSRF。

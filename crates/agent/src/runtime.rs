@@ -6,7 +6,7 @@ use std::{
 
 use alphaping_protocol::v1::{AgentCommandType, AgentConfigSnapshot};
 use anyhow::{Context, Result, bail};
-use rand::Rng;
+use rand::RngExt;
 use tokio::{
     sync::{mpsc, watch},
     time::{Instant, MissedTickBehavior, interval, interval_at},
@@ -51,6 +51,8 @@ pub async fn run(
         );
     }
     let mut spool = Spool::open_existing(&config.spool_path)?;
+    spool.configure_capacity(config.max_spool_bytes)?;
+    spool.protect_probe_config(&config.identity_private_key()?)?;
     spool.reconcile_sequence_checkpoint(config.transport_sequence_checkpoint)?;
     let mut sampler = Sampler::new();
     let initial_probe_config = spool.load_probe_config()?;
@@ -100,19 +102,25 @@ pub async fn run(
             _ = sample_tick.tick() => {
                 let now = unix_time_ms()?;
                 let sample = sampler.sample(now);
-                let inserted = spool.append_sample(&sample, now)?;
+                let inserted = match spool.append_sample(&sample, now) {
+                    Ok(inserted) => inserted,
+                    Err(error) => {
+                        error!(error = %error, "sample could not be persisted; durable upload remains active");
+                        false
+                    }
+                };
                 if inserted
                     && let Err(error) = live.send_snapshot(&mut spool, config.machine_pk, &sample, now)
                 {
                     warn!(error = %error, "live snapshot was dropped");
                 }
-                let capacity = spool.enforce_capacity(config.max_spool_bytes, now)?;
-                if capacity.compacted_samples > 0 || capacity.dropped_samples > 0 {
-                    warn!(
-                        compacted_samples = capacity.compacted_samples,
-                        dropped_samples = capacity.dropped_samples,
-                        "spool pressure reduced unassigned samples"
-                    );
+                match spool.enforce_capacity(config.max_spool_bytes, now) {
+                    Ok(capacity) if capacity.compacted_samples > 0 || capacity.dropped_samples > 0 => {
+                        warn!(compacted_samples = capacity.compacted_samples, dropped_samples = capacity.dropped_samples,
+                            "spool pressure reduced unassigned samples");
+                    }
+                    Ok(_) => {}
+                    Err(error) => warn!(error = %error, "spool maintenance failed; durable upload remains active"),
                 }
             }
             _ = report_tick.tick() => {

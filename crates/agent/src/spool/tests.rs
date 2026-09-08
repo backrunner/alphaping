@@ -21,22 +21,30 @@ fn sample(observed_at_ms: i64) -> MetricSample {
 fn sample_count(spool: &Spool) -> u64 {
     spool
         .connection
-        .query_row("SELECT COUNT(*) FROM samples", [], |row| row.get(0))
+        .query_row("SELECT COUNT(*) FROM samples", [], |row| {
+            row.get::<_, u32>(0).map(u64::from)
+        })
         .expect("count samples")
 }
 
 fn storage_pages(spool: &Spool) -> (u64, u64, u64) {
     let page_count = spool
         .connection
-        .query_row("PRAGMA page_count", [], |row| row.get(0))
+        .query_row("PRAGMA page_count", [], |row| {
+            row.get::<_, u32>(0).map(u64::from)
+        })
         .expect("page count");
     let free_pages = spool
         .connection
-        .query_row("PRAGMA freelist_count", [], |row| row.get(0))
+        .query_row("PRAGMA freelist_count", [], |row| {
+            row.get::<_, u32>(0).map(u64::from)
+        })
         .expect("free page count");
     let page_size = spool
         .connection
-        .query_row("PRAGMA page_size", [], |row| row.get(0))
+        .query_row("PRAGMA page_size", [], |row| {
+            row.get::<_, u32>(0).map(u64::from)
+        })
         .expect("page size");
     (page_count, free_pages, page_size)
 }
@@ -124,7 +132,7 @@ fn new_spools_enable_incremental_vacuum() {
     let spool = Spool::open(directory.path().join("spool.db")).expect("open spool");
     let mode: u32 = spool
         .connection
-        .query_row("PRAGMA auto_vacuum", [], |row| row.get(0))
+        .query_row("PRAGMA auto_vacuum", [], |row| row.get::<_, u32>(0))
         .expect("read auto vacuum mode");
     assert_eq!(mode, 2);
 }
@@ -717,4 +725,124 @@ fn command_remains_due_after_a_crash_during_its_final_attempt() {
         .expect("exhausted command remains visible");
     assert_eq!(recovered.command, command);
     assert_eq!(recovered.attempt_count, 1);
+}
+
+#[test]
+fn probe_secrets_are_encrypted_and_bound_to_the_identity_and_revision() {
+    let directory = tempdir().expect("temp directory");
+    let path = directory.path().join("spool.db");
+    let secret = b"private-probe-header-never-store-in-plaintext";
+    let config = AgentConfigSnapshot {
+        revision: 9,
+        digest: secret.to_vec(),
+        ..Default::default()
+    };
+    {
+        let mut spool = Spool::open(&path).expect("open spool");
+        // Simulate the old plaintext schema, then migrate in place.
+        spool.connection.execute("INSERT INTO probe_config (singleton, revision, payload, updated_at) VALUES (1, 9, ?, 0)", [encode_message(&config)]).expect("legacy config");
+        spool.protect_probe_config(&[7; 32]).expect("migrate");
+        let stored: Vec<u8> = spool
+            .connection
+            .query_row("SELECT payload FROM probe_config", [], |row| row.get(0))
+            .expect("stored ciphertext");
+        assert!(!stored.windows(secret.len()).any(|window| window == secret));
+        assert_eq!(spool.load_probe_config().expect("read config"), config);
+        spool
+            .protect_probe_config(&[8; 32])
+            .expect("set different identity");
+        assert!(spool.load_probe_config().is_err());
+    }
+    let spool = Spool::open(&path).expect("reopen with original identity");
+    assert_eq!(
+        spool.load_probe_config().expect("read after restart"),
+        config
+    );
+    spool
+        .connection
+        .execute("UPDATE probe_config SET revision = 10", [])
+        .expect("tamper revision");
+    assert!(spool.load_probe_config().is_err());
+}
+
+#[test]
+fn sqlite_capacity_rejects_growth_without_deleting_pending_deliveries() {
+    let directory = tempdir().expect("temp directory");
+    let spool = Spool::open(directory.path().join("spool.db")).expect("open spool");
+    spool
+        .configure_capacity(9 * 1024 * 1024)
+        .expect("configure capacity");
+    spool
+        .connection
+        .execute("CREATE TABLE pressure (payload BLOB)", [])
+        .expect("test table");
+    assert!(
+        spool
+            .connection
+            .execute("INSERT INTO pressure VALUES (zeroblob(2097152))", [])
+            .is_err()
+    );
+    spool
+        .connection
+        .execute("INSERT INTO pressure VALUES (zeroblob(1024))", [])
+        .expect("small writes still work");
+}
+
+#[test]
+fn pressure_uses_the_main_database_budget_after_reserving_wal_space() {
+    let directory = tempdir().expect("temp directory");
+    let mut spool = Spool::open(directory.path().join("spool.db")).expect("open spool");
+    let budget = 9 * 1024 * 1024;
+    spool
+        .configure_capacity(budget)
+        .expect("configure capacity");
+    let now = 10 * 86_400_000_i64;
+    let mut filled = false;
+    for index in 0..1000_i64 {
+        let observed_at = now - index * 10_000;
+        if spool
+            .connection
+            .execute(
+                "INSERT INTO samples (sample_bucket, observed_at, payload, created_at)
+             VALUES (?, ?, zeroblob(8192), ?)",
+                rusqlite::params![observed_at, observed_at, now],
+            )
+            .is_err()
+        {
+            filled = true;
+            break;
+        }
+    }
+    assert!(filled, "fixture must reach the SQLite page cap");
+    let outcome = spool
+        .enforce_capacity(budget, now)
+        .expect("compact full spool");
+    assert!(
+        outcome.compacted_samples > 0,
+        "WAL reserve must not hide main-DB pressure"
+    );
+    spool
+        .append_sample(&sample(now + 10_000), now)
+        .expect("sampling resumes after compaction");
+}
+
+#[cfg(unix)]
+#[test]
+fn spool_files_have_private_permissions_and_reject_symlinks() {
+    use std::os::unix::fs::{PermissionsExt, symlink};
+    let directory = tempdir().expect("temp directory");
+    let path = directory.path().join("spool.db");
+    let spool = Spool::create(&path, 1).expect("create spool");
+    assert_eq!(
+        std::fs::metadata(&path)
+            .expect("metadata")
+            .permissions()
+            .mode()
+            & 0o777,
+        0o600
+    );
+    drop(spool);
+    let link = directory.path().join("link.db");
+    symlink(&path, &link).expect("symlink");
+    assert!(Spool::open_existing(&link).is_err());
 }
