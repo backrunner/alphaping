@@ -90,7 +90,7 @@ function deploy(worker, options) {
   const command = ["exec", "wrangler", "deploy", "--config", basename(config)];
   command.push(options.env === "production" ? "--env=production" : "--env=");
   if (options.dryRun) command.push("--dry-run");
-  if (worker.name === "web") {
+  if (existsSync(resolve(worker.directory, "svelte.config.js"))) {
     const build = spawnSync(
       process.platform === "win32" ? "pnpm.cmd" : "pnpm",
       ["exec", "vite", "build"],
@@ -100,7 +100,7 @@ function deploy(worker, options) {
         env: process.env,
       },
     );
-    if (build.status !== 0) throw new Error("web build failed before deployment");
+    if (build.status !== 0) throw new Error(`${worker.name} build failed before deployment`);
   }
   const result = spawnSync(process.platform === "win32" ? "pnpm.cmd" : "pnpm", command, {
     cwd: worker.directory,

@@ -1,0 +1,245 @@
+{
+  "checks": [
+    {
+      "pair": {
+        "zh": "/about",
+        "en": "/en/about"
+      },
+      "metadata": true,
+      "localLinks": true,
+      "languageSwitch": true,
+      "sectionSwitch": true
+    },
+    {
+      "pair": {
+        "zh": "/",
+        "en": "/en"
+      },
+      "metadata": true,
+      "localLinks": true,
+      "languageSwitch": true,
+      "sectionSwitch": false
+    },
+    {
+      "pair": {
+        "zh": "/docs/guides",
+        "en": "/docs/en/guides"
+      },
+      "metadata": true,
+      "localLinks": true,
+      "languageSwitch": true,
+      "sectionSwitch": true
+    },
+    {
+      "pair": {
+        "zh": "/docs/guides/machines",
+        "en": "/docs/en/guides/machines"
+      },
+      "metadata": true,
+      "localLinks": true,
+      "languageSwitch": true,
+      "sectionSwitch": true
+    },
+    {
+      "pair": {
+        "zh": "/docs/guides/permissions",
+        "en": "/docs/en/guides/permissions"
+      },
+      "metadata": true,
+      "localLinks": true,
+      "languageSwitch": true,
+      "sectionSwitch": true
+    },
+    {
+      "pair": {
+        "zh": "/docs/guides/services",
+        "en": "/docs/en/guides/services"
+      },
+      "metadata": true,
+      "localLinks": true,
+      "languageSwitch": true,
+      "sectionSwitch": true
+    },
+    {
+      "pair": {
+        "zh": "/docs/guides/status-pages",
+        "en": "/docs/en/guides/status-pages"
+      },
+      "metadata": true,
+      "localLinks": true,
+      "languageSwitch": true,
+      "sectionSwitch": true
+    },
+    {
+      "pair": {
+        "zh": "/docs",
+        "en": "/docs/en"
+      },
+      "metadata": true,
+      "localLinks": true,
+      "languageSwitch": true,
+      "sectionSwitch": true
+    },
+    {
+      "pair": {
+        "zh": "/docs/reference/architecture",
+        "en": "/docs/en/reference/architecture"
+      },
+      "metadata": true,
+      "localLinks": true,
+      "languageSwitch": true,
+      "sectionSwitch": true
+    },
+    {
+      "pair": {
+        "zh": "/docs/reference",
+        "en": "/docs/en/reference"
+      },
+      "metadata": true,
+      "localLinks": true,
+      "languageSwitch": true,
+      "sectionSwitch": true
+    },
+    {
+      "pair": {
+        "zh": "/docs/reference/troubleshooting",
+        "en": "/docs/en/reference/troubleshooting"
+      },
+      "metadata": true,
+      "localLinks": true,
+      "languageSwitch": true,
+      "sectionSwitch": true
+    },
+    {
+      "pair": {
+        "zh": "/docs/start/agent",
+        "en": "/docs/en/start/agent"
+      },
+      "metadata": true,
+      "localLinks": true,
+      "languageSwitch": true,
+      "sectionSwitch": true
+    },
+    {
+      "pair": {
+        "zh": "/docs/start/deployment",
+        "en": "/docs/en/start/deployment"
+      },
+      "metadata": true,
+      "localLinks": true,
+      "languageSwitch": true,
+      "sectionSwitch": true
+    },
+    {
+      "pair": {
+        "zh": "/docs/start",
+        "en": "/docs/en/start"
+      },
+      "metadata": true,
+      "localLinks": true,
+      "languageSwitch": true,
+      "sectionSwitch": true
+    },
+    {
+      "route": "/docs",
+      "searchScope": true,
+      "emptySearch": true,
+      "error": false
+    },
+    {
+      "route": "/docs/en",
+      "searchScope": true,
+      "emptySearch": true,
+      "error": false
+    },
+    {
+      "route": "/missing",
+      "searchScope": true,
+      "emptySearch": true,
+      "error": true
+    },
+    {
+      "route": "/en/missing",
+      "searchScope": true,
+      "emptySearch": true,
+      "error": true
+    },
+    {
+      "route": "/docs/en/missing",
+      "searchScope": true,
+      "emptySearch": true,
+      "error": true
+    },
+    {
+      "mobileMenu": true,
+      "mobileLanguageSwitch": true,
+      "mobileSearch": true,
+      "themeAcrossLocales": true,
+      "systemTheme": true
+    },
+    {
+      "codeCopy": true,
+      "landingSectionSwitch": true
+    },
+    {
+      "sitemapPages": 28,
+      "markdownTwins": 28,
+      "llms": true,
+      "robots": true
+    },
+    {
+      "dependencyLicenses": true
+    }
+  ],
+  "errors": [],
+  "titleChecks": {
+    "homeZh": "AlphaPing · 开源自托管监控",
+    "homeEn": "AlphaPing · Self-hosted infrastructure monitoring",
+    "singleTitleElement": true,
+    "openGraphMatches": true,
+    "twitterMatches": true,
+    "clientNavigation": true
+  },
+  "developmentRuntimeErrors": [],
+  "dependencyAudit": {
+    "vulnerabilities": 0,
+    "sharp": "0.35.4",
+    "libvips": "8.18.6",
+    "resizeVerified": true
+  },
+  "rootVerification": {
+    "status": "partial",
+    "failure": "Two unchanged Agent spool capacity tests fail, including a serial rerun. The Web performance E2E CONTROL_DB query times out (SIGTERM); the separate Ingest E2E cannot finish a Wrangler fetch.",
+    "failedTests": [
+      "capacity_pressure_preserves_recent_unassigned_samples",
+      "capacity_pressure_compacts_old_samples_to_one_per_minute"
+    ],
+    "passed": [
+      "format",
+      "lint",
+      "typecheck",
+      "JavaScript and Worker tests",
+      "D1 migrations",
+      "D1 schema manifest",
+      "cost model",
+      "Rust formatting",
+      "Rust clippy",
+      "other Rust workspace tests",
+      "Agent resource benchmark",
+      "all workspace builds and template dry-runs",
+      "docs production dry-run",
+      "cargo deny",
+      "gitleaks"
+    ],
+    "webE2e": "Incomplete: local CONTROL_DB fixture query terminated with SIGTERM.",
+    "ingestE2e": "Incomplete: Wrangler fetch failed during the local scenario."
+  },
+  "deployment": {
+    "status": "deployed",
+    "https": true,
+    "pages": 28,
+    "browserChecks": 23,
+    "browserErrors": 0,
+    "workerBindings": ["ASSETS"]
+  }
+}

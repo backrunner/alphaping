@@ -1,0 +1,106 @@
+/* AlphaPing's owned theme. svedocs supplies content and accessible tool behavior. */
+:root {
+  --sd-bg: #f7f7f4;
+  --sd-panel: #fff;
+  --sd-ink: #252923;
+  --sd-muted: #5f665d;
+  --sd-line: #e1e5dd;
+  --sd-accent: #6550d5;
+  --sd-accent-2: #187859;
+  --ap-subtle: #f0f1ed;
+  --ap-accent-soft: #eeebfb;
+  --ap-accent-ink: #fff;
+  --ap-hero-start: #f0edfc;
+  --ap-hero-end: #eaf0fa;
+  --ap-shadow: 0 2px 4px rgb(25 32 28 / 0.035), 0 18px 40px -20px rgb(25 32 28 / 0.2);
+  --ap-panel-shadow: 0 3px 6px rgb(25 32 28 / 0.035), 0 24px 56px -22px rgb(25 32 28 / 0.2);
+  --font-sans: "Geist Variable", system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, monospace;
+  --sd-font-display: var(--font-sans);
+  --ap-z-sticky: 20;
+  --ap-z-popover: 50;
+  --ap-z-dialog: 70;
+}
+:root[data-theme="dark"] {
+  --sd-bg: #151716;
+  --sd-panel: #1e211f;
+  --sd-ink: #eef1eb;
+  --sd-muted: #b8c0b5;
+  --sd-line: #343b35;
+  --sd-accent: #b5a6ff;
+  --sd-accent-2: #6ad9aa;
+  --ap-subtle: #272c28;
+  --ap-accent-soft: #302a43;
+  --ap-accent-ink: #191625;
+  --ap-hero-start: #282334;
+  --ap-hero-end: #202d36;
+  --ap-shadow: 0 2px 4px rgb(0 0 0 / 0.14), 0 18px 40px -20px rgb(0 0 0 / 0.5);
+  --ap-panel-shadow: 0 3px 6px rgb(0 0 0 / 0.14), 0 24px 56px -22px rgb(0 0 0 / 0.55);
+}
+html {
+  scroll-padding-top: 104px;
+}
+body {
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  letter-spacing: 0;
+}
+button,
+a,
+select {
+  -webkit-tap-highlight-color: transparent;
+}
+button,
+select {
+  cursor: pointer;
+}
+a {
+  text-decoration: none;
+}
+button,
+a,
+select {
+  transition:
+    background-color 150ms,
+    color 150ms,
+    border-color 150ms;
+}
+:focus-visible {
+  outline: 2px solid var(--sd-accent);
+  outline-offset: 3px;
+}
+::selection {
+  background: var(--ap-accent-soft);
+  color: var(--sd-accent);
+}
+.sd-root,
+.sd-root[data-surface="reading"],
+.sd-root[data-surface="home"] {
+  --sd-accent: #6550d5 !important;
+  --sd-accent-2: #187859 !important;
+  background: var(--sd-bg);
+  background-image: none;
+  min-height: 100dvh;
+}
+:root[data-theme="dark"] .sd-root {
+  --sd-accent: #b5a6ff !important;
+  --sd-accent-2: #6ad9aa !important;
+}
+.sd-root::after,
+.sd-root::before,
+.sd-doc-corner {
+  display: none !important;
+}
+.sd-skip {
+  z-index: var(--ap-z-dialog);
+  border-radius: 12px;
+}
+.sd-home {
+  max-width: none;
+  padding: 0;
+}

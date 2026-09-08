@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" fill="none">
+  <defs>
+    <linearGradient id="body" x1="9" y1="1" x2="37" y2="47" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#927de8"/>
+      <stop offset=".42" stop-color="#7860dc"/>
+      <stop offset=".78" stop-color="#5e43bb"/>
+      <stop offset="1" stop-color="#3e298c"/>
+    </linearGradient>
+    <radialGradient id="light" cx="0" cy="0" r="1" gradientTransform="translate(12 2) rotate(55) scale(37 44)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fff" stop-opacity=".25"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="glaze" x1="20" y1="1" x2="27" y2="28" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fff" stop-opacity=".12"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="refraction" cx="0" cy="0" r="1" gradientTransform="translate(36 46) rotate(-28) scale(30 14)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#b5dcff" stop-opacity=".45"/>
+      <stop offset="1" stop-color="#b5dcff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="rim" x1="9" y1="2" x2="37" y2="47" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fff" stop-opacity=".6"/>
+      <stop offset=".48" stop-color="#fff" stop-opacity=".12"/>
+      <stop offset=".75" stop-color="#30216d" stop-opacity=".25"/>
+      <stop offset="1" stop-color="#d3e9ff" stop-opacity=".6"/>
+    </linearGradient>
+    <linearGradient id="face" x1="18" y1="10" x2="28" y2="39" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fff"/>
+      <stop offset="1" stop-color="#e0deff"/>
+    </linearGradient>
+    <radialGradient id="pearl" cx="0" cy="0" r="1" gradientTransform="translate(32.7 12.1) rotate(55) scale(6)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fff"/>
+      <stop offset=".42" stop-color="#d5f4ff"/>
+      <stop offset="1" stop-color="#79b9e7"/>
+    </radialGradient>
+    <clipPath id="tile"><rect x="1" y=".5" width="46" height="46" rx="15.5"/></clipPath>
+    <path id="echo" d="M24 10a14 14 0 1 0 14 14M24 17a7 7 0 1 0 7 7"/>
+  </defs>
+  <rect x="1" y="2" width="46" height="46" rx="15.5" fill="#291754" fill-opacity=".14"/>
+  <rect x="1" y=".5" width="46" height="46" rx="15.5" fill="url(#body)"/>
+  <g clip-path="url(#tile)">
+    <path d="M0 0h48v48H0z" fill="url(#light)"/>
+    <path d="M0 0h48v16C29 12 15 30 0 22Z" fill="url(#glaze)"/>
+    <path d="M0 0h48v48H0z" fill="url(#refraction)"/>
+  </g>
+  <rect x="1.65" y="1.15" width="44.7" height="44.7" rx="14.85" stroke="url(#rim)" stroke-width=".9"/>
+  <g transform="translate(0 .6)" opacity=".22">
+    <use href="#echo" stroke="#2b165f" stroke-width="3.3" stroke-linecap="round"/>
+    <circle cx="24" cy="24" r="2.8" fill="#2b165f"/>
+    <circle cx="34" cy="14" r="3.7" fill="#2b165f"/>
+  </g>
+  <use href="#echo" stroke="url(#face)" stroke-width="3.2" stroke-linecap="round"/>
+  <circle cx="24" cy="24" r="2.6" fill="url(#face)"/>
+  <circle cx="34" cy="14" r="3.5" fill="url(#pearl)" stroke="#fff" stroke-opacity=".6" stroke-width=".45"/>
+  <ellipse cx="33.1" cy="12.5" rx="1.25" ry=".65" transform="rotate(-25 33.1 12.5)" fill="#fff" fill-opacity=".7"/>
+</svg>

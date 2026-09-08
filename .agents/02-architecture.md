@@ -48,7 +48,8 @@ Cron --> Retention Worker --> bounded D1 cleanup and compaction
 ```text
 alphaping/
 ├── apps/
-│   └── web/                         # SvelteKit control plane and status pages
+│   ├── web/                         # SvelteKit control plane and status pages
+│   └── docs/                        # svedocs product landing and public documentation
 ├── workers/
 │   ├── ingest/                      # Rust public Agent API
 │   ├── live/                        # TypeScript Hibernation WebSocket/DO
@@ -81,6 +82,7 @@ Turbo 负责 JavaScript/TypeScript 任务图，并通过每个 Rust deployable �
 | 服务 | 语言 | 入口 | 触发方式 | 主要写入 |
 | --- | --- | --- | --- | --- |
 | `web` | TypeScript/Svelte | `apps/web` | HTTP | CONTROL_DB 配置/权限，TELEMETRY_DB 查询 |
+| `docs` | TypeScript/Svelte | `apps/docs` | HTTP / Static Assets | 无；独立的公开文档与产品首页 |
 | `ingest` | Rust/Wasm | `workers/ingest` | Agent HTTP | TELEMETRY_DB replay/raw/latest/rollup，CONTROL_DB config read |
 | `live` | TypeScript | `workers/live` | Agent/browser WebSocket | 无权威存储；DO socket attachment 只保存连接身份/session |
 | `checks` | TypeScript | `workers/checks` | Cron 每分钟 | CONTROL_DB `last_claimed_slot`，TELEMETRY_DB check result/rollup 与机器离线事件 |

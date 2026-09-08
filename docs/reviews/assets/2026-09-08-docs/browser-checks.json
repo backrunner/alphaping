@@ -1,0 +1,354 @@
+{
+  "errors": [],
+  "results": [
+    {
+      "name": "desktop",
+      "mode": "light",
+      "route": "/",
+      "status": 200,
+      "overflow": false,
+      "main": 1,
+      "h1": 1,
+      "violations": []
+    },
+    {
+      "name": "desktop",
+      "mode": "light",
+      "route": "/docs/start/deployment",
+      "status": 200,
+      "overflow": false,
+      "main": 1,
+      "h1": 1,
+      "violations": []
+    },
+    {
+      "name": "desktop",
+      "mode": "light",
+      "route": "/about",
+      "status": 200,
+      "overflow": false,
+      "main": 1,
+      "h1": 1,
+      "violations": []
+    },
+    {
+      "name": "desktop",
+      "mode": "light",
+      "route": "/missing-page",
+      "status": 404,
+      "overflow": false,
+      "main": 1,
+      "h1": 1,
+      "violations": []
+    },
+    {
+      "name": "desktop",
+      "mode": "dark",
+      "route": "/",
+      "status": 200,
+      "overflow": false,
+      "main": 1,
+      "h1": 1,
+      "violations": []
+    },
+    {
+      "name": "desktop",
+      "mode": "dark",
+      "route": "/docs/start/deployment",
+      "status": 200,
+      "overflow": false,
+      "main": 1,
+      "h1": 1,
+      "violations": []
+    },
+    {
+      "name": "desktop",
+      "mode": "dark",
+      "route": "/about",
+      "status": 200,
+      "overflow": false,
+      "main": 1,
+      "h1": 1,
+      "violations": []
+    },
+    {
+      "name": "desktop",
+      "mode": "dark",
+      "route": "/missing-page",
+      "status": 404,
+      "overflow": false,
+      "main": 1,
+      "h1": 1,
+      "violations": []
+    },
+    {
+      "name": "laptop",
+      "mode": "light",
+      "route": "/",
+      "status": 200,
+      "overflow": false,
+      "main": 1,
+      "h1": 1,
+      "violations": []
+    },
+    {
+      "name": "laptop",
+      "mode": "light",
+      "route": "/docs/start/deployment",
+      "status": 200,
+      "overflow": false,
+      "main": 1,
+      "h1": 1,
+      "violations": []
+    },
+    {
+      "name": "laptop",
+      "mode": "light",
+      "route": "/about",
+      "status": 200,
+      "overflow": false,
+      "main": 1,
+      "h1": 1,
+      "violations": []
+    },
+    {
+      "name": "laptop",
+      "mode": "light",
+      "route": "/missing-page",
+      "status": 404,
+      "overflow": false,
+      "main": 1,
+      "h1": 1,
+      "violations": []
+    },
+    {
+      "name": "laptop",
+      "mode": "dark",
+      "route": "/",
+      "status": 200,
+      "overflow": false,
+      "main": 1,
+      "h1": 1,
+      "violations": []
+    },
+    {
+      "name": "laptop",
+      "mode": "dark",
+      "route": "/docs/start/deployment",
+      "status": 200,
+      "overflow": false,
+      "main": 1,
+      "h1": 1,
+      "violations": []
+    },
+    {
+      "name": "laptop",
+      "mode": "dark",
+      "route": "/about",
+      "status": 200,
+      "overflow": false,
+      "main": 1,
+      "h1": 1,
+      "violations": []
+    },
+    {
+      "name": "laptop",
+      "mode": "dark",
+      "route": "/missing-page",
+      "status": 404,
+      "overflow": false,
+      "main": 1,
+      "h1": 1,
+      "violations": []
+    },
+    {
+      "name": "tablet",
+      "mode": "light",
+      "route": "/",
+      "status": 200,
+      "overflow": false,
+      "main": 1,
+      "h1": 1,
+      "violations": []
+    },
+    {
+      "name": "tablet",
+      "mode": "light",
+      "route": "/docs/start/deployment",
+      "status": 200,
+      "overflow": false,
+      "main": 1,
+      "h1": 1,
+      "violations": []
+    },
+    {
+      "name": "tablet",
+      "mode": "light",
+      "route": "/about",
+      "status": 200,
+      "overflow": false,
+      "main": 1,
+      "h1": 1,
+      "violations": []
+    },
+    {
+      "name": "tablet",
+      "mode": "light",
+      "route": "/missing-page",
+      "status": 404,
+      "overflow": false,
+      "main": 1,
+      "h1": 1,
+      "violations": []
+    },
+    {
+      "name": "tablet",
+      "mode": "dark",
+      "route": "/",
+      "status": 200,
+      "overflow": false,
+      "main": 1,
+      "h1": 1,
+      "violations": []
+    },
+    {
+      "name": "tablet",
+      "mode": "dark",
+      "route": "/docs/start/deployment",
+      "status": 200,
+      "overflow": false,
+      "main": 1,
+      "h1": 1,
+      "violations": []
+    },
+    {
+      "name": "tablet",
+      "mode": "dark",
+      "route": "/about",
+      "status": 200,
+      "overflow": false,
+      "main": 1,
+      "h1": 1,
+      "violations": []
+    },
+    {
+      "name": "tablet",
+      "mode": "dark",
+      "route": "/missing-page",
+      "status": 404,
+      "overflow": false,
+      "main": 1,
+      "h1": 1,
+      "violations": []
+    },
+    {
+      "name": "mobile",
+      "mode": "light",
+      "route": "/",
+      "status": 200,
+      "overflow": false,
+      "main": 1,
+      "h1": 1,
+      "violations": []
+    },
+    {
+      "name": "mobile",
+      "mode": "light",
+      "route": "/docs/start/deployment",
+      "status": 200,
+      "overflow": false,
+      "main": 1,
+      "h1": 1,
+      "violations": []
+    },
+    {
+      "name": "mobile",
+      "mode": "light",
+      "route": "/about",
+      "status": 200,
+      "overflow": false,
+      "main": 1,
+      "h1": 1,
+      "violations": []
+    },
+    {
+      "name": "mobile",
+      "mode": "light",
+      "route": "/missing-page",
+      "status": 404,
+      "overflow": false,
+      "main": 1,
+      "h1": 1,
+      "violations": []
+    },
+    {
+      "name": "mobile",
+      "mode": "dark",
+      "route": "/",
+      "status": 200,
+      "overflow": false,
+      "main": 1,
+      "h1": 1,
+      "violations": []
+    },
+    {
+      "name": "mobile",
+      "mode": "dark",
+      "route": "/docs/start/deployment",
+      "status": 200,
+      "overflow": false,
+      "main": 1,
+      "h1": 1,
+      "violations": []
+    },
+    {
+      "name": "mobile",
+      "mode": "dark",
+      "route": "/about",
+      "status": 200,
+      "overflow": false,
+      "main": 1,
+      "h1": 1,
+      "violations": []
+    },
+    {
+      "name": "mobile",
+      "mode": "dark",
+      "route": "/missing-page",
+      "status": 404,
+      "overflow": false,
+      "main": 1,
+      "h1": 1,
+      "violations": []
+    },
+    {
+      "interaction": "desktop search, escape, clipboard, anchor",
+      "copied": true,
+      "anchorTop": 738.046875
+    },
+    {
+      "interaction": "mobile menu navigation, search empty, system mode, reduced motion",
+      "passed": true
+    },
+    {
+      "endpoint": "/llms.txt",
+      "status": 200,
+      "contentType": "text/plain; charset=utf-8"
+    },
+    {
+      "endpoint": "/llms-full.txt",
+      "status": 200,
+      "contentType": "text/plain; charset=utf-8"
+    },
+    {
+      "endpoint": "/docs/start/deployment/index.md",
+      "status": 200,
+      "contentType": "text/markdown; charset=utf-8"
+    },
+    {
+      "endpoint": "/index.md",
+      "status": 200,
+      "contentType": "text/markdown; charset=utf-8"
+    }
+  ]
+}

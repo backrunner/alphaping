@@ -1,0 +1,181 @@
+.ap-header {
+  --ap-glass-highlight: rgb(255 255 255 / 0.62);
+  --ap-glass-rim: rgb(255 255 255 / 0.78);
+  --ap-glass-shade: rgb(25 32 28 / 0.08);
+  position: sticky;
+  top: 20px;
+  z-index: var(--ap-z-sticky);
+  width: min(100% - 64px, 1160px);
+  margin: 20px auto 0;
+  border: 1px solid transparent;
+  border-radius: 24px;
+}
+:root[data-theme="dark"] .ap-header {
+  --ap-glass-highlight: rgb(255 255 255 / 0.09);
+  --ap-glass-rim: rgb(255 255 255 / 0.16);
+  --ap-glass-shade: rgb(0 0 0 / 0.24);
+}
+/* Sibling glass layers can both sample the page behind the sticky header. */
+.ap-header::before,
+.ap-header::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+}
+.ap-header::before {
+  z-index: -1;
+  inset: -1px;
+  border: 1px solid var(--ap-glass-rim);
+  border-radius: inherit;
+  background:
+    linear-gradient(145deg, var(--ap-glass-highlight), transparent 48%),
+    color-mix(in srgb, var(--sd-panel) 62%, transparent);
+  box-shadow:
+    inset 0 1px 0 var(--ap-glass-rim),
+    inset 0 -1px 0 var(--ap-glass-shade),
+    0 8px 24px -16px var(--ap-glass-shade),
+    var(--ap-shadow);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  backdrop-filter: blur(24px) saturate(160%);
+}
+.ap-header::after {
+  z-index: -2;
+  top: calc(100% - 10px);
+  inset-inline: 12px;
+  height: 42px;
+  border-radius: 0 0 28px 28px;
+  background: color-mix(in srgb, var(--sd-panel) 18%, transparent);
+  -webkit-backdrop-filter: blur(12px) saturate(130%);
+  backdrop-filter: blur(12px) saturate(130%);
+  mask-image: linear-gradient(to bottom, #000, transparent);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .ap-header::before {
+    background: var(--sd-panel);
+  }
+  .ap-header::after {
+    display: none;
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .ap-header::before {
+    background: var(--sd-panel);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .ap-header::after {
+    display: none;
+  }
+}
+.ap-navbar {
+  min-height: 72px;
+  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  gap: 32px;
+}
+.ap-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  font-size: 20px;
+  font-weight: 680;
+  color: var(--sd-ink);
+}
+.ap-brand img {
+  flex-shrink: 0;
+}
+.ap-brand-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--sd-muted);
+  background: var(--ap-subtle);
+  border-radius: 7px;
+  padding: 3px 7px;
+  margin-left: 2px;
+}
+.ap-topnav {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.ap-topnav a {
+  color: var(--sd-muted);
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.ap-topnav a:hover {
+  background: var(--ap-subtle);
+  color: var(--sd-ink);
+}
+.ap-topnav a[aria-current] {
+  color: var(--sd-accent);
+  background: var(--ap-accent-soft);
+}
+.ap-nav-tools {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ap-icon-button {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--sd-muted);
+}
+.ap-icon-button:hover {
+  background: var(--ap-subtle);
+  color: var(--sd-ink);
+}
+.ap-locale-switch {
+  height: 36px;
+  padding: 0 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-shrink: 0;
+  border: 1px solid var(--sd-line);
+  border-radius: 12px;
+  color: var(--sd-muted);
+  font-size: 11px;
+  font-weight: 550;
+}
+.ap-locale-switch:hover {
+  background: var(--ap-subtle);
+  color: var(--sd-ink);
+}
+.ap-locale-switch[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: default;
+}
+.ap-menu-button,
+.ap-mobile-search,
+.ap-mobile-menu {
+  display: none;
+}
+.ap-search .sd-search-trigger {
+  width: 180px;
+  min-height: 38px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: var(--ap-subtle);
+  color: var(--sd-muted);
+  box-shadow: none;
+  font-size: 12px;
+}
+.ap-search .sd-search-trigger kbd {
+  border: none;
+  background: var(--sd-panel);
+  border-radius: 5px;
+  font-size: 10px;
+}

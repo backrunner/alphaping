@@ -74,6 +74,12 @@ apps/web/src/
 
 所有 mutation 使用 Zod/Valibot 等 schema 验证，并在 service 层再次执行授权。
 
+## 2.5 独立文档站 `apps/docs`
+
+文档提供完整的简体中文与英文版本：中文保留默认无前缀路径，英文首页为 `/en`、文档为 `/docs/en`。两个 locale 使用相同的相对内容路径配对，导航和搜索按当前语言解析，翻译覆盖通过 svedocs strict checks 检查；语言切换进入对应文章。HTML 语言、canonical 与 hreflang 跟随页面 locale，部署域名仍通过构建变量配置。
+
+使用 svedocs 管理 Markdown 内容、路由、搜索索引、SEO 和 Markdown/llms 接口，以 Svelte 组件定制 landing、导航、阅读布局与主题。独立部署到 Cloudflare Workers + Static Assets，不导入控制面内部模块，不绑定 D1、DO、R2、登录或遥测服务。仅发布 `apps/docs/content` 中经过整理的公开文档，不自动发布 `.agents` 或评审记录。搜索在浏览器本地执行；页面预渲染，缺失路由通过 Worker 返回 404。品牌 SVG 和已标注示例的产品截图作为本地静态资源。无 schema、协议或 RBAC 变更；可独立发布、回滚。
+
 ## 3. `packages/db`
 
 - 唯一 Drizzle schema 来源。

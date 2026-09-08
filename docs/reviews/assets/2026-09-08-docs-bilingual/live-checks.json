@@ -1,0 +1,203 @@
+{
+  "checks": [
+    {
+      "pair": {
+        "zh": "/about",
+        "en": "/en/about"
+      },
+      "metadata": true,
+      "localLinks": true,
+      "languageSwitch": true,
+      "sectionSwitch": true
+    },
+    {
+      "pair": {
+        "zh": "/",
+        "en": "/en"
+      },
+      "metadata": true,
+      "localLinks": true,
+      "languageSwitch": true,
+      "sectionSwitch": false
+    },
+    {
+      "pair": {
+        "zh": "/docs/guides",
+        "en": "/docs/en/guides"
+      },
+      "metadata": true,
+      "localLinks": true,
+      "languageSwitch": true,
+      "sectionSwitch": true
+    },
+    {
+      "pair": {
+        "zh": "/docs/guides/machines",
+        "en": "/docs/en/guides/machines"
+      },
+      "metadata": true,
+      "localLinks": true,
+      "languageSwitch": true,
+      "sectionSwitch": true
+    },
+    {
+      "pair": {
+        "zh": "/docs/guides/permissions",
+        "en": "/docs/en/guides/permissions"
+      },
+      "metadata": true,
+      "localLinks": true,
+      "languageSwitch": true,
+      "sectionSwitch": true
+    },
+    {
+      "pair": {
+        "zh": "/docs/guides/services",
+        "en": "/docs/en/guides/services"
+      },
+      "metadata": true,
+      "localLinks": true,
+      "languageSwitch": true,
+      "sectionSwitch": true
+    },
+    {
+      "pair": {
+        "zh": "/docs/guides/status-pages",
+        "en": "/docs/en/guides/status-pages"
+      },
+      "metadata": true,
+      "localLinks": true,
+      "languageSwitch": true,
+      "sectionSwitch": true
+    },
+    {
+      "pair": {
+        "zh": "/docs",
+        "en": "/docs/en"
+      },
+      "metadata": true,
+      "localLinks": true,
+      "languageSwitch": true,
+      "sectionSwitch": true
+    },
+    {
+      "pair": {
+        "zh": "/docs/reference/architecture",
+        "en": "/docs/en/reference/architecture"
+      },
+      "metadata": true,
+      "localLinks": true,
+      "languageSwitch": true,
+      "sectionSwitch": true
+    },
+    {
+      "pair": {
+        "zh": "/docs/reference",
+        "en": "/docs/en/reference"
+      },
+      "metadata": true,
+      "localLinks": true,
+      "languageSwitch": true,
+      "sectionSwitch": true
+    },
+    {
+      "pair": {
+        "zh": "/docs/reference/troubleshooting",
+        "en": "/docs/en/reference/troubleshooting"
+      },
+      "metadata": true,
+      "localLinks": true,
+      "languageSwitch": true,
+      "sectionSwitch": true
+    },
+    {
+      "pair": {
+        "zh": "/docs/start/agent",
+        "en": "/docs/en/start/agent"
+      },
+      "metadata": true,
+      "localLinks": true,
+      "languageSwitch": true,
+      "sectionSwitch": true
+    },
+    {
+      "pair": {
+        "zh": "/docs/start/deployment",
+        "en": "/docs/en/start/deployment"
+      },
+      "metadata": true,
+      "localLinks": true,
+      "languageSwitch": true,
+      "sectionSwitch": true
+    },
+    {
+      "pair": {
+        "zh": "/docs/start",
+        "en": "/docs/en/start"
+      },
+      "metadata": true,
+      "localLinks": true,
+      "languageSwitch": true,
+      "sectionSwitch": true
+    },
+    {
+      "route": "/docs",
+      "searchScope": true,
+      "emptySearch": true,
+      "error": false
+    },
+    {
+      "route": "/docs/en",
+      "searchScope": true,
+      "emptySearch": true,
+      "error": false
+    },
+    {
+      "route": "/missing",
+      "searchScope": true,
+      "emptySearch": true,
+      "error": true
+    },
+    {
+      "route": "/en/missing",
+      "searchScope": true,
+      "emptySearch": true,
+      "error": true
+    },
+    {
+      "route": "/docs/en/missing",
+      "searchScope": true,
+      "emptySearch": true,
+      "error": true
+    },
+    {
+      "mobileMenu": true,
+      "mobileLanguageSwitch": true,
+      "mobileSearch": true,
+      "themeAcrossLocales": true,
+      "systemTheme": true
+    },
+    {
+      "codeCopy": true,
+      "landingSectionSwitch": true
+    },
+    {
+      "sitemapPages": 28,
+      "markdownTwins": 28,
+      "llms": true,
+      "robots": true
+    },
+    {
+      "dependencyLicenses": true
+    }
+  ],
+  "errors": [],
+  "target": "Deployed documentation custom domain over HTTPS",
+  "titleAssertions": [
+    "one title per page",
+    "localized homepage title",
+    "article title plus AlphaPing",
+    "Open Graph and Twitter match document title",
+    "client navigation updates title"
+  ]
+}

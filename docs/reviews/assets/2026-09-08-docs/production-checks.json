@@ -1,0 +1,57 @@
+{
+  "errors": [],
+  "results": [
+    {
+      "route": "/",
+      "status": 200,
+      "contentType": "text/html; charset=utf-8"
+    },
+    {
+      "route": "/docs/start/deployment",
+      "status": 200,
+      "contentType": "text/html; charset=utf-8"
+    },
+    {
+      "route": "/about",
+      "status": 200,
+      "contentType": "text/html; charset=utf-8"
+    },
+    {
+      "route": "/missing-page",
+      "status": 404,
+      "contentType": "text/html"
+    },
+    {
+      "route": "/llms.txt",
+      "status": 200,
+      "contentType": "text/plain; charset=utf-8"
+    },
+    {
+      "route": "/llms-full.txt",
+      "status": 200,
+      "contentType": "text/plain; charset=utf-8"
+    },
+    {
+      "route": "/docs/start/deployment/index.md",
+      "status": 200,
+      "contentType": "text/markdown; charset=utf-8"
+    },
+    {
+      "route": "/sitemap.xml",
+      "status": 200,
+      "contentType": "application/xml"
+    },
+    {
+      "route": "/robots.txt",
+      "status": 200,
+      "contentType": "text/plain; charset=utf-8"
+    },
+    {
+      "anchorOffset": 208.046875
+    },
+    {
+      "interactions": "production hydration, Chinese search + keyboard selection, focusable code, mobile ToC, canonical",
+      "passed": true
+    }
+  ]
+}

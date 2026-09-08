@@ -154,6 +154,7 @@ Worker deployment dry-runs. It does not deploy your application.
 
 ```text
 apps/web               SvelteKit control plane and public pages
+apps/docs              svedocs landing page and public documentation
 crates/agent           Rust monitoring Agent
 crates/*               Shared crypto, protocol and runtime adapters
 workers/ingest         Rust/Wasm telemetry ingestion
@@ -166,6 +167,15 @@ proto                  Canonical protobuf definitions
 ```
 
 ## Documentation
+
+The documentation site lives in [`apps/docs`](apps/docs), with a custom AlphaPing
+landing page, floating navigation, light/dark theme and local search. All pages
+are available in Chinese and English. Run `pnpm docs:dev` and open
+`http://localhost:4174` (Chinese) or `http://localhost:4174/en` (English).
+Use `pnpm docs:check` and `pnpm docs:build` to validate it, including strict
+translation coverage.
+See the [site guide](apps/docs/README.md) for content authoring and independent
+Cloudflare deployment.
 
 - [Project specifications and roadmap](.agents/README.md)
 - [Agent installation and compatibility](.agents/14-agent-installation.md)
