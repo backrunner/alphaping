@@ -210,7 +210,7 @@ TCP 检查支持：
 - 管理员可以创建 Resend、SMTP HTTPS relay、Discord、Telegram、Slack 和 Bark 通知渠道；凭据必须加密保存且不可回显。
 - 通知规则按 machine/service、异常维度和渠道绑定。机器维度至少覆盖 availability、resource threshold 和 recovery；服务覆盖 availability 和 recovery。
 - 状态转换先形成不可变 telemetry event，再由独立通知 Worker 异步投递，不能阻塞 Agent durable ACK、检查结果事务或页面请求。
-- 同一状态事件与同一渠道最多发送一次。失败使用有界指数退避，最终失败可在管理页诊断和重试。
+- 同一状态事件与同一渠道只创建一条内部投递记录，领取使用有界 lease。失败使用有界指数退避，最终失败可在管理页诊断和重试。外部渠道若没有幂等键支持，服务已接收但 ACK 丢失后可能重复发送；不得承诺外部 exactly-once。
 - 维护窗口不发送普通异常通知；恢复通知可按规则启用。删除、停用渠道或规则必须立即阻止尚未认领的新投递。
 - Cloudflare Worker 不直接连接任意 SMTP 端口；SMTP 通过部署者控制的 HTTPS relay 接入，Resend 使用官方 HTTPS API。
 

@@ -242,12 +242,14 @@ src/
 
 ## 10.1 `workers/notifications`
 
-- Cron 每分钟按 workspace cursor 有界扫描 TELEMETRY_DB `state_events`，CONTROL_DB 负责资源映射、规则、渠道和 delivery outbox。
+- Cron 每分钟按入库顺序扫描 TELEMETRY_DB `notification_event_queue`，再按源事件复合主键读取 `state_events`。队列由源事件的 INSERT trigger 在同一事务内创建，使用 AUTOINCREMENT sequence；不得按 occurred_at 跳过迟到 Agent/检查事件。队列外键随源事件删除而级联删除，通知 Worker 只在 CONTROL_DB outbox 和单调 cursor 提交后分批删除已消费的队列项。
 - 跨 D1 cursor 只在 delivery 持久化后推进；重复扫描由 `channel_id + event_id` deterministic key 去重。
-- delivery 使用条件 claim、短 lease、最多 6 次尝试和有界指数退避。外部请求有 10 秒绝对 timeout，不读取无界 response body。
+- delivery 使用领取时的当前时间建立短 lease、最多 6 次尝试和有界指数退避。领取后重新核验 workspace、资源、规则与渠道仍有效。外部请求有 10 秒绝对 timeout，不读取无界 response body；外部服务已收到而 ACK 丢失时，无法对不支持幂等键的 provider 承诺 exactly-once。
+- 终态 sent/dead delivery 按 workspace 的 audit_log_days 分批清理，以 updated_at 决定终态保留起点；pending/delivering 不因该清理被删除。
 - 渠道配置使用 `NOTIFICATION_SECRET_WRAPPING_KEY` 的 AES-256-GCM envelope；AAD 绑定 workspace/channel，Web 只返回非敏感摘要。
 - Provider adapter 支持 Resend、SMTP HTTPS relay、Discord、Telegram、Slack 和 Bark。禁止在日志中记录 token、完整 webhook URL、收件人或消息正文。
 - 单次 Cron 最多发现 100 个 event、发送 50 个 delivery、并发不超过 5；更高规模再评估 Queue，不在默认小规模路径增加三次 Queue operation。
+- 规则查询只读取当前 event 的 workspace/resource/dimension，每批最多 24 个四参数键，加 LIMIT 后最多 97 个参数。
 
 ## 11. `crates/agent`
 
@@ -285,6 +287,7 @@ src/
 ### 11.2 本地 spool
 
 - 固定使用 SQLite WAL，每个 sample/check event 先 commit 后才视为已采集。
+- 网络上传在 current-thread runtime 的独立 task 执行，最多一个 in-flight。主循环负责 nonce 持久化、spool 修改和 authenticated ACK/config/key rotation 应用；慢上传不得阻塞采样或 probe result 落盘。退出时取消 upload task，未 ACK delivery 保留。重试等待从失败完成时开始计算。
 - 每条 batch 有 report ID 和 sequence。
 - 只有服务端返回经认证的 D1 durable ACK 后删除。
 - 临时失败无限重试，equal-jitter 指数退避从 1 秒起且永不超过 300 秒。

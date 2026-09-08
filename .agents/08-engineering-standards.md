@@ -183,7 +183,7 @@ type(scope): description
 
 允许 type：`feat`、`fix`、`docs`、`refactor`、`perf`、`test`、`build`、`ci`、`chore`、`security`。
 
-Scope 使用稳定模块名：`web`、`dashboard`、`auth`、`rbac`、`db`、`ingest`、`telemetry`、`checks`、`retention`、`agent`、`protocol`、`release`、`docs`。
+Scope 使用稳定模块名：`web`、`dashboard`、`auth`、`rbac`、`db`、`ingest`、`telemetry`、`checks`、`retention`、`notifications`、`agent`、`protocol`、`release`、`docs`。
 
 规则：
 

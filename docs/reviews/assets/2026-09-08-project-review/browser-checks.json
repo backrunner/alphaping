@@ -1,0 +1,141 @@
+{
+  "records": [
+    {
+      "name": "SPA machine switch resets metrics and old WebSocket callbacks cannot clear new demand timers",
+      "passed": true
+    },
+    {
+      "name": "ticket deadline enters durable fallback and aborts the pending request",
+      "passed": true
+    },
+    {
+      "name": "WebSocket handshake deadline starts durable fallback",
+      "passed": true
+    },
+    {
+      "name": "late fallback response discarded after SPA navigation",
+      "passed": true
+    },
+    {
+      "name": "history timeout restores retry controls",
+      "passed": true
+    },
+    {
+      "name": "history requests cancelled on resource change",
+      "passed": true
+    },
+    {
+      "name": "machine desktop light",
+      "viewport": 1440,
+      "document": 1440,
+      "violations": []
+    },
+    {
+      "name": "machine mobile dark",
+      "viewport": 390,
+      "document": 390,
+      "violations": []
+    },
+    {
+      "name": "public overview desktop light",
+      "viewport": 1440,
+      "document": 1440,
+      "violations": []
+    },
+    {
+      "name": "public overview mobile dark",
+      "viewport": 320,
+      "document": 320,
+      "violations": []
+    },
+    {
+      "name": "public machines desktop light",
+      "viewport": 1440,
+      "document": 1440,
+      "violations": []
+    },
+    {
+      "name": "public machines mobile dark",
+      "viewport": 320,
+      "document": 320,
+      "violations": []
+    },
+    {
+      "name": "public service desktop light",
+      "viewport": 1440,
+      "document": 1440,
+      "violations": []
+    },
+    {
+      "name": "public service mobile dark",
+      "viewport": 320,
+      "document": 320,
+      "violations": []
+    },
+    {
+      "name": "public machine desktop light",
+      "route": "/status/operations/machines/performance-machine-001",
+      "status": 200,
+      "viewport": 1440,
+      "document": 1440,
+      "violations": []
+    },
+    {
+      "name": "public machine desktop dark",
+      "route": "/status/operations/machines/performance-machine-001",
+      "status": 200,
+      "viewport": 1440,
+      "document": 1440,
+      "violations": []
+    },
+    {
+      "name": "public machine laptop light",
+      "route": "/status/operations/machines/performance-machine-001",
+      "status": 200,
+      "viewport": 1280,
+      "document": 1280,
+      "violations": []
+    },
+    {
+      "name": "public machine laptop dark",
+      "route": "/status/operations/machines/performance-machine-001",
+      "status": 200,
+      "viewport": 1280,
+      "document": 1280,
+      "violations": []
+    },
+    {
+      "name": "public machine tablet light",
+      "route": "/status/operations/machines/performance-machine-001",
+      "status": 200,
+      "viewport": 768,
+      "document": 768,
+      "violations": []
+    },
+    {
+      "name": "public machine tablet dark",
+      "route": "/status/operations/machines/performance-machine-001",
+      "status": 200,
+      "viewport": 768,
+      "document": 768,
+      "violations": []
+    },
+    {
+      "name": "public machine mobile light",
+      "route": "/status/operations/machines/performance-machine-001",
+      "status": 200,
+      "viewport": 320,
+      "document": 320,
+      "violations": []
+    },
+    {
+      "name": "public machine mobile dark",
+      "route": "/status/operations/machines/performance-machine-001",
+      "status": 200,
+      "viewport": 320,
+      "document": 320,
+      "violations": []
+    }
+  ],
+  "errors": []
+}

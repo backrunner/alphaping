@@ -1,0 +1,7 @@
+SEARCH delivery USING INDEX sqlite_autoindex_notification_deliveries_1 (id=?)
+SEARCH channel USING INDEX sqlite_autoindex_notification_channels_1 (id=?) LEFT-JOIN
+SEARCH machine USING INDEX sqlite_autoindex_machines_2 (telemetry_pk=?) LEFT-JOIN
+SEARCH service USING INDEX sqlite_autoindex_services_2 (telemetry_pk=?) LEFT-JOIN
+CORRELATED SCALAR SUBQUERY 1
+SEARCH workspace USING INDEX sqlite_autoindex_workspaces_2 (telemetry_pk=?)
+SEARCH rule USING COVERING INDEX notification_rules_resource_idx (workspace_id=? AND resource_type=? AND resource_id=? AND dimension=? AND enabled=? AND channel_id=?)

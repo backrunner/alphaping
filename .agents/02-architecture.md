@@ -85,11 +85,11 @@ Turbo 负责 JavaScript/TypeScript 任务图，并通过每个 Rust deployable �
 | `live` | TypeScript | `workers/live` | Agent/browser WebSocket | 无权威存储；DO socket attachment 只保存连接身份/session |
 | `checks` | TypeScript | `workers/checks` | Cron 每分钟 | CONTROL_DB `last_claimed_slot`，TELEMETRY_DB check result/rollup 与机器离线事件 |
 | `retention` | TypeScript | `workers/retention` | Cron | TELEMETRY_DB 分批删除、cursor、run log |
-| `notifications` | TypeScript | `workers/notifications` | Cron 每分钟 | CONTROL_DB notification outbox、claim、retry 与 delivery result；TELEMETRY_DB event read-only |
+| `notifications` | TypeScript | `workers/notifications` | Cron 每分钟 | CONTROL_DB notification outbox、claim、retry 与 delivery result；TELEMETRY_DB event read 与已消费 queue receipt 删除 |
 
 Ingest 暴露不访问 D1 的 `GET|HEAD /healthz` liveness。数据库读写健康由独立的合成 enrollment/report smoke test 判断，避免健康检查增加 D1 请求或因依赖抖动触发级联重启。
 
-Notification Worker 只消费已经持久化的 `state_events`，不参与 ingest/checks 的权威事务。它以跨 D1 cursor 加 deterministic delivery key 实现至少一次发现、最多一次 per-channel/event 外部发送；跨 D1 不宣称原子性。
+Notification Worker 只消费已经持久化的 `state_events`。同事务 trigger 将源事件的复合主键写入 `notification_event_queue`，按单调 sequence 发现事件，避免事件时间乱序导致丢失。CONTROL_DB outbox 与 cursor 提交后才能删除已消费的队列项；跨 D1 不宣称原子性。deterministic delivery key 去重内部投递，租约与重试有界，但外部 ACK 丢失后，未提供幂等键的 provider 仍可能收到重复请求。
 
 ## 5. Cloudflare 绑定
 
@@ -106,7 +106,7 @@ Notification Worker 只消费已经持久化的 `state_events`，不参与 inges
 - Worker 间同步调用优先使用 service binding，不通过公开 URL。
 - `web` 不直接调用 ingest；它只签发短时 viewer ticket 并连接 live hub。
 - `checks` Worker 直接读取 CONTROL_DB due tasks，以最多 5 并发执行后写入 TELEMETRY_DB，不通过 web API 回写。
-- `notifications` 只读取 TELEMETRY_DB 状态事件，配置、密文、规则、cursor 和 delivery outbox 归属 CONTROL_DB。
+- `notifications` 读取 TELEMETRY_DB 状态事件，并按已提交 CONTROL cursor 删除 queue receipt；配置、密文、规则、cursor 和 delivery outbox 归属 CONTROL_DB。
 - `web`、`ingest` 和 `live` 需要公开路由。Checks/retention 关闭 `workers_dev` 和 preview URL。
 
 ### 5.3 Wrangler 配置
@@ -157,7 +157,7 @@ Notification Worker 只消费已经持久化的 `state_events`，不参与 inges
 2. authz service 生成允许的 resource scope。
 3. repository 从 CONTROL_DB 获得 resource scope，再以允许的 integer resource PK 查询 TELEMETRY_DB latest/rollup。
 4. 默认页面只返回概览和 D1 latest。用户展开图表后才查询 TELEMETRY_DB rollup 或 bounded block rows；raw API 解码 slots 还原 10 秒 samples。
-5. 浏览器在页面可见时建立 live WebSocket，正常延迟不高于一个 10 秒 sample interval。断线后使用带 ETag 的 30 秒 D1 polling，恢复后停止 fallback polling。
+5. 浏览器在页面可见时建立 live WebSocket，正常延迟不高于一个 10 秒 sample interval。断线后使用带 ETag 的 30 秒 D1 polling，恢复后停止 fallback polling。ticket/fallback 请求与 WebSocket handshake 有 15 秒 deadline，fallback 最多一个 in-flight；切换机器、隐藏页面或离开 Overview 时取消旧连接与请求，拒绝旧 lifecycle 回调。历史分页请求使用总计 30 秒 deadline，切换资源或销毁面板时取消。
 
 ### 6.6 Service checks
 

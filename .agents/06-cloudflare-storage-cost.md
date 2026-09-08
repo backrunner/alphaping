@@ -1,5 +1,7 @@
 # AlphaPing Cloudflare 存储与成本模型
 
+通知消费按状态事件入库顺序执行。`notification_event_queue` 仅在状态转换时写入，按主键消费后删除，源事件删除时级联清理。每事件预留 5 次队列/索引/序号相关写操作；每 delivery 的创建、领取、完成及到期删除计入索引成本，使用 20 次写操作的保守预算。终态保留按 workspace audit_log_days 执行，重试放大另计。该变更不增加普通 durable report、Live frame 或分钟 raw block 写入频率。
+
 ## 1. 正式决策
 
 30 台机器的 V1 采用以下最小生产架构：

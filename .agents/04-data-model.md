@@ -431,27 +431,36 @@ Checks Worker 只在五分钟 block 闭合时写一次 service bucket。同一�
 
 ### `notification_channels`
 
-- `id`, `workspace_id`, `name`, `kind`, `enabled`
-- `config_nonce`, `config_ciphertext`，AES-GCM 加密且 AAD 绑定 workspace/channel
-- `created_by`, `created_at`, `updated_at`, `deleted_at`
+- `id`, `workspace_id`, `name`, `provider`, `enabled`
+- `config_nonce`, `config_ciphertext`, `wrapping_key_id`，AES-GCM 加密且 AAD 绑定 workspace/channel
+- `created_by`, `created_at`, `updated_at`
 
 ### `notification_rules`
 
 - `id`, `workspace_id`, `resource_type`, `resource_id`, `dimension`, `channel_id`
-- `send_recovery`, `enabled`, `created_by`, `created_at`, `updated_at`
-- 唯一 `(workspace_id,resource_type,resource_id,dimension,channel_id)`
+- `enabled`, `created_by`, `created_at`, `updated_at`；recovery 使用独立 dimension rule。
+- 唯一 `(channel_id,resource_type,resource_id,dimension)`；workspace 由 channel 归属与写入授权约束。
 
 ### `notification_event_cursors`
 
-- 每 workspace 保存 `occurred_at,resource_type,resource_pk,event_id_hex` 复合 cursor。
-- 首个渠道创建时从当前时间初始化，不追发创建前的历史状态事件。
+- 单行 singleton 保存 `last_sequence`，对应 TELEMETRY_DB 入库队列的单调序号；旧时间 cursor 字段保留用于迁移兼容，不再作为消费顺序。
+- 首次运行通过条件更新确定唯一初始化边界，并跳过初始化前的队列；并发首次调用沿用已提交边界。迁移不回填历史 state_events。游标不得回退，先持久化 outbox 后推进。
+
+### `notification_event_queue`（TELEMETRY_DB）
+
+- `sequence INTEGER PRIMARY KEY AUTOINCREMENT`，即使队列清空也不重用已消费序号。
+- `workspace_pk, resource_type, resource_pk, occurred_at, event_id` 保存源事件位置；事件复合主键唯一并外键引用 state_events，ON DELETE CASCADE。
+- AFTER INSERT trigger 只对新插入的 machine/service 状态事件创建一条记录，不在每个遥测 sample/report 上增加写入。
+- 按 sequence 主键分页，每轮最多 100 条；消费成功后分批删除。通知停用时，源事件保留期与软删除仍能回收这些记录。
 
 ### `notification_deliveries`
 
-- deterministic `id`, `workspace_id`, `channel_id`, `event_id_hex`
-- `resource_type`, `resource_id`, `dimension`, `previous_state`, `current_state`, `reason_code`, `occurred_at`
-- `state`, `attempt_count`, `next_attempt_at`, `claim_until`, `last_error_code`, `sent_at`
-- 唯一 `(channel_id,event_id_hex)`，due index 只服务 bounded retry scan。
+- deterministic `id`, `workspace_id`, `channel_id`
+- `source_workspace_pk`, `source_resource_type`, `source_resource_pk`, `source_occurred_at`, `source_event_id`（hex）
+- `dimension`, `payload_json` 保存投递时使用的有限事件摘要，不包含 probe secret 或原始 payload。
+- `state`, `attempt_count`, `next_attempt_at`, `claim_token`, `claim_until`, `last_error`, `response_status`, `sent_at`, `created_at`, `updated_at`
+- 唯一 `(channel_id,source_workspace_pk,source_resource_type,source_resource_pk,source_occurred_at,source_event_id)`，due index 服务 bounded retry scan。
+- sent/dead 的 updated_at 超过 workspace audit_log_days 后分批删除；增加 `(workspace_id,state,updated_at,id)` 索引，清理不扫描全部历史。pending/delivering 保留原有有界重试语义。
 
 ### `retention_policies`
 
