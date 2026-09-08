@@ -1,0 +1,112 @@
+name: Agent CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - "crates/**"
+      - "proto/**"
+      - "scripts/release/**"
+      - ".github/workflows/agent-*.yml"
+  pull_request:
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - "crates/**"
+      - "proto/**"
+      - "scripts/release/**"
+      - ".github/workflows/agent-*.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x86_64
+            rust_target: x86_64-unknown-linux-musl
+            runner: ubuntu-24.04
+            binary: target/x86_64-unknown-linux-musl/release/alphaping-agent
+          - target: linux-aarch64
+            rust_target: aarch64-unknown-linux-musl
+            runner: ubuntu-24.04-arm
+            binary: target/aarch64-unknown-linux-musl/release/alphaping-agent
+          - target: macos-x86_64
+            rust_target: x86_64-apple-darwin
+            runner: macos-15-intel
+            binary: target/x86_64-apple-darwin/release/alphaping-agent
+          - target: macos-aarch64
+            rust_target: aarch64-apple-darwin
+            runner: macos-15
+            binary: target/aarch64-apple-darwin/release/alphaping-agent
+          - target: windows-x86_64
+            rust_target: x86_64-pc-windows-msvc
+            runner: windows-2025
+            binary: target/x86_64-pc-windows-msvc/release/alphaping-agent.exe
+          - target: windows-aarch64
+            rust_target: aarch64-pc-windows-msvc
+            runner: windows-11-arm
+            binary: target/aarch64-pc-windows-msvc/release/alphaping-agent.exe
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+        with:
+          toolchain: 1.96.0
+          targets: ${{ matrix.rust_target }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: agent-ci-${{ matrix.rust_target }}
+      - name: Install static Linux toolchain
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Test and build Agent
+        shell: bash
+        env:
+          # CI artifacts have no production update trust root.
+          ALPHAPING_UPDATE_ROOT_JSON: ""
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            export CC=musl-gcc
+            export CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc
+            export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc
+          elif [[ "$RUNNER_OS" == "macOS" ]]; then
+            export MACOSX_DEPLOYMENT_TARGET=11.0
+          fi
+          cargo test --locked -p alphaping-agent -p alphaping-runtime-adapters --target ${{ matrix.rust_target }}
+          cargo build --locked --release -p alphaping-agent --target ${{ matrix.rust_target }}
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            readelf -l "${{ matrix.binary }}" > agent-program-headers.txt
+            if grep -q INTERP agent-program-headers.txt; then
+              echo "Agent unexpectedly requires a dynamic loader" >&2
+              exit 1
+            fi
+          fi
+      - name: Package CI artifact
+        run: >-
+          node scripts/release/package-ci-agent.mjs
+          --binary "${{ matrix.binary }}"
+          --target "${{ matrix.target }}"
+          --output ci-artifact
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: alphaping-agent-ci-${{ matrix.target }}
+          path: ci-artifact/*
+          if-no-files-found: error
+          retention-days: 7

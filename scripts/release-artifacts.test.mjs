@@ -35,7 +35,8 @@ function temporaryDirectory(prefix) {
 
 function nativeTarget() {
   const platform = process.platform === "darwin" ? "macos" : process.platform;
-  const arch = process.arch === "arm64" ? "aarch64" : process.arch;
+  const arch =
+    process.arch === "arm64" ? "aarch64" : process.arch === "x64" ? "x86_64" : process.arch;
   return RELEASE_TARGETS.find((target) => target.platform === platform && target.arch === arch);
 }
 

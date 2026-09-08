@@ -18,6 +18,14 @@ Root public metadata is immutable input to an Agent release build. Root rotation
 
 ## 2. Metadata chain
 
+### CI builds
+
+`.github/workflows/agent-ci.yml` tests and builds Linux, macOS and Windows on native x86_64/aarch64 GitHub runners when Agent inputs change on `main` or a pull request, and supports manual dispatch. Linux uses static musl. Each successful job uploads a seven-day CI artifact containing the executable, SHA-256, source/build manifest, SPDX SBOM and license notices. The packaging step executes the binary's version check on its native runner.
+
+These evaluation builds deliberately have no production update root and cannot auto-update. They use `scripts/release/package-ci-agent.mjs`; the production packager and its root/signature requirements remain separate. No workflow receives signing keys or publishes a GitHub Release automatically.
+
+### Signed releases
+
 `scripts/release/build-metadata.mjs` reads six platform artifacts and emits:
 
 - `alphaping-tuf-timestamp.json`, valid for 24 hours;
@@ -47,7 +55,7 @@ The workflow deliberately stops at a short-lived Actions artifact. It does not r
 
 ## 3. First install
 
-The authenticated control-plane origin serves `/install.sh` and `/install.ps1`. The generated command also passes that origin as `--manifest-origin`. `/agent-release/{target}` reads `AGENT_RELEASE_MANIFEST_JSON`, validates every field, and returns the exact version, length, SHA-256, and fixed `alkinum/alphaping` versioned URL.
+The authenticated control-plane origin serves `/install.sh` and `/install.ps1`. The generated command also passes that origin as `--manifest-origin`. `/agent-release/{target}` reads `AGENT_RELEASE_MANIFEST_JSON`, validates every field, and returns the exact version, length, SHA-256, and fixed `BackRunner/alphaping` versioned URL.
 
 The installer downloads from GitHub but accepts the binary only when it matches the manifest supplied over the control-plane TLS origin and reports the same embedded version. The template manifest deliberately has zero length/hash and fails closed. Deployment automation must replace it with `agent-release-manifest.json` from the signed release job.
 

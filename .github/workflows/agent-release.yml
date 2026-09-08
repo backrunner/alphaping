@@ -110,7 +110,8 @@ jobs:
           fi
           cargo build --locked --release -p alphaping-agent --target ${{ matrix.rust_target }}
           if [[ "$RUNNER_OS" == "Linux" ]]; then
-            if readelf -l "${{ matrix.binary }}" | grep -q INTERP; then
+            readelf -l "${{ matrix.binary }}" > agent-program-headers.txt
+            if grep -q INTERP agent-program-headers.txt; then
               echo "Agent unexpectedly requires a dynamic loader" >&2
               exit 1
             fi
