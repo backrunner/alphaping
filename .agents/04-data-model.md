@@ -71,6 +71,7 @@ Better Auth 核心表由其 schema 生成并纳入统一 migration：
 
 - `id`, `workspace_id`, `slug`, `name`, `description`
 - `visibility`: `private|authenticated|public`
+- `appearance_json`: 默认 `{}`；经白名单校验的公开站点标题、介绍、logoUrl、palette、mode、density，限定不超过 2 KiB。logoUrl 默认空，最多 512 字符，仅允许不含凭据的 HTTPS URL 或站内绝对路径，以 img 加载；无自定义 HTML/CSS/脚本。旧配置不含 logoUrl 时使用默认标志，无新增 migration。
 - `created_by`, `created_at`, `updated_at`, `deleted_at`
 
 ### `dashboard_resources`

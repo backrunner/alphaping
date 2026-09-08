@@ -1,3 +1,4 @@
+import { normalizeSiteAppearance } from "@alphaping/contracts";
 import type { PublicStatusPage } from "@alphaping/db";
 
 import {
@@ -294,7 +295,12 @@ function sanitizePage(value: unknown, workspaceSlug: string): PublicStatusPage |
   }
   return {
     workspace: { name: workspaceName, slug },
-    dashboard: { name: dashboardName },
+    dashboard: {
+      name: dashboardName,
+      ...(value.dashboard.appearance === undefined
+        ? {}
+        : { appearance: normalizeSiteAppearance(value.dashboard.appearance) }),
+    },
     machines,
     services,
     incidents,

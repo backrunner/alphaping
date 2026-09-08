@@ -1,4 +1,6 @@
 <script lang="ts">
+  import PublicSurface from "$components/status/public-surface.svelte";
+  import PublicNavigation from "$components/status/public-navigation.svelte";
   import { ArrowLeft, Clock3, Gauge, History } from "@lucide/svelte";
 
   import StatusCapsules from "$components/status/status-capsules.svelte";
@@ -9,78 +11,86 @@
 </script>
 
 <svelte:head>
-  <title>{data.service.name} status · {data.workspace.name}</title>
+  <title
+    >{data.service.name} status · {data.dashboard.appearance?.title || data.workspace.name}</title
+  >
   <meta name="description" content={`Current public service status for ${data.service.name}`} />
 </svelte:head>
 
-<main>
-  <a class="back" href={`/status/${data.workspace.slug}`}><ArrowLeft size={15} />All status</a>
-  <header class="resource-header">
-    <div>
-      <span class="workspace">{data.workspace.name}</span>
-      <h1>{data.service.name}</h1>
-      {#if data.service.description}<p>{data.service.description}</p>{/if}
-    </div>
-    <StatusLabel status={data.service.state} />
-  </header>
-
-  <section class="summary" aria-label="Service status summary">
-    <div>
-      <span><Gauge size={15} />Availability</span>
-      <strong>
-        {data.service.availability24hPermille === null
-          ? "No history"
-          : `${(data.service.availability24hPermille / 10).toFixed(2)}%`}
-      </strong>
-      <small>last 24 hours</small>
-    </div>
-    <div>
-      <span><Clock3 size={15} />Last checked</span>
-      <strong>{formatRelativeTime(data.service.lastCheckedAt)}</strong>
-      <small>latest published result</small>
-    </div>
-    <div>
-      <span><History size={15} />Last transition</span>
-      <strong>{formatRelativeTime(data.service.lastTransitionAt)}</strong>
-      <small>state changed</small>
-    </div>
-  </section>
-
-  <section class="timeline" aria-labelledby="timeline-title">
-    <header>
+<PublicSurface appearance={data.dashboard.appearance} workspace={data.workspace.slug}>
+  <main>
+    <PublicNavigation
+      workspace={data.workspace}
+      title={data.dashboard.appearance?.title}
+      logoUrl={data.dashboard.appearance?.logoUrl}
+    />
+    <a class="back" href={`/status/${data.workspace.slug}`}><ArrowLeft size={15} />All status</a>
+    <header class="resource-header">
       <div>
-        <h2 id="timeline-title">Availability history</h2>
-        <p>Thirty-minute status windows</p>
+        <h1>{data.service.name}</h1>
+        {#if data.service.description}<p>{data.service.description}</p>{/if}
       </div>
-      <span>Last 24 hours</span>
+      <StatusLabel status={data.service.state} />
     </header>
-    <div class="track">
-      <StatusCapsules
-        buckets={data.service.timeline}
-        label={`${data.service.name} availability over 24 hours`}
-      />
-    </div>
-    <div class="track-label"><span>24 hours ago</span><span>Now</span></div>
-  </section>
 
-  <footer>
-    <span>Updated {formatRelativeTime(data.updatedAt)}</span><span>Powered by AlphaPing</span>
-  </footer>
-</main>
+    <section class="summary" aria-label="Service status summary">
+      <div>
+        <span><Gauge size={14} />Availability</span>
+        <strong>
+          {data.service.availability24hPermille === null
+            ? "No history"
+            : `${(data.service.availability24hPermille / 10).toFixed(2)}%`}
+        </strong>
+        <small>last 24 hours</small>
+      </div>
+      <div>
+        <span><Clock3 size={14} />Last checked</span>
+        <strong>{formatRelativeTime(data.service.lastCheckedAt)}</strong>
+      </div>
+      <div>
+        <span><History size={14} />Last transition</span>
+        <strong>{formatRelativeTime(data.service.lastTransitionAt)}</strong>
+      </div>
+    </section>
+
+    <section class="timeline" aria-labelledby="timeline-title">
+      <header>
+        <div>
+          <h2 id="timeline-title">Availability history</h2>
+          <p>Thirty-minute status windows</p>
+        </div>
+        <span>Last 24 hours</span>
+      </header>
+      <div class="track">
+        <StatusCapsules
+          buckets={data.service.timeline}
+          label={`${data.service.name} availability over 24 hours`}
+        />
+      </div>
+      <div class="track-label"><span>24 hours ago</span><span>Now</span></div>
+    </section>
+
+    <footer>
+      <span title={data.updatedAt === null ? undefined : new Date(data.updatedAt).toLocaleString()}
+        >Updated {formatRelativeTime(data.updatedAt)}</span
+      ><span>Powered by AlphaPing</span>
+    </footer>
+  </main>
+</PublicSurface>
 
 <style>
   main {
-    width: min(100% - 28px, 920px);
+    max-width: var(--content-narrow);
     margin: 0 auto;
-    padding: 30px 0 36px;
+    padding: 0 32px 40px;
   }
 
   .back {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-2);
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--text-sm);
     text-decoration: none;
   }
 
@@ -90,18 +100,15 @@
 
   .resource-header {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
-    gap: 20px;
-    margin-top: 22px;
-    padding-bottom: 22px;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .workspace {
-    color: var(--text-faint);
-    font-size: 11px;
-    font-weight: 650;
+    gap: var(--space-4);
+    margin-top: 24px;
+    padding: 32px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-panel);
+    background: linear-gradient(120deg, var(--surface), var(--accent-soft));
+    box-shadow: var(--shadow-panel);
   }
 
   h1,
@@ -111,37 +118,35 @@
   }
 
   h1 {
-    margin-top: 5px;
-    font-size: 26px;
+    margin-top: var(--space-1);
+    font-size: 34px;
+    font-weight: 600;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
   }
 
   .resource-header p {
     max-width: 64ch;
-    margin-top: 6px;
+    margin-top: var(--space-2);
     color: var(--text-muted);
-    font-size: 13px;
-    line-height: 1.5;
+    font-size: var(--text-sm);
+    line-height: var(--leading-base);
   }
 
   .summary {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    margin-top: 24px;
-    overflow: hidden;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-panel);
-    background: var(--surface);
-    box-shadow: var(--shadow-card);
+    gap: 16px;
+    margin-top: var(--space-6);
   }
 
   .summary > div {
     min-width: 0;
-    padding: 16px;
-    border-right: 1px solid var(--border);
-  }
-
-  .summary > div:last-child {
-    border-right: 0;
+    padding: 24px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    background: var(--surface);
+    box-shadow: var(--shadow-card);
   }
 
   .summary span,
@@ -152,97 +157,118 @@
 
   .summary span {
     align-items: center;
-    gap: 7px;
+    gap: var(--space-2);
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--text-xs);
   }
 
   .summary strong {
-    margin-top: 9px;
-    overflow: hidden;
+    margin-top: 16px;
     font-family: var(--font-mono);
-    font-size: 15px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    font-size: 26px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
   }
 
   .summary small {
-    margin-top: 3px;
+    margin-top: var(--space-1);
     color: var(--text-faint);
-    font-size: 11px;
+    font-size: var(--text-xs);
   }
 
   .timeline {
-    margin-top: 30px;
+    margin-top: var(--space-6);
+    padding: 24px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-panel);
+    background: var(--surface);
+    box-shadow: var(--shadow-card);
   }
 
   .timeline > header {
     display: flex;
-    align-items: flex-end;
+    align-items: baseline;
     justify-content: space-between;
-    gap: 16px;
-    margin-bottom: 12px;
+    gap: var(--space-4);
+    margin-bottom: var(--space-3);
   }
 
   .timeline h2 {
-    font-size: 16px;
+    font-size: 20px;
+    font-weight: 600;
   }
 
   .timeline p,
   .timeline > header > span {
-    margin-top: 2px;
-    color: var(--text-muted);
-    font-size: 12px;
+    margin-top: var(--space-1);
+    color: var(--text-faint);
+    font-size: var(--text-xs);
   }
 
   .track {
     --capsule-count: 48;
-    padding: 18px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-card);
-    background: var(--surface);
-    box-shadow: var(--shadow-card);
+
+    margin-top: 24px;
   }
 
   .track-label {
     display: flex;
     justify-content: space-between;
-    margin-top: 7px;
+    margin-top: var(--space-2);
     color: var(--text-faint);
-    font-size: 11px;
+    font-size: var(--text-xs);
   }
 
   footer {
     display: flex;
+    flex-wrap: wrap;
     justify-content: space-between;
-    margin-top: 32px;
-    padding-top: 14px;
+    gap: var(--space-1) var(--space-3);
+    margin-top: var(--space-8);
+    padding-top: var(--space-3);
     border-top: 1px solid var(--border);
     color: var(--text-faint);
-    font-size: 11px;
+    font-size: var(--text-xs);
+  }
+
+  @media (max-width: 768px) {
+    main {
+      padding: 0 24px 32px;
+    }
   }
 
   @media (max-width: 620px) {
     .summary {
-      grid-template-columns: 1fr;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
     }
-
     .summary > div {
-      border-right: 0;
-      border-bottom: 1px solid var(--border);
+      padding: 18px;
     }
-
-    .summary > div:last-child {
-      border-bottom: 0;
+    .summary > div:first-child {
+      grid-column: 1 / -1;
+    }
+    .summary strong {
+      font-size: 22px;
+    }
+    .timeline > header {
+      align-items: flex-start;
+      flex-direction: column;
+      gap: 4px;
     }
 
     .resource-header {
+      padding: 24px;
+      align-items: flex-start;
       flex-direction: column;
     }
+  }
 
-    footer {
-      flex-direction: column;
-      gap: 4px;
+  @media (max-width: 480px) {
+    main {
+      padding: 0 18px 28px;
     }
   }
 </style>

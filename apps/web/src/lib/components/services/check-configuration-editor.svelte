@@ -333,22 +333,25 @@
     display: inline-flex;
     height: 26px;
     align-items: center;
-    gap: 5px;
+    gap: var(--space-1);
     color: var(--accent);
-    font-size: 9px;
-    font-weight: 650;
+    font-size: var(--text-xs);
+    font-weight: 620;
     cursor: pointer;
+  }
+  summary:hover {
+    color: var(--accent-hover);
   }
   form {
     display: grid;
-    gap: 10px;
-    margin-top: 6px;
-    padding: 10px 0 3px;
+    gap: var(--space-3);
+    margin-top: var(--space-2);
+    padding: var(--space-3) 0 var(--space-1);
     border-top: 1px solid var(--border);
   }
   .fields {
     display: grid;
-    gap: 8px;
+    gap: var(--space-2);
   }
   .fields.two {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -357,62 +360,69 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
   .fields.target-row {
-    grid-template-columns: 90px 1fr;
+    grid-template-columns: 96px 1fr;
   }
   label > span {
     display: block;
-    margin-bottom: 4px;
+    margin-bottom: var(--space-1);
     color: var(--text-muted);
-    font-size: 9px;
+    font-size: var(--text-xs);
   }
   input,
   select,
   textarea {
     width: 100%;
-    min-height: 30px;
-    padding: 0 8px;
+    min-height: 32px;
+    padding: 0 var(--space-2);
     border: 1px solid var(--border);
-    border-radius: 5px;
+    border-radius: var(--radius-control);
     color: var(--text);
     background: var(--surface);
     font: inherit;
-    font-size: 10px;
+    font-size: var(--text-sm);
   }
   textarea {
-    padding-block: 7px;
+    padding-block: var(--space-2);
     resize: vertical;
+  }
+  input:focus,
+  select:focus,
+  textarea:focus {
+    border-color: var(--accent);
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
   }
   small {
     display: flex;
     align-items: center;
-    gap: 5px;
-    margin-top: 4px;
+    gap: var(--space-1);
+    margin-top: var(--space-1);
     color: var(--text-faint);
-    font-size: 8px;
+    font-size: var(--text-xs);
   }
   small input,
   .inline-check input {
-    width: 13px;
-    min-height: 13px;
+    width: 14px;
+    min-height: 14px;
   }
   .inline-check,
   .binary-row {
     display: inline-flex;
     align-items: center;
-    gap: 7px;
+    gap: var(--space-2);
     color: var(--text-muted);
-    font-size: 9px;
+    font-size: var(--text-sm);
   }
   .binary-row {
-    gap: 18px;
+    gap: var(--space-5);
   }
   .inline-check span {
     margin: 0;
   }
   .assertions {
     display: grid;
-    gap: 8px;
-    padding-top: 4px;
+    gap: var(--space-2);
+    padding-top: var(--space-1);
   }
   .assertion-header,
   .assertion-footer,
@@ -420,13 +430,13 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 10px;
+    gap: var(--space-2);
   }
   .assertion-header strong {
     display: block;
     margin: 0;
     color: var(--text-muted);
-    font-size: 9px;
+    font-size: var(--text-xs);
   }
   .assertion-header button,
   .assertion-footer button {
@@ -434,8 +444,12 @@
     color: var(--accent);
     background: transparent;
     font: inherit;
-    font-size: 9px;
+    font-size: var(--text-xs);
     cursor: pointer;
+  }
+  .assertion-header button:hover,
+  .assertion-footer button:hover {
+    color: var(--accent-hover);
   }
   .assertion-header button:disabled {
     cursor: not-allowed;
@@ -443,9 +457,10 @@
   }
   .assertion {
     display: grid;
-    gap: 8px;
-    padding: 9px;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
     border-left: 2px solid var(--border-strong);
+    border-radius: 0 var(--radius-control) var(--radius-control) 0;
     background: var(--surface-subtle);
   }
   .assertion-footer {
@@ -457,7 +472,7 @@
   .message {
     margin: 0;
     color: var(--status-healthy);
-    font-size: 9px;
+    font-size: var(--text-xs);
   }
   .message--error {
     color: var(--status-down);

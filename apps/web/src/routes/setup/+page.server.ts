@@ -60,9 +60,7 @@ export const actions: Actions = {
         rawDays,
         defaultSamplingIntervalSeconds: Number(form.get("defaultSamplingIntervalSeconds")),
         dashboardVisibility: String(form.get("dashboardVisibility")) as
-          | "private"
-          | "authenticated"
-          | "public",
+          "private" | "authenticated" | "public",
       });
     } catch (cause) {
       if (isHttpError(cause)) {

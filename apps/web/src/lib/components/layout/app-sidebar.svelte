@@ -28,7 +28,7 @@
 
 <aside id="workspace-navigation" class:open class="sidebar">
   <div class="brand">
-    <span>A</span><strong>AlphaPing</strong>
+    <span><Activity size={20} /></span><strong>AlphaPing</strong>
     <button
       id="workspace-navigation-close"
       class="close"
@@ -82,39 +82,42 @@
 <style>
   .sidebar {
     position: sticky;
-    top: 0;
-    z-index: 20;
+    top: 12px;
+    z-index: var(--z-sticky);
     display: flex;
-    height: 100dvh;
+    height: calc(100dvh - 24px);
     flex-direction: column;
-    padding: 0 10px 10px;
-    border-right: 1px solid var(--border);
+    padding: 6px 10px 12px;
+    margin: 12px 0 12px 12px;
+    border: 1px solid var(--border);
+    border-radius: 22px;
+    box-shadow: var(--shadow-card);
     background: var(--surface);
   }
 
   .brand {
     display: flex;
-    height: 48px;
+    height: 64px;
     align-items: center;
-    gap: 9px;
-    padding: 0 8px;
+    gap: var(--space-2);
+    padding: 0 var(--space-2);
   }
 
   .brand > span {
     display: grid;
-    width: 24px;
-    height: 24px;
+    width: 34px;
+    height: 34px;
     place-items: center;
-    border-radius: 5px;
+    border-radius: var(--radius-control);
     color: var(--accent-ink);
     background: var(--accent);
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--text-sm);
     font-weight: 750;
   }
 
   .brand strong {
-    font-size: 13px;
+    font-size: var(--text-base);
   }
 
   .close {
@@ -124,44 +127,62 @@
     margin-left: auto;
     place-items: center;
     border: 0;
-    border-radius: 5px;
+    border-radius: var(--radius-button);
     color: var(--text-muted);
     background: transparent;
+    transition:
+      background-color 120ms ease,
+      color 120ms ease;
+  }
+
+  .close:hover {
+    color: var(--text);
+    background: var(--surface-subtle);
   }
 
   nav {
     display: grid;
-    gap: 2px;
-    margin-top: 8px;
+    gap: 6px;
+    margin-top: var(--space-2);
   }
 
   nav a,
   nav button {
     display: flex;
     width: 100%;
-    height: 32px;
+    height: 42px;
     align-items: center;
-    gap: 9px;
-    padding: 0 9px;
+    gap: var(--space-2);
+    padding: 0 var(--space-2);
     border: 0;
-    border-radius: 5px;
+    border-radius: var(--radius-button);
     color: var(--text-muted);
     background: transparent;
     font: inherit;
-    font-size: 12px;
+    font-size: var(--text-sm);
     text-decoration: none;
     cursor: pointer;
+    transition:
+      background-color 120ms ease,
+      color 120ms ease,
+      box-shadow 120ms ease;
   }
 
   nav a:hover,
-  nav button:hover,
-  nav a.active {
+  nav button:hover {
     color: var(--text);
     background: var(--surface-subtle);
   }
 
   nav a.active {
+    color: var(--accent);
+    background: var(--accent-soft);
+    box-shadow: none;
     font-weight: 620;
+  }
+
+  nav a.active:hover {
+    background: color-mix(in srgb, var(--accent) 13%, transparent);
   }
 
   .sidebar__bottom {
@@ -175,11 +196,15 @@
   @media (max-width: 780px) {
     .sidebar {
       position: fixed;
+      top: 0;
       left: 0;
-      z-index: 70;
+      margin: 0;
+      height: 100dvh;
+      border-radius: 0 22px 22px 0;
+      z-index: var(--z-dialog);
       visibility: hidden;
       translate: -100% 0;
-      width: 216px;
+      width: 260px;
       box-shadow: var(--navigation-shadow);
       transition:
         translate 140ms ease,
@@ -199,7 +224,7 @@
     .backdrop {
       position: fixed;
       inset: 0;
-      z-index: 60;
+      z-index: var(--z-overlay);
       display: block;
       border: 0;
       background: var(--overlay-backdrop);

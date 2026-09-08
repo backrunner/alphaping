@@ -1,21 +1,36 @@
 <script lang="ts">
-  import {
-    ArrowDown,
-    ArrowRight,
-    ArrowUp,
-    Box,
-    Cpu,
-    HardDrive,
-    MemoryStick,
-    Radio,
-  } from "@lucide/svelte";
+  import { ArrowDown, ArrowUp, Box, Clock3 } from "@lucide/svelte";
   import type { PublicStatusMachine } from "@alphaping/db";
-
   import StatusLabel from "$components/status/status-label.svelte";
   import { formatBytes, formatPercent, formatRate, formatRelativeTime } from "$lib/utils/format";
-
   let { machine, workspaceSlug }: { machine: PublicStatusMachine; workspaceSlug: string } =
     $props();
+  const metrics = $derived([
+    {
+      name: "CPU",
+      value: machine.cpuPermille === null ? "—" : formatPercent(machine.cpuPermille),
+      detail: "utilization",
+      percent: Math.max(0, Math.min(100, (machine.cpuPermille ?? 0) / 10)),
+    },
+    {
+      name: "Memory",
+      value: machine.memoryUsedBytes === null ? "—" : formatBytes(machine.memoryUsedBytes),
+      detail:
+        machine.memoryTotalBytes === null ? "" : `of ${formatBytes(machine.memoryTotalBytes)}`,
+      percent: machine.memoryTotalBytes
+        ? Math.min(100, (100 * (machine.memoryUsedBytes ?? 0)) / machine.memoryTotalBytes)
+        : 0,
+    },
+    {
+      name: "Storage",
+      value: machine.storageUsedBytes === null ? "—" : formatBytes(machine.storageUsedBytes),
+      detail:
+        machine.storageTotalBytes === null ? "" : `of ${formatBytes(machine.storageTotalBytes)}`,
+      percent: machine.storageTotalBytes
+        ? Math.min(100, (100 * (machine.storageUsedBytes ?? 0)) / machine.storageTotalBytes)
+        : 0,
+    },
+  ]);
 </script>
 
 <a
@@ -24,218 +39,220 @@
   aria-label={`Open ${machine.name} machine status`}
 >
   <header>
-    <div class="identity">
-      <strong>{machine.name}</strong>
-      <span>{machine.description || "Published machine status"}</span>
-    </div>
+    <h3>{machine.name}</h3>
     <StatusLabel status={machine.state} />
   </header>
-
+  <p class="description">{machine.description}</p>
   {#if machine.cpuPermille !== null}
     <div class="metrics">
-      <div>
-        <span><Cpu size={14} />CPU</span>
-        <strong>{formatPercent(machine.cpuPermille)}</strong>
-      </div>
-      <div>
-        <span><MemoryStick size={14} />Memory</span>
-        <strong>{formatBytes(machine.memoryUsedBytes ?? 0)}</strong>
-        <small>/ {formatBytes(machine.memoryTotalBytes ?? 0)}</small>
-      </div>
-      <div>
-        <span><HardDrive size={14} />Storage</span>
-        <strong>{formatBytes(machine.storageUsedBytes ?? 0)}</strong>
-        <small>/ {formatBytes(machine.storageTotalBytes ?? 0)}</small>
-      </div>
-      <div>
-        <span><ArrowDown size={14} />Down <ArrowUp size={14} />Up</span>
-        <strong>{formatRate(machine.networkRxBps ?? 0)}</strong>
-        <small>/ {formatRate(machine.networkTxBps ?? 0)}</small>
-      </div>
+      {#each metrics as metric}
+        <div class="metric">
+          <span>{metric.name}</span><strong>{metric.value}</strong><small>{metric.detail}</small>
+          <div class="meter" aria-hidden="true"><i style:width={`${metric.percent}%`}></i></div>
+        </div>
+      {/each}
+    </div>
+    <div class="network">
+      <span
+        ><ArrowDown size={13} /><strong>{formatRate(machine.networkRxBps ?? 0)}</strong><small
+          >down</small
+        ></span
+      ><span
+        ><ArrowUp size={13} /><strong>{formatRate(machine.networkTxBps ?? 0)}</strong><small
+          >up</small
+        ></span
+      >
     </div>
   {:else}
     <div class="summary-only">
-      <Radio size={15} />
-      <span>Resource metrics are not published</span>
+      <span class="summary-line"></span><span
+        >Status only<small>Resource metrics are private</small></span
+      >
     </div>
   {/if}
-
   <footer>
-    <span class="observed">Updated {formatRelativeTime(machine.observedAt)}</span>
-    <span class="meta">
-      {#if machine.containers.length > 0}
-        <span><Box size={13} />{machine.containers.length} published</span>
-      {/if}
-      <ArrowRight class="arrow" size={15} aria-hidden="true" />
-    </span>
+    <span
+      ><Clock3 size={12} />{machine.observedAt === null
+        ? "Awaiting first report"
+        : formatRelativeTime(machine.observedAt)}</span
+    >{#if machine.containers.length > 0}<span
+        ><Box size={12} />{machine.containers.length} workloads</span
+      >{/if}
   </footer>
 </a>
 
 <style>
   .machine {
-    display: grid;
+    display: flex;
+    flex-direction: column;
     min-width: 0;
-    overflow: hidden;
+    padding: 20px 20px 0;
     border: 1px solid var(--border);
     border-radius: var(--radius-card);
-    color: inherit;
+    color: var(--text);
     background: var(--surface);
     box-shadow: var(--shadow-card);
     text-decoration: none;
     transition:
-      border-color 140ms ease,
-      box-shadow 140ms ease,
-      translate 140ms ease;
+      box-shadow 180ms ease,
+      border-color 180ms ease;
   }
-
   .machine:hover {
-    border-color: var(--border-strong);
     box-shadow: var(--shadow-card-hover);
-    translate: 0 -1px;
+    border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
   }
-
-  .machine:focus-visible {
-    outline-offset: 3px;
-  }
-
-  header,
-  footer {
+  header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding: 12px 14px;
+    align-items: flex-start;
   }
-
-  .identity {
-    min-width: 0;
+  h3 {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 0;
+    font-size: 17px;
+    font-weight: 580;
+    overflow-wrap: anywhere;
   }
-
-  .identity strong,
-  .identity span {
-    display: block;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .identity strong {
-    color: var(--text);
-    font-size: 14px;
-    font-weight: 680;
-  }
-
-  .machine:hover .identity strong {
+  .machine:hover h3 {
     color: var(--accent);
   }
-
-  .identity span {
-    min-height: 17px;
-    margin-top: 2px;
+  p {
+    min-height: 20px;
+    margin: 6px 0 22px;
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: 12px;
+    line-height: 1.65;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
-
   .metrics {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    border-block: 1px solid var(--border);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
   }
-
-  .metrics > div {
+  .metric {
+    display: grid;
     min-width: 0;
-    padding: 10px 12px;
+    gap: 6px;
   }
-
-  .metrics > div + div {
-    border-left: 1px solid var(--border);
-  }
-
-  .metrics span {
+  .metric > span {
     display: flex;
-    min-height: 16px;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .metric strong {
+    font-family: var(--font-mono);
+    font-size: 16px;
+    white-space: nowrap;
+    font-weight: 550;
+    font-variant-numeric: tabular-nums;
+  }
+  .metric small {
+    color: var(--text-faint);
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .meter {
+    height: 4px;
+    margin-top: 3px;
+    overflow: hidden;
+    border-radius: 2px;
+    background: var(--surface-strong);
+  }
+  .meter i {
+    display: block;
+    height: 100%;
+    border-radius: 2px;
+    background: var(--text-muted);
+  }
+  .network {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 18px;
+    padding: 16px 0;
+  }
+  .network > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .network strong {
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-weight: 500;
+    font-size: 11px;
+  }
+  .network small {
+    font-size: 11px;
+  }
+  footer {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 6px;
+    margin-top: auto;
+    padding: 12px 0;
+    border-top: 1px solid var(--border);
+    color: var(--text-faint);
+    font-size: 11px;
+  }
+  footer > span {
+    display: inline-flex;
     align-items: center;
     gap: 5px;
-    overflow: hidden;
-    color: var(--text-muted);
-    font-size: 11px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
-
-  .metrics strong,
-  .metrics small {
-    display: inline-block;
-    margin-top: 6px;
-    overflow: hidden;
-    font-family: var(--font-mono);
-    font-size: 12px;
-    font-variant-numeric: tabular-nums;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .metrics small {
-    margin-left: 3px;
-    color: var(--text-faint);
-    font-size: 10px;
-  }
-
   .summary-only {
     display: flex;
-    min-height: 56px;
     align-items: center;
-    gap: 7px;
-    padding: 10px 14px;
-    border-block: 1px solid var(--border);
+    gap: 12px;
+    min-height: 78px;
+    padding-bottom: 22px;
     color: var(--text-muted);
-    background: var(--surface-subtle);
     font-size: 12px;
   }
-
-  footer {
-    color: var(--text-faint);
+  .summary-only small {
+    display: block;
+    margin-top: 5px;
     font-size: 11px;
+    color: var(--text-faint);
   }
-
-  .meta,
-  .meta > span {
-    display: flex;
-    align-items: center;
-    gap: 5px;
+  .summary-line {
+    display: block;
+    height: 34px;
+    width: 4px;
+    border-radius: 2px;
+    background: var(--accent-soft);
   }
-
-  .meta {
-    flex: none;
-    gap: 10px;
+  :global([data-density="compact"]) .machine {
+    padding: 16px 16px 0;
   }
-
-  :global(.arrow) {
-    transition: translate 140ms ease;
+  :global([data-density="compact"]) .description {
+    margin-bottom: 16px;
   }
-
-  .machine:hover :global(.arrow) {
-    translate: 2px 0;
+  :global([data-density="compact"]) footer {
+    padding: 10px 0;
   }
-
-  @media (max-width: 560px) {
-    .metrics {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .metrics > div:nth-child(3) {
-      border-left: 0;
-    }
-
-    .metrics > div:nth-child(n + 3) {
-      border-top: 1px solid var(--border);
-    }
+  :global([data-density="compact"]) .network {
+    padding: 12px 0;
   }
-
   @media (prefers-reduced-motion: reduce) {
-    .machine,
-    :global(.arrow) {
+    .machine {
       transition: none;
+    }
+    .machine:hover {
+      transform: none;
     }
   }
 </style>

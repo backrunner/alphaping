@@ -73,6 +73,52 @@ describe("public status snapshot", () => {
     });
   });
 
+  it("round trips validated appearance without arbitrary style or private fields", () => {
+    const themed = {
+      ...page,
+      dashboard: {
+        ...page.dashboard,
+        appearance: {
+          title: "My monitors",
+          description: "A public introduction",
+          logoUrl: "https://cdn.example.test/logo.svg",
+          palette: "mint" as const,
+          mode: "dark" as const,
+          density: "compact" as const,
+          css: "private-css",
+          token: "private-theme-token",
+        },
+      },
+    };
+    const snapshot = JSON.stringify(buildPublicStatusSnapshot(themed, now));
+    expect(snapshot).not.toContain("private-css");
+    expect(snapshot).not.toContain("private-theme-token");
+    expect(
+      parsePublicStatusSnapshot(snapshot, "operations", now)?.page.dashboard.appearance,
+    ).toEqual({
+      title: "My monitors",
+      description: "A public introduction",
+      logoUrl: "https://cdn.example.test/logo.svg",
+      palette: "mint",
+      mode: "dark",
+      density: "compact",
+    });
+  });
+
+  it("revalidates logo addresses in cached public projections", () => {
+    const snapshot = buildPublicStatusSnapshot(page, now);
+    const serialized = JSON.stringify({
+      ...snapshot,
+      page: {
+        ...snapshot.page,
+        dashboard: { ...snapshot.page.dashboard, appearance: { logoUrl: "javascript:alert(1)" } },
+      },
+    });
+    expect(
+      parsePublicStatusSnapshot(serialized, "operations", now)?.page.dashboard.appearance?.logoUrl,
+    ).toBe("");
+  });
+
   it("rejects cross-workspace, future, and expired snapshots", () => {
     const serialized = JSON.stringify(buildPublicStatusSnapshot(page, now));
     expect(parsePublicStatusSnapshot(serialized, "other", now)).toBeNull();

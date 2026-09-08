@@ -5,13 +5,7 @@ type CheckKind = "http" | "tcp" | "icmp";
 type ExecutorKind = "cloudflare" | "agent";
 type AssertionSource = "header" | "jsonpath" | "body";
 type AssertionOperator =
-  | "exists"
-  | "equals"
-  | "contains"
-  | "matches"
-  | "type"
-  | "greater_than"
-  | "less_than";
+  "exists" | "equals" | "contains" | "matches" | "type" | "greater_than" | "less_than";
 
 export interface ServiceAssertionInput {
   source: AssertionSource;

@@ -123,7 +123,7 @@
 
 <style>
   section {
-    max-width: 760px;
+    max-width: var(--content-form);
   }
 
   header,
@@ -131,11 +131,11 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
+    gap: var(--space-3);
   }
 
   header {
-    margin-bottom: 16px;
+    margin-bottom: var(--space-4);
   }
 
   h2,
@@ -144,18 +144,19 @@
   }
 
   h2 {
-    font-size: 14px;
+    font-size: var(--text-base);
+    font-weight: 600;
   }
 
   header p {
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: var(--text-xs);
   }
 
   form {
     display: grid;
-    gap: 14px;
-    padding-block: 16px;
+    gap: var(--space-4);
+    padding-block: var(--space-4);
     border-block: 1px solid var(--border);
   }
 
@@ -163,7 +164,7 @@
   .intervals,
   .operations {
     display: grid;
-    gap: 10px;
+    gap: var(--space-3);
   }
 
   .identity,
@@ -177,19 +178,19 @@
 
   label > span {
     display: block;
-    margin-bottom: 6px;
+    margin-bottom: var(--space-1);
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--text-sm);
     font-weight: 600;
   }
 
   input,
   textarea {
     width: 100%;
-    height: 36px;
-    padding: 0 10px;
+    height: 32px;
+    padding: 0 var(--space-3);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-control);
     color: var(--text);
     background: var(--surface);
     font: inherit;
@@ -198,7 +199,7 @@
   textarea {
     height: auto;
     min-height: 70px;
-    padding-block: 8px;
+    padding-block: var(--space-2);
     resize: vertical;
   }
 
@@ -210,17 +211,17 @@
 
   label small {
     display: block;
-    margin-top: 4px;
+    margin-top: var(--space-1);
     color: var(--text-faint);
-    font-size: 10px;
+    font-size: var(--text-xs);
   }
 
   .checkbox {
     display: flex;
-    min-height: 36px;
+    min-height: 32px;
     align-items: center;
     align-self: end;
-    gap: 8px;
+    gap: var(--space-2);
   }
 
   .checkbox input {
@@ -233,9 +234,9 @@
   }
 
   .result {
-    padding: 8px 10px;
-    border-radius: 6px;
-    font-size: 11px;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-control);
+    font-size: var(--text-sm);
   }
 
   .result--error {
@@ -255,7 +256,7 @@
   footer > span {
     color: var(--text-faint);
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--text-xs);
   }
 
   @media (max-width: 640px) {

@@ -9,7 +9,7 @@
   let { data, form } = $props();
 </script>
 
-<svelte:head><title>Developer · AlphaPing</title></svelte:head>
+<svelte:head><title>Resources · AlphaPing</title></svelte:head>
 
 <main class="admin">
   {#if form?.kind === "machine" && form.machine}
@@ -58,15 +58,15 @@
             name="description"
             maxlength="500"
             rows="3"
-            placeholder="Singapore edge gateway"
-          ></textarea></label
+            placeholder="Singapore edge gateway"></textarea></label
         >
         <label
           ><span>Labels</span><textarea
             name="labels"
             rows="3"
-            placeholder="region=ap-southeast-1&#10;role=gateway"
-          ></textarea><small>One key=value label per line, up to 20.</small></label
+            placeholder="region=ap-southeast-1&#10;role=gateway"></textarea><small
+            >One key=value label per line, up to 20.</small
+          ></label
         >
         <div class="intervals">
           <label
@@ -122,32 +122,32 @@
 <style>
   .admin {
     width: 100%;
-    padding-bottom: 48px;
+    padding-bottom: var(--space-8);
   }
 
   section header p {
     margin: 0;
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--text-sm);
   }
 
   .admin__grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 28px;
-    padding-top: 8px;
+    gap: var(--space-8);
+    padding-top: var(--space-2);
   }
 
   .admin__grid > .service-monitor {
-    padding-left: 28px;
+    padding-left: var(--space-8);
     border-left: 1px solid var(--border);
   }
 
   section header {
     display: flex;
     align-items: flex-start;
-    gap: 10px;
-    margin-bottom: 18px;
+    gap: var(--space-2);
+    margin-bottom: var(--space-5);
   }
 
   section header > :global(svg) {
@@ -155,57 +155,62 @@
   }
 
   h2 {
-    margin: 0 0 3px;
-    font-size: 15px;
+    margin: 0 0 var(--space-1);
+    font-size: 14px;
+    font-weight: 600;
   }
 
   form {
     display: grid;
-    gap: 14px;
+    gap: var(--space-4);
   }
 
   label > span {
     display: block;
-    margin-bottom: 6px;
+    margin-bottom: var(--space-1);
     color: var(--text-muted);
-    font-size: 11px;
-    font-weight: 600;
+    font-size: var(--text-xs);
+    font-weight: 620;
   }
 
   input,
   textarea {
     width: 100%;
-    height: 36px;
-    padding: 0 10px;
+    min-height: 32px;
+    padding: 0 var(--space-2);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-control);
     color: var(--text);
     background: var(--surface);
     font: inherit;
+    font-size: var(--text-sm);
   }
 
   textarea {
-    height: auto;
-    min-height: 70px;
-    padding-block: 8px;
+    min-height: 72px;
+    padding-block: var(--space-2);
     resize: vertical;
   }
 
   input:focus,
   textarea:focus {
     border-color: var(--accent);
-    outline: 2px solid var(--focus-ring);
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
   }
 
   .checkbox {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
+    color: var(--text-muted);
+    font-size: var(--text-sm);
   }
 
   .checkbox input {
-    width: 15px;
-    height: 15px;
+    width: 14px;
+    height: 14px;
+    min-height: 14px;
   }
 
   .checkbox span {
@@ -214,27 +219,24 @@
 
   label small {
     display: block;
-    margin-top: 4px;
+    margin-top: var(--space-1);
     color: var(--text-faint);
-    font-size: 10px;
+    font-size: var(--text-xs);
   }
 
   .intervals {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 10px;
+    gap: var(--space-3);
   }
 
   .form-error {
     margin: 0;
-    padding: 8px 10px;
-    border-radius: 6px;
-    font-size: 11px;
-  }
-
-  .form-error {
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-control);
     color: var(--status-down);
     background: var(--status-down-bg);
+    font-size: var(--text-sm);
   }
 
   @media (max-width: 760px) {
@@ -243,7 +245,7 @@
     }
 
     .admin__grid > .service-monitor {
-      padding-top: 28px;
+      padding-top: var(--space-8);
       padding-left: 0;
       border-top: 1px solid var(--border);
       border-left: 0;

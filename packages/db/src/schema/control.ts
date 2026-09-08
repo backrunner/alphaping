@@ -73,6 +73,7 @@ export const dashboards = sqliteTable(
     name: text("name").notNull(),
     description: text("description").notNull().default(""),
     visibility: text("visibility", { enum: ["private", "authenticated", "public"] }).notNull(),
+    appearanceJson: text("appearance_json").notNull().default("{}"),
     createdBy: text("created_by").notNull(),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),

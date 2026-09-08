@@ -78,8 +78,10 @@
         </div>
         <div>
           <dt>Memory</dt>
-          <dd>{formatBytes(container.memoryUsedBytes)}</dd>
-          <small>of {formatBytes(container.memoryLimitBytes)}</small>
+          <dd>
+            {formatBytes(container.memoryUsedBytes)}
+            <small>of {formatBytes(container.memoryLimitBytes)}</small>
+          </dd>
         </div>
         <div>
           <dt>Download</dt>
@@ -109,8 +111,8 @@
     min-width: 0;
     grid-template-columns: minmax(180px, 1.15fr) minmax(105px, 0.6fr) minmax(320px, 1.8fr);
     align-items: center;
-    gap: 12px;
-    padding: 10px;
+    gap: var(--space-3);
+    padding: var(--space-3);
   }
 
   article + article {
@@ -121,7 +123,7 @@
     display: flex;
     min-width: 0;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
   }
 
   .identity > span {
@@ -137,26 +139,26 @@
   }
 
   .identity strong {
-    font-size: 11px;
+    font-size: var(--text-base);
   }
 
   .identity small {
     margin-top: 2px;
     color: var(--text-faint);
     font-family: var(--font-mono);
-    font-size: 9px;
+    font-size: var(--text-xs);
   }
 
   .state {
     display: inline-flex;
     width: fit-content;
     align-items: center;
-    gap: 4px;
-    padding: 3px 6px;
-    border-radius: 999px;
+    gap: var(--space-1);
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-pill);
     color: var(--status-offline);
     background: var(--status-offline-bg);
-    font-size: 9px;
+    font-size: var(--text-xs);
   }
 
   .state-running {
@@ -183,7 +185,7 @@
 
   .metrics > div {
     min-width: 0;
-    padding: 0 8px;
+    padding: 0 var(--space-2);
     border-left: 1px solid var(--border);
   }
 
@@ -195,14 +197,15 @@
   .metrics dt,
   .metrics small {
     color: var(--text-faint);
-    font-size: 8px;
+    font-size: var(--text-xs);
   }
 
   .metrics dd {
     margin-top: 2px;
     overflow: hidden;
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--text-sm);
+    font-variant-numeric: tabular-nums;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -218,10 +221,10 @@
     display: flex;
     min-width: 0;
     grid-column: 1 / -1;
-    gap: 12px;
+    gap: var(--space-3);
     padding-left: 23px;
     color: var(--text-faint);
-    font-size: 8px;
+    font-size: var(--text-xs);
   }
 
   .meta span {
@@ -251,7 +254,7 @@
   @media (max-width: 520px) {
     .metrics {
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      row-gap: 10px;
+      row-gap: var(--space-3);
     }
 
     .metrics > div:nth-child(odd) {
@@ -260,7 +263,7 @@
 
     .meta {
       flex-wrap: wrap;
-      gap: 4px 10px;
+      gap: var(--space-1) var(--space-3);
     }
   }
 </style>

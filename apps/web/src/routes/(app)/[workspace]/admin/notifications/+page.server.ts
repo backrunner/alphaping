@@ -123,9 +123,7 @@ export const actions: Actions = {
           resourceType: resource.slice(0, separator) as "machine" | "service",
           resourceId: resource.slice(separator + 1),
           dimension: String(form.get("dimension") ?? "") as
-            | "availability"
-            | "resource"
-            | "recovery",
+            "availability" | "resource" | "recovery",
           channelId: String(form.get("channelId") ?? ""),
         },
       );

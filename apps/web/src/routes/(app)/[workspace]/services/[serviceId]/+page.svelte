@@ -132,17 +132,17 @@
 
 <style>
   main {
-    width: min(100% - 24px, 1120px);
+    width: min(100% - 24px, var(--content-wide));
     margin: 0 auto;
-    padding: 24px 0 48px;
+    padding: var(--space-6) 0 var(--space-8);
   }
 
   .page-header {
     display: flex;
     align-items: flex-end;
     justify-content: space-between;
-    gap: 18px;
-    padding-bottom: 17px;
+    gap: var(--space-4);
+    padding-bottom: var(--space-4);
     border-bottom: 1px solid var(--border);
   }
 
@@ -154,9 +154,9 @@
   .status-link {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: var(--space-1);
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--text-xs);
     text-decoration: none;
   }
 
@@ -168,8 +168,8 @@
   .title-row {
     display: flex;
     align-items: center;
-    gap: 10px;
-    margin-top: 14px;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
   }
 
   h1,
@@ -181,32 +181,34 @@
     min-width: 0;
     flex: 1;
     overflow: hidden;
-    font-size: 22px;
+    font-size: var(--text-xl);
+    font-weight: 600;
+    line-height: var(--leading-xl);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .heading p {
     max-width: 68ch;
-    margin-top: 5px;
+    margin-top: var(--space-1);
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--text-sm);
   }
 
   .header-actions {
     display: flex;
     flex: none;
     align-items: center;
-    gap: 10px;
+    gap: var(--space-2);
   }
 
   .form-message {
-    margin-top: 10px;
-    padding: 8px 10px;
-    border-radius: 6px;
+    margin-top: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-control);
     color: var(--status-healthy);
     background: var(--status-healthy-bg);
-    font-size: 10px;
+    font-size: var(--text-sm);
   }
 
   .form-message--error {
@@ -219,8 +221,8 @@
     min-height: 58px;
     align-items: center;
     justify-content: space-between;
-    gap: 16px;
-    padding-block: 10px;
+    gap: var(--space-4);
+    padding-block: var(--space-3);
     border-bottom: 1px solid var(--border);
   }
 
@@ -228,31 +230,41 @@
   .maintenance form {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
   }
 
   .maintenance > div {
+    color: var(--text);
+    font-size: var(--text-sm);
+    font-weight: 620;
+  }
+
+  .maintenance > div :global(svg) {
     color: var(--text-muted);
-    font-size: 11px;
-    font-weight: 650;
   }
 
   .maintenance label > span {
     display: block;
-    margin-bottom: 4px;
-    color: var(--text-faint);
-    font-size: 9px;
+    margin-bottom: var(--space-1);
+    color: var(--text-muted);
+    font-size: var(--text-xs);
   }
 
   .maintenance input {
     height: 32px;
-    padding: 0 8px;
+    padding: 0 var(--space-2);
     border: 1px solid var(--border);
-    border-radius: 5px;
+    border-radius: var(--radius-control);
     color: var(--text);
     background: var(--surface);
     font: inherit;
-    font-size: 10px;
+    font-size: var(--text-sm);
+  }
+
+  .maintenance input:focus {
+    border-color: var(--accent);
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
   }
 
   @media (max-width: 640px) {
@@ -305,7 +317,7 @@
     .title-row {
       align-items: flex-start;
       flex-direction: column;
-      gap: 6px;
+      gap: var(--space-2);
     }
 
     .title-row h1 {

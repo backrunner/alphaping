@@ -52,8 +52,8 @@
   .visuals {
     display: grid;
     grid-template-columns: minmax(0, 1.8fr) minmax(160px, 1fr);
-    gap: 16px;
-    margin-left: 37px;
+    gap: var(--space-4);
+    margin-left: 36px;
   }
 
   .timeline {
@@ -64,7 +64,7 @@
   }
 
   .state {
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: var(--surface-strong);
   }
 
@@ -102,7 +102,7 @@
   @media (max-width: 680px) {
     .visuals {
       grid-template-columns: 1fr;
-      gap: 9px;
+      gap: var(--space-2);
       margin-left: 0;
     }
   }

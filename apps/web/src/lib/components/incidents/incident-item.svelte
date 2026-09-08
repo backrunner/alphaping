@@ -52,7 +52,7 @@
   <ol>
     {#each incident.updates as update (update.id)}
       <li>
-        <span></span>
+        <span class={`marker marker--${update.state}`}></span>
         <div>
           <strong>{update.state}</strong>
           <p>{update.body}</p>
@@ -65,77 +65,80 @@
 
 <style>
   article {
-    padding: 15px 0;
+    padding: var(--space-4) 0;
     border-top: 1px solid var(--border);
   }
   .heading {
     display: flex;
     justify-content: space-between;
-    gap: 12px;
+    gap: var(--space-3);
   }
   .heading strong,
   .heading span {
     display: block;
   }
   .heading strong {
-    font-size: 12px;
+    font-size: var(--text-base);
+    font-weight: 620;
   }
   .heading span,
   time {
-    margin-top: 2px;
+    margin-top: var(--space-1);
     color: var(--text-faint);
-    font-size: 9px;
+    font-size: var(--text-xs);
     text-transform: capitalize;
   }
   article > p {
-    margin: 6px 0 0;
+    margin: var(--space-2) 0 0;
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--text-sm);
   }
   .affected {
     display: flex;
     flex-wrap: wrap;
-    gap: 5px;
-    margin-top: 8px;
+    gap: var(--space-1);
+    margin-top: var(--space-2);
   }
   .affected span {
-    padding: 3px 6px;
-    border-radius: 999px;
+    padding: 3px var(--space-2);
+    border-radius: var(--radius-pill);
     color: var(--text-muted);
     background: var(--surface-strong);
-    font-size: 9px;
+    font-size: var(--text-xs);
+    text-transform: capitalize;
   }
   form {
     display: grid;
-    grid-template-columns: 130px 1fr 28px;
-    gap: 6px;
-    margin-top: 12px;
+    grid-template-columns: 140px 1fr 32px;
+    gap: var(--space-2);
+    margin-top: var(--space-3);
   }
   form input,
   form select {
     width: 100%;
-    height: 28px;
-    min-height: 28px;
-    padding: 0 8px;
+    height: 32px;
+    min-height: 32px;
+    padding: 0 var(--space-2);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-control);
     color: var(--text);
     background: var(--surface);
     font: inherit;
-    font-size: 10px;
+    font-size: var(--text-sm);
   }
   form input:focus,
   form select:focus {
     border-color: var(--accent);
-    outline: 2px solid var(--focus-ring);
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
   }
   form :global(.icon-submit) {
-    width: 28px;
-    height: 28px;
+    width: 32px;
+    height: 32px;
     padding: 0;
   }
   ol {
-    margin: 14px 0 0;
+    margin: var(--space-4) 0 0;
     padding: 0;
     list-style: none;
   }
@@ -143,22 +146,36 @@
     position: relative;
     display: grid;
     grid-template-columns: 10px 1fr;
-    gap: 9px;
+    gap: var(--space-2);
     min-height: 55px;
   }
-  li > span {
+  .marker {
     z-index: 1;
-    width: 8px;
-    height: 8px;
+    width: 9px;
+    height: 9px;
     margin-top: 4px;
-    border-radius: 999px;
+    border: 2px solid var(--surface);
+    border-radius: var(--radius-pill);
     background: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+  .marker--investigating {
+    background: var(--status-down);
+    box-shadow: 0 0 0 1px var(--status-down);
+  }
+  .marker--identified {
+    background: var(--status-degraded);
+    box-shadow: 0 0 0 1px var(--status-degraded);
+  }
+  .marker--resolved {
+    background: var(--status-healthy);
+    box-shadow: 0 0 0 1px var(--status-healthy);
   }
   li::before {
     position: absolute;
     top: 8px;
     bottom: 0;
-    left: 3px;
+    left: 4px;
     width: 1px;
     background: var(--border);
     content: "";
@@ -167,22 +184,26 @@
     display: none;
   }
   li strong {
-    font-size: 10px;
+    font-size: var(--text-xs);
+    font-weight: 620;
     text-transform: capitalize;
   }
   li p {
-    margin: 2px 0;
+    margin: var(--space-1) 0;
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: var(--text-sm);
     white-space: pre-wrap;
+  }
+  li time {
+    font-variant-numeric: tabular-nums;
   }
   @media (max-width: 720px) {
     .heading {
       flex-direction: column;
-      gap: 2px;
+      gap: var(--space-1);
     }
     form {
-      grid-template-columns: 1fr 28px;
+      grid-template-columns: 1fr 32px;
     }
     form select {
       grid-column: 1 / -1;

@@ -45,20 +45,19 @@ type StringifyValues<EnvType extends Record<string, unknown>> = {
   [Binding in keyof EnvType]: EnvType[Binding] extends string ? EnvType[Binding] : string;
 };
 declare namespace NodeJS {
-  interface ProcessEnv
-    extends StringifyValues<
-      Pick<
-        Cloudflare.Env,
-        | "INGEST_ORIGIN"
-        | "LIVE_ORIGIN"
-        | "AGENT_RELEASE_MANIFEST_JSON"
-        | "DOMAIN_ROUTES_JSON"
-        | "BETTER_AUTH_SECRET"
-        | "SETUP_TOKEN"
-        | "ENROLLMENT_TOKEN_PEPPER"
-        | "CHECK_SECRET_WRAPPING_KEY"
-        | "LIVE_TICKET_SECRET"
-        | "NOTIFICATION_SECRET_WRAPPING_KEY"
-      >
-    > {}
+  interface ProcessEnv extends StringifyValues<
+    Pick<
+      Cloudflare.Env,
+      | "INGEST_ORIGIN"
+      | "LIVE_ORIGIN"
+      | "AGENT_RELEASE_MANIFEST_JSON"
+      | "DOMAIN_ROUTES_JSON"
+      | "BETTER_AUTH_SECRET"
+      | "SETUP_TOKEN"
+      | "ENROLLMENT_TOKEN_PEPPER"
+      | "CHECK_SECRET_WRAPPING_KEY"
+      | "LIVE_TICKET_SECRET"
+      | "NOTIFICATION_SECRET_WRAPPING_KEY"
+    >
+  > {}
 }

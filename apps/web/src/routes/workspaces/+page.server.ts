@@ -30,9 +30,7 @@ export const actions: Actions = {
         rawDays: Number(form.get("rawDays")),
         defaultSamplingIntervalSeconds: Number(form.get("defaultSamplingIntervalSeconds")),
         dashboardVisibility: String(form.get("dashboardVisibility")) as
-          | "private"
-          | "authenticated"
-          | "public",
+          "private" | "authenticated" | "public",
       });
       throw redirect(303, `/${workspace.slug}`);
     } catch (cause) {

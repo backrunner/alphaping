@@ -165,7 +165,7 @@
     height: 44px;
     grid-template-columns: auto 1fr auto;
     align-items: center;
-    gap: 9px;
+    gap: var(--space-2);
     list-style: none;
     cursor: pointer;
   }
@@ -177,13 +177,13 @@
   summary > span {
     display: flex;
     align-items: center;
-    gap: 7px;
+    gap: var(--space-2);
     font-weight: 650;
   }
 
   summary small {
     color: var(--text-faint);
-    font-size: 10px;
+    font-size: var(--text-xs);
   }
 
   summary :global(.chevron) {
@@ -196,26 +196,34 @@
 
   .body {
     min-height: 156px;
-    padding: 0 0 16px;
+    padding: 0 0 var(--space-4);
   }
 
   .ranges {
     display: flex;
+    flex-wrap: wrap;
     gap: 2px;
-    margin-bottom: 12px;
+    margin-bottom: var(--space-3);
   }
 
   .ranges button,
   .state button {
-    height: 26px;
-    padding: 0 8px;
+    height: 28px;
+    padding: 0 var(--space-2);
     border: 0;
-    border-radius: 5px;
+    border-radius: var(--radius-button);
     color: var(--text-muted);
     background: transparent;
     font: inherit;
-    font-size: 10px;
+    font-size: var(--text-xs);
     cursor: pointer;
+    transition:
+      background-color 120ms ease,
+      color 120ms ease;
+  }
+
+  .ranges button:hover {
+    color: var(--text);
   }
 
   .ranges button.active {
@@ -234,9 +242,9 @@
     min-height: 116px;
     align-items: center;
     justify-content: center;
-    gap: 8px;
+    gap: var(--space-2);
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--text-sm);
   }
 
   .state.error {

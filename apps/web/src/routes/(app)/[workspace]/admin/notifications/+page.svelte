@@ -109,8 +109,7 @@
               name="recipients"
               required
               rows="3"
-              placeholder="ops@example.com"
-            ></textarea></label
+              placeholder="ops@example.com"></textarea></label
           >
           <label><span>Reply-to</span><input name="replyTo" type="email" /></label>
         {:else if selectedProvider === "smtp"}
@@ -141,8 +140,7 @@
               name="recipients"
               required
               rows="3"
-              placeholder="ops@example.com"
-            ></textarea></label
+              placeholder="ops@example.com"></textarea></label
           >
         {:else if selectedProvider === "discord" || selectedProvider === "slack"}
           <label
@@ -347,8 +345,8 @@
 <style>
   .notifications-page {
     display: grid;
-    gap: 28px;
-    padding-bottom: 48px;
+    gap: var(--space-8);
+    padding-bottom: var(--space-8);
   }
 
   .page-heading,
@@ -362,7 +360,7 @@
   }
 
   .page-heading {
-    gap: 12px;
+    gap: var(--space-3);
   }
 
   .page-heading__icon,
@@ -390,42 +388,46 @@
   }
 
   h1 {
-    font-size: 20px;
+    font-size: var(--text-xl);
+    font-weight: 600;
+    line-height: var(--leading-xl);
   }
 
   h2 {
-    font-size: 16px;
+    font-size: 14px;
+    font-weight: 600;
   }
 
   h3 {
-    font-size: 14px;
+    font-size: var(--text-base);
+    font-weight: 600;
   }
 
   .page-heading p,
   .section-heading p {
-    margin-top: 3px;
+    margin-top: var(--space-1);
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--text-sm);
   }
 
   .action-error {
-    padding: 10px 12px;
+    padding: var(--space-2) var(--space-3);
     border: 1px solid color-mix(in srgb, var(--status-down) 28%, var(--border));
     border-radius: var(--radius-control);
     color: var(--status-down);
     background: var(--status-down-bg);
-    font-size: 13px;
+    font-size: var(--text-sm);
   }
 
   .channel-section,
   .routing-section {
     display: grid;
-    gap: 16px;
+    gap: var(--space-4);
   }
 
   .section-heading {
     justify-content: space-between;
-    padding-bottom: 10px;
+    padding-bottom: var(--space-2);
     border-bottom: 1px solid var(--border);
   }
 
@@ -433,7 +435,7 @@
     display: grid;
     grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
     align-items: start;
-    gap: 18px;
+    gap: var(--space-5);
   }
 
   .create-channel,
@@ -441,23 +443,23 @@
   .rule-builder,
   .rules-table {
     border: 1px solid var(--border);
-    border-radius: var(--radius-panel);
+    border-radius: var(--radius-card);
     background: var(--surface);
     box-shadow: var(--shadow-card);
   }
 
   .create-channel {
     display: grid;
-    gap: 13px;
-    padding: 18px;
+    gap: var(--space-3);
+    padding: var(--space-5);
   }
 
   label > span,
   .create-channel label > span {
     display: block;
-    margin-bottom: 6px;
+    margin-bottom: var(--space-1);
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--text-xs);
     font-weight: 620;
   }
 
@@ -470,37 +472,38 @@
     color: var(--text);
     background: var(--surface);
     font: inherit;
-    font-size: 13px;
+    font-size: var(--text-sm);
     box-shadow: 0 1px 2px rgb(16 24 40 / 0.04);
   }
 
   input {
-    height: 36px;
-    padding: 0 10px;
+    height: 32px;
+    padding: 0 var(--space-2);
   }
 
   textarea {
     min-height: 72px;
-    padding: 8px 10px;
+    padding: var(--space-2);
     resize: vertical;
   }
 
   input:focus,
   textarea:focus {
     border-color: var(--accent);
-    outline: 3px solid color-mix(in srgb, var(--accent) 16%, transparent);
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
   }
 
   .channel-list {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
+    gap: var(--space-3);
   }
 
   .channel-card {
     display: grid;
-    gap: 15px;
-    padding: 16px;
+    gap: var(--space-4);
+    padding: var(--space-4);
     transition:
       border-color 120ms ease,
       box-shadow 120ms ease,
@@ -518,7 +521,7 @@
   }
 
   .channel-card__identity {
-    gap: 10px;
+    gap: var(--space-2);
   }
 
   .provider-icon {
@@ -535,23 +538,24 @@
 
   .channel-card__identity strong {
     overflow: hidden;
-    font-size: 14px;
+    font-size: var(--text-base);
+    font-weight: 620;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .channel-card__identity div span {
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--text-sm);
   }
 
   .state-dot {
     margin-left: auto;
-    padding: 3px 7px;
-    border-radius: 999px;
+    padding: 3px var(--space-2);
+    border-radius: var(--radius-pill);
     color: var(--text-muted);
     background: var(--surface-strong);
-    font-size: 11px;
+    font-size: var(--text-xs);
     font-weight: 620;
   }
 
@@ -562,15 +566,15 @@
 
   dl {
     display: grid;
-    gap: 6px;
+    gap: var(--space-1);
     margin: 0;
   }
 
   dl div {
     display: flex;
     justify-content: space-between;
-    gap: 12px;
-    font-size: 12px;
+    gap: var(--space-3);
+    font-size: var(--text-sm);
   }
 
   dt {
@@ -581,14 +585,16 @@
     overflow: hidden;
     margin: 0;
     color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .channel-card__actions {
     align-items: flex-end;
-    gap: 6px;
-    padding-top: 12px;
+    gap: var(--space-2);
+    padding-top: var(--space-3);
     border-top: 1px solid var(--border);
   }
 
@@ -596,7 +602,7 @@
     min-width: 0;
     flex: 1;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: var(--space-2);
   }
 
   .channel-settings > input {
@@ -605,14 +611,14 @@
   }
 
   .toggle {
-    gap: 6px;
+    gap: var(--space-2);
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--text-sm);
   }
 
   .toggle input {
-    width: 16px;
-    height: 16px;
+    width: 14px;
+    height: 14px;
     padding: 0;
     box-shadow: none;
   }
@@ -625,8 +631,8 @@
     display: grid;
     grid-template-columns: 1.2fr 1fr 1fr auto;
     align-items: end;
-    gap: 12px;
-    padding: 14px;
+    gap: var(--space-3);
+    padding: var(--space-3);
   }
 
   .rules-table {
@@ -638,22 +644,26 @@
     display: grid;
     grid-template-columns: minmax(180px, 1.4fr) minmax(130px, 0.8fr) minmax(150px, 1fr) 40px;
     align-items: center;
-    gap: 12px;
-    padding: 10px 14px;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-3);
   }
 
   .rules-table__head {
     color: var(--text-faint);
     background: var(--surface-subtle);
-    font-size: 11px;
-    font-weight: 650;
-    text-transform: uppercase;
+    font-size: var(--text-xs);
+    font-weight: 620;
   }
 
   .rule-row {
     min-height: 54px;
     border-top: 1px solid var(--border);
-    font-size: 13px;
+    font-size: var(--text-base);
+    transition: background-color 120ms ease;
+  }
+
+  .rule-row:hover {
+    background: var(--surface-subtle);
   }
 
   .rule-row > div {
@@ -661,19 +671,23 @@
     gap: 2px;
   }
 
+  .rule-row > div strong {
+    font-weight: 620;
+  }
+
   .rule-row > div span {
     color: var(--text-faint);
-    font-size: 11px;
+    font-size: var(--text-xs);
     text-transform: capitalize;
   }
 
   .dimension {
     width: fit-content;
-    padding: 4px 8px;
-    border-radius: 999px;
+    padding: 3px var(--space-2);
+    border-radius: var(--radius-pill);
     color: var(--text-muted);
     background: var(--surface-strong);
-    font-size: 11px;
+    font-size: var(--text-xs);
     font-weight: 620;
     text-transform: capitalize;
   }
@@ -740,7 +754,8 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .channel-card {
+    .channel-card,
+    .rule-row {
       transition: none;
     }
 

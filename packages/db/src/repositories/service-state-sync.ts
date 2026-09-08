@@ -2,9 +2,7 @@ const JOB_BATCH = 50;
 export const SERVICE_STATE_SYNC_GUARD_MS = 15 * 60_000;
 
 export type ServiceStateSyncReason =
-  | "check_configuration"
-  | "maintenance_window"
-  | "maintenance_window_ended";
+  "check_configuration" | "maintenance_window" | "maintenance_window_ended";
 
 export interface ServiceStateSyncJob {
   jobKey: string;

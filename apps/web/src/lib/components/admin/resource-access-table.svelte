@@ -132,7 +132,7 @@
 <style>
   section {
     min-width: 0;
-    padding-top: 24px;
+    padding-top: var(--space-6);
     border-top: 1px solid var(--border);
   }
 
@@ -140,8 +140,8 @@
     display: flex;
     align-items: end;
     justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 14px;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
   }
 
   h2,
@@ -150,44 +150,48 @@
   }
 
   h2 {
-    font-size: 15px;
+    font-size: 14px;
+    font-weight: 600;
   }
 
-  p,
-  .empty span {
+  p {
     display: block;
-    margin-top: 2px;
+    margin-top: var(--space-1);
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: var(--text-sm);
   }
 
   label {
     display: flex;
     align-items: center;
-    gap: 7px;
+    gap: var(--space-2);
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: var(--text-xs);
   }
 
   select {
-    height: 28px;
-    padding: 0 7px;
+    height: 32px;
+    padding: 0 var(--space-2);
     border: 1px solid var(--border);
-    border-radius: 5px;
+    border-radius: var(--radius-control);
     color: var(--text);
     background: var(--surface);
     font: inherit;
-    font-size: 10px;
+    font-size: var(--text-sm);
   }
 
   select:focus {
     border-color: var(--accent);
-    outline: 2px solid var(--focus-ring);
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
   }
 
   .table-wrap {
     overflow-x: auto;
-    border-top: 1px solid var(--border);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    background: var(--surface);
+    box-shadow: var(--shadow-card);
   }
 
   table {
@@ -197,95 +201,129 @@
 
   th,
   td {
-    height: 40px;
-    padding: 6px 8px;
+    height: 44px;
+    padding: var(--space-1) var(--space-2);
     border-bottom: 1px solid var(--border);
     text-align: left;
   }
 
+  tbody tr:last-child td {
+    border-bottom: 0;
+  }
+
+  tbody tr {
+    transition: background-color 120ms ease;
+  }
+
+  tbody tr:hover {
+    background: var(--surface-subtle);
+  }
+
   th {
-    height: 30px;
-    color: var(--text-muted);
-    font-size: 10px;
+    height: 34px;
+    color: var(--text-faint);
+    background: var(--surface-subtle);
+    font-size: var(--text-xs);
+    font-weight: 620;
   }
 
   td {
-    font-size: 11px;
+    font-size: var(--text-sm);
+  }
+
+  td strong {
+    font-weight: 620;
   }
 
   .type {
-    padding: 3px 6px;
-    border-radius: 999px;
+    padding: 3px var(--space-2);
+    border-radius: var(--radius-pill);
     color: var(--text-muted);
     background: var(--surface-strong);
-    font-size: 9px;
+    font-size: var(--text-xs);
     text-transform: capitalize;
   }
 
   form {
     display: flex;
     justify-content: flex-end;
-    gap: 6px;
+    gap: var(--space-2);
   }
 
   form select {
-    width: 126px;
+    width: 130px;
   }
 
   form button {
     display: grid;
-    width: 28px;
-    height: 28px;
+    width: 32px;
+    height: 32px;
+    flex: none;
     place-items: center;
     border: 1px solid var(--border);
-    border-radius: 5px;
+    border-radius: var(--radius-button);
     color: var(--text-muted);
     background: var(--surface);
     cursor: pointer;
+    transition:
+      border-color 120ms ease,
+      background-color 120ms ease,
+      color 120ms ease;
   }
 
   form button:hover {
     color: var(--text);
     border-color: var(--border-strong);
-  }
-
-  .pagination,
-  .pagination a,
-  .pagination span {
-    display: flex;
-    align-items: center;
+    background: var(--surface-subtle);
   }
 
   .pagination {
-    min-height: 36px;
-    justify-content: space-between;
-    gap: 12px;
-    color: var(--text-muted);
-    font-size: 10px;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    margin-top: var(--space-3);
+    font-size: var(--text-xs);
   }
 
   .pagination a,
   .pagination span {
-    min-width: 68px;
-    gap: 4px;
-  }
-
-  .pagination a:last-child,
-  .pagination span:last-child {
-    justify-content: flex-end;
+    display: inline-flex;
+    height: 32px;
+    align-items: center;
+    gap: var(--space-1);
+    padding: 0 var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-button);
   }
 
   .pagination a {
-    color: var(--text-muted);
+    color: var(--text);
+    background: var(--surface);
     text-decoration: none;
+    transition:
+      border-color 120ms ease,
+      background-color 120ms ease;
   }
 
   .pagination a:hover {
-    color: var(--text);
+    border-color: var(--border-strong);
+    background: var(--surface-subtle);
   }
 
   .pagination span {
     color: var(--text-faint);
+  }
+
+  .pagination a:last-child,
+  .pagination span:last-child {
+    justify-self: end;
+  }
+
+  .pagination strong {
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
   }
 
   .empty {
@@ -293,12 +331,24 @@
     min-height: 120px;
     place-items: center;
     align-content: center;
+    gap: var(--space-1);
     text-align: center;
   }
 
   .empty > :global(svg) {
-    margin-bottom: 8px;
+    margin-bottom: var(--space-2);
     color: var(--text-faint);
+  }
+
+  .empty strong {
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+  }
+
+  .empty span {
+    display: block;
+    color: var(--text-muted);
+    font-size: var(--text-xs);
   }
 
   .sr-only {
@@ -309,5 +359,13 @@
     height: 1px;
     overflow: hidden;
     clip: rect(0, 0, 0, 0);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    tbody tr,
+    form button,
+    .pagination a {
+      transition: none;
+    }
   }
 </style>

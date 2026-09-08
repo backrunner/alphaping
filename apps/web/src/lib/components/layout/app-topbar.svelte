@@ -2,11 +2,17 @@
   import { Menu, Search } from "@lucide/svelte";
   import type { WorkspaceShellData } from "@alphaping/db";
 
+  import ThemeToggle from "$components/layout/theme-toggle.svelte";
+
   let {
     shell,
     menuOpen,
     onmenu,
   }: { shell: WorkspaceShellData; menuOpen: boolean; onmenu: () => void } = $props();
+  const searchTarget = $derived(
+    shell.navigation.machines ? "machines" : shell.navigation.services ? "services" : null,
+  );
+  const searchLabel = $derived(searchTarget === "services" ? "Search services" : "Search machines");
 </script>
 
 <header class="topbar">
@@ -23,42 +29,50 @@
   <a class="workspace-context" href="/workspaces" title="Switch workspace">
     <span>{shell.workspace.name}</span>
   </a>
-  <form class="search" method="GET" action={`/${shell.workspace.slug}/machines`}>
-    <Search size={14} />
-    <input name="q" placeholder="Search machines" aria-label="Search machines" />
-  </form>
+  {#if searchTarget}<form
+      class="search"
+      method="GET"
+      action={`/${shell.workspace.slug}/${searchTarget}`}
+    >
+      <Search size={14} />
+      <input name="q" placeholder={searchLabel} aria-label={searchLabel} />
+    </form>{/if}
   <span class="role">{shell.workspace.role}</span>
+  <ThemeToggle />
 </header>
 
 <style>
   .topbar {
     position: sticky;
     top: 0;
-    z-index: 20;
+    z-index: var(--z-sticky);
     display: flex;
-    height: 48px;
+    height: 72px;
     align-items: center;
-    gap: 10px;
-    padding: 0 20px;
-    border-bottom: 1px solid var(--border);
-    background: color-mix(in srgb, var(--bg) 92%, transparent);
-    backdrop-filter: blur(10px);
+    gap: var(--space-2);
+    padding: 0 var(--space-5);
+    border-bottom: 0;
+    background: var(--bg);
   }
 
   .workspace-context,
   .icon-button {
     display: inline-flex;
-    height: 28px;
+    height: 36px;
     align-items: center;
     justify-content: center;
-    gap: 6px;
-    padding: 0 8px;
+    gap: var(--space-1);
+    padding: 0 var(--space-2);
     border: 1px solid var(--border);
-    border-radius: 5px;
+    border-radius: var(--radius-button);
     color: var(--text);
     background: var(--surface);
     font: inherit;
-    font-size: 11px;
+    font-size: var(--text-sm);
+    transition:
+      background-color 120ms ease,
+      border-color 120ms ease,
+      color 120ms ease;
   }
 
   .workspace-context {
@@ -71,21 +85,29 @@
   }
 
   .workspace-context:hover {
+    border-color: var(--border-strong);
     color: var(--accent);
   }
 
   .search {
     display: flex;
     width: min(320px, 32vw);
-    height: 28px;
+    height: 40px;
     align-items: center;
-    gap: 7px;
+    gap: var(--space-2);
     margin-right: auto;
-    padding: 0 9px;
+    padding: 0 var(--space-3);
     border: 1px solid var(--border);
-    border-radius: 5px;
+    border-radius: var(--radius-control);
     color: var(--text-faint);
     background: var(--surface);
+    transition:
+      border-color 120ms ease,
+      background-color 120ms ease;
+  }
+
+  .search:hover {
+    border-color: var(--border-strong);
   }
 
   .search input {
@@ -96,7 +118,7 @@
     color: var(--text);
     background: transparent;
     font: inherit;
-    font-size: 11px;
+    font-size: var(--text-sm);
   }
 
   .search:focus-within {
@@ -106,11 +128,13 @@
   }
 
   .role {
-    padding: 3px 7px;
-    border-radius: 999px;
+    margin-left: auto;
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-pill);
     color: var(--text-muted);
     background: var(--surface-strong);
-    font-size: 10px;
+    font-size: var(--text-sm);
+    font-weight: 550;
     text-transform: capitalize;
   }
 
@@ -134,7 +158,8 @@
     }
 
     .topbar {
-      padding: 0 12px;
+      padding: 0 var(--space-4);
+      height: 60px;
     }
   }
 

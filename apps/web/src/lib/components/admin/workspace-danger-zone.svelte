@@ -39,8 +39,8 @@
 
 <style>
   section {
-    padding-top: 20px;
-    border-top: 1px solid var(--border-strong);
+    padding-top: var(--space-5);
+    border-top: 1px solid color-mix(in srgb, var(--status-down) 35%, var(--border));
   }
 
   header,
@@ -52,14 +52,14 @@
   header {
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 14px;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
   }
 
   header span {
     color: var(--status-down);
-    font-size: 9px;
-    font-weight: 650;
+    font-size: var(--text-xs);
+    font-weight: 620;
     text-transform: uppercase;
   }
 
@@ -73,14 +73,15 @@
   }
 
   h2 {
-    margin-top: 3px;
+    margin-top: var(--space-1);
     font-size: 14px;
+    font-weight: 600;
   }
 
   .content {
     align-items: flex-end;
     justify-content: space-between;
-    gap: 18px;
+    gap: var(--space-5);
   }
 
   .content > div {
@@ -88,44 +89,46 @@
   }
 
   .content strong {
-    font-size: 11px;
+    font-size: var(--text-base);
+    font-weight: 620;
   }
 
   .content p {
-    margin-top: 3px;
+    margin-top: var(--space-1);
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: var(--text-sm);
   }
 
   form {
     flex: none;
     align-items: flex-end;
-    gap: 8px;
+    gap: var(--space-2);
   }
 
   label > span {
     display: block;
-    margin-bottom: 4px;
+    margin-bottom: var(--space-1);
     color: var(--text-muted);
-    font-size: 9px;
+    font-size: var(--text-xs);
   }
 
   input {
-    width: 190px;
+    width: 200px;
     height: 32px;
-    padding: 0 8px;
+    padding: 0 var(--space-2);
     border: 1px solid var(--border);
-    border-radius: 5px;
+    border-radius: var(--radius-control);
     color: var(--text);
     background: var(--surface);
     font: inherit;
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--text-sm);
   }
 
   input:focus {
     border-color: var(--status-down);
-    outline: 2px solid var(--focus-ring);
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--status-down) 16%, transparent);
   }
 
   @media (max-width: 720px) {

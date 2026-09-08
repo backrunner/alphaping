@@ -51,7 +51,7 @@
 
 <style>
   header {
-    margin-bottom: 11px;
+    margin-bottom: var(--space-3);
   }
 
   h2,
@@ -60,12 +60,13 @@
   }
 
   h2 {
-    font-size: 15px;
+    font-size: var(--text-base);
+    font-weight: 600;
   }
 
   p {
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--text-sm);
   }
 
   ol {
@@ -79,8 +80,15 @@
     min-height: 50px;
     grid-template-columns: 24px minmax(0, 1fr) auto;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
+    padding-inline: var(--space-2);
     border-bottom: 1px solid var(--border);
+    border-radius: var(--radius-button);
+    transition: background-color 120ms ease;
+  }
+
+  li:hover {
+    background: var(--surface-subtle);
   }
 
   .marker {
@@ -88,7 +96,7 @@
     width: 22px;
     height: 22px;
     place-items: center;
-    border-radius: 50%;
+    border-radius: var(--radius-pill);
     color: var(--status-degraded);
     background: var(--status-degraded-bg);
   }
@@ -99,7 +107,8 @@
   }
 
   strong {
-    font-size: 12px;
+    font-size: var(--text-sm);
+    font-weight: 600;
   }
 
   small,
@@ -107,13 +116,13 @@
     margin-top: 2px;
     color: var(--text-faint);
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--text-xs);
   }
 
   @media (max-width: 520px) {
     li {
       grid-template-columns: 24px minmax(0, 1fr);
-      padding: 8px 0;
+      padding-block: var(--space-2);
     }
 
     time {

@@ -1,3 +1,5 @@
+import { defaultSiteAppearance } from "@alphaping/contracts";
+import { loadSiteAppearance, updateSiteAppearance } from "./site-appearance.js";
 import { Miniflare } from "miniflare";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -258,5 +260,84 @@ describe("workspace storage estimate bounds", () => {
         retention: panel.retention,
       }),
     );
+  });
+});
+
+describe("dashboard appearance", () => {
+  async function migrateAppearance() {
+    await database
+      .prepare("ALTER TABLE dashboards ADD COLUMN appearance_json TEXT NOT NULL DEFAULT '{}' ")
+      .run();
+  }
+  it("persists bounded site defaults with an audit entry", async () => {
+    await migrateAppearance();
+    expect(await loadSiteAppearance(database, "operations", "admin-1")).toEqual(
+      defaultSiteAppearance,
+    );
+    const appearance = {
+      ...defaultSiteAppearance,
+      title: "My network",
+      palette: "mint" as const,
+      logoUrl: "https://cdn.example.test/logo.svg",
+    };
+    await updateSiteAppearance(database, "operations", "admin-1", appearance);
+    expect(await loadSiteAppearance(database, "operations", "admin-1")).toEqual(appearance);
+    expect(
+      await database
+        .prepare(
+          "SELECT COUNT(*) AS count FROM audit_logs WHERE action = 'dashboard.appearance.update'",
+        )
+        .first(),
+    ).toEqual({ count: 1 });
+  });
+  it("rejects an unsafe logo before writing settings or audit data", async () => {
+    await migrateAppearance();
+    await expect(
+      updateSiteAppearance(database, "operations", "admin-1", {
+        ...defaultSiteAppearance,
+        logoUrl: "data:image/svg+xml,<svg/>",
+      }),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(await loadSiteAppearance(database, "operations", "admin-1")).toEqual(
+      defaultSiteAppearance,
+    );
+    expect(await database.prepare("SELECT COUNT(*) AS count FROM audit_logs").first()).toEqual({
+      count: 0,
+    });
+  });
+  it("denies member and cross-workspace writes", async () => {
+    await migrateAppearance();
+    await database
+      .prepare("INSERT INTO memberships VALUES ('workspace-1','member-1','member','active')")
+      .run();
+    await expect(
+      updateSiteAppearance(database, "operations", "member-1", {
+        ...defaultSiteAppearance,
+        logoUrl: "/other-logo.svg",
+      }),
+    ).rejects.toMatchObject({ status: 404 });
+    await expect(
+      updateSiteAppearance(database, "other-workspace", "admin-1", defaultSiteAppearance),
+    ).rejects.toMatchObject({ status: 404 });
+    expect(await loadSiteAppearance(database, "operations", "admin-1")).toEqual(
+      defaultSiteAppearance,
+    );
+  });
+  it("rechecks admin permission at the write and does not audit a rejected change", async () => {
+    await migrateAppearance();
+    await expect(
+      updateSiteAppearance(mutateBeforeBatch(database), "operations", "admin-1", {
+        ...defaultSiteAppearance,
+        title: "No longer allowed",
+      }),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(
+      await database
+        .prepare("SELECT appearance_json FROM dashboards WHERE id = 'dashboard-1'")
+        .first(),
+    ).toEqual({ appearance_json: "{}" });
+    expect(await database.prepare("SELECT COUNT(*) AS count FROM audit_logs").first()).toEqual({
+      count: 0,
+    });
   });
 });

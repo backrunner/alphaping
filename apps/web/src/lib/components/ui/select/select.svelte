@@ -16,6 +16,7 @@
     placeholder = "Select an option",
     required = false,
     disabled = false,
+    portal = true,
     class: className = "",
     onvaluechange,
   }: {
@@ -26,9 +27,11 @@
     placeholder?: string;
     required?: boolean;
     disabled?: boolean;
+    portal?: boolean;
     class?: string;
     onvaluechange?: (value: string) => void;
   } = $props();
+  const selectId = $props.id();
 
   function handleValueChange(nextValue: string): void {
     onvaluechange?.(nextValue);
@@ -44,12 +47,23 @@
   {disabled}
   onValueChange={handleValueChange}
 >
-  <Select.Trigger class={`select-trigger ${className}`} aria-label={label}>
+  <Select.Trigger
+    class={`select-trigger ${className}`}
+    role="combobox"
+    aria-label={label}
+    aria-controls={`${selectId}-options`}
+  >
     <Select.Value {placeholder} />
     <ChevronDown class="select-chevron" size={15} aria-hidden="true" />
   </Select.Trigger>
-  <Select.Portal>
-    <Select.Content class="select-content" sideOffset={5} align="start">
+  <Select.Portal disabled={!portal}>
+    <Select.Content
+      id={`${selectId}-options`}
+      class="select-content"
+      aria-label={label}
+      sideOffset={5}
+      align="start"
+    >
       <Select.Viewport class="select-viewport">
         {#each options as option (option.value)}
           <Select.Item
@@ -72,18 +86,18 @@
     display: inline-flex;
     width: 100%;
     min-width: 0;
-    height: 34px;
+    height: 32px;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
-    padding: 0 10px;
+    gap: var(--space-2);
+    padding: 0 var(--space-3);
     border: 1px solid var(--border);
     border-radius: var(--radius-control);
     color: var(--text);
     background: var(--surface);
     box-shadow: 0 1px 2px rgb(16 24 40 / 0.04);
     font: inherit;
-    font-size: 12px;
+    font-size: var(--text-sm);
     cursor: pointer;
     transition:
       border-color 120ms ease,
@@ -121,7 +135,7 @@
   }
 
   :global(.select-content) {
-    z-index: 100;
+    z-index: var(--z-dropdown);
     width: var(--bits-select-anchor-width);
     min-width: 150px;
     max-height: min(320px, var(--bits-select-content-available-height));
@@ -133,19 +147,19 @@
   }
 
   :global(.select-viewport) {
-    padding: 5px;
+    padding: var(--space-1);
   }
 
   :global(.select-item) {
     display: flex;
-    min-height: 32px;
+    min-height: 30px;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
-    padding: 6px 8px;
-    border-radius: 6px;
+    gap: var(--space-3);
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-button);
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--text-sm);
     outline: none;
     cursor: pointer;
   }

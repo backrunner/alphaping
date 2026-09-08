@@ -1,5 +1,7 @@
 <script lang="ts">
   import { AppWindow, Copy, ExternalLink, KeyRound, Terminal } from "@lucide/svelte";
+  import { onDestroy } from "svelte";
+  import { installCommand as buildInstallCommand } from "$lib/install-command";
 
   import Button from "$components/ui/button/button.svelte";
 
@@ -24,11 +26,17 @@
   } = $props();
 
   let copied = $state(false);
+  let copyError = $state("");
+  let copyTimer: ReturnType<typeof setTimeout> | undefined;
   let installMode = $state<"unix" | "windows">("unix");
   const installCommand = $derived(
-    installMode === "windows"
-      ? `& ([scriptblock]::Create((irm ${installOrigin}/install.ps1))) -Endpoint '${ingestOrigin}' -ManifestOrigin '${installOrigin}' -Machine '${machineId}' -Token '${token}'`
-      : `curl -fsSL ${installOrigin}/install.sh | sudo sh -s -- --endpoint ${ingestOrigin} --manifest-origin ${installOrigin} --machine ${machineId} --token ${token}`,
+    buildInstallCommand(installMode, {
+      machineId,
+      token,
+      ingestOrigin,
+      installOrigin,
+      checksum: checksums[installMode],
+    }),
   );
   const scriptPath = $derived(installMode === "windows" ? "/install.ps1" : "/install.sh");
 
@@ -36,11 +44,29 @@
     return `${new Date(timestamp).toISOString().slice(0, 16).replace("T", " ")} UTC`;
   }
 
-  async function copyInstallCommand() {
-    await navigator.clipboard.writeText(installCommand);
-    copied = true;
-    setTimeout(() => (copied = false), 1_500);
+  function selectInstallMode(mode: "unix" | "windows") {
+    installMode = mode;
+    copied = false;
+    copyError = "";
+    clearTimeout(copyTimer);
   }
+
+  async function copyInstallCommand() {
+    const command = installCommand;
+    copied = false;
+    copyError = "";
+    clearTimeout(copyTimer);
+    try {
+      await navigator.clipboard.writeText(command);
+      if (command !== installCommand) return;
+      copied = true;
+      copyTimer = setTimeout(() => (copied = false), 1_500);
+    } catch {
+      if (command !== installCommand) return;
+      copyError = "Clipboard unavailable. Select and copy the command below.";
+    }
+  }
+  onDestroy(() => clearTimeout(copyTimer));
 </script>
 
 <section class="enrollment" aria-live="polite">
@@ -50,27 +76,36 @@
     <span>Expires {formatExpiry(expiresAt)}</span>
   </header>
   <div class="command">
-    <div class="modes" role="tablist" aria-label="Installation platform">
+    <div class="modes" role="group" aria-label="Installation platform">
       <button
         type="button"
-        role="tab"
-        aria-selected={installMode === "unix"}
+        aria-pressed={installMode === "unix"}
         class:active={installMode === "unix"}
-        onclick={() => (installMode = "unix")}
+        onclick={() => selectInstallMode("unix")}
       >
         <Terminal size={12} />Shell
       </button>
       <button
         type="button"
-        role="tab"
-        aria-selected={installMode === "windows"}
+        aria-pressed={installMode === "windows"}
         class:active={installMode === "windows"}
-        onclick={() => (installMode = "windows")}
+        onclick={() => selectInstallMode("windows")}
       >
         <AppWindow size={12} />PowerShell
       </button>
     </div>
-    <code>{installCommand}</code>
+    <p class="platform-help">
+      {installMode === "windows"
+        ? "Windows 10/Server 2016+ · x64 or ARM64 · Run PowerShell 5.1+ as Administrator."
+        : "Linux (systemd or OpenRC) and macOS 11+ · x64 or ARM64 · Root or sudo required."}
+    </p>
+    {#if copyError}<p class="copy-error" role="alert">{copyError}</p>{/if}
+    <textarea
+      readonly
+      aria-label="Verified Agent installation command"
+      value={installCommand}
+      spellcheck="false"
+      rows={8}></textarea>
     <div class="script-meta">
       <a href={`${installOrigin}${scriptPath}`} target="_blank" rel="noreferrer"
         ><ExternalLink size={12} />View script</a
@@ -89,11 +124,11 @@
     display: grid;
     grid-template-columns: minmax(190px, auto) minmax(0, 1fr) auto;
     align-items: center;
-    gap: 12px;
-    margin-block: 18px;
-    padding: 12px;
+    gap: var(--space-3);
+    margin-block: var(--space-5);
+    padding: var(--space-3);
     border: 1px solid var(--status-healthy);
-    border-radius: 6px;
+    border-radius: var(--radius-card);
     background: var(--status-healthy-bg);
   }
 
@@ -102,13 +137,18 @@
     display: block;
   }
 
+  header strong {
+    font-size: var(--text-base);
+    font-weight: 600;
+  }
+
   header span {
     max-width: 210px;
     overflow: hidden;
     margin-top: 2px;
     color: var(--text-muted);
     font-family: var(--font-mono);
-    font-size: 9px;
+    font-size: var(--text-xs);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -125,22 +165,25 @@
   }
 
   .modes {
-    margin-bottom: 6px;
+    margin-bottom: var(--space-2);
   }
 
   .modes button {
     display: inline-flex;
     height: 24px;
     align-items: center;
-    gap: 5px;
-    padding: 0 7px;
+    gap: var(--space-1);
+    padding: 0 var(--space-2);
     border: 0;
-    border-radius: 4px;
+    border-radius: var(--radius-button);
     color: var(--text-muted);
     background: transparent;
     font: inherit;
-    font-size: 10px;
+    font-size: var(--text-xs);
     cursor: pointer;
+    transition:
+      background-color 140ms ease,
+      color 140ms ease;
   }
 
   .modes button.active {
@@ -148,33 +191,49 @@
     background: var(--surface-strong);
   }
 
-  .command > code {
+  .command > textarea {
     display: block;
-    overflow: hidden;
-    padding: 7px 8px;
-    border-radius: 4px;
+    overflow: auto;
+    width: 100%;
+    min-height: 120px;
+    max-height: 320px;
+    resize: vertical;
+    border: 0;
+    margin: 0;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-control);
     color: var(--text);
     background: var(--surface);
     font-family: var(--font-mono);
-    font-size: 10px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    font-size: var(--text-xs);
+    line-height: 1.7;
+    white-space: pre;
+  }
+
+  .platform-help,
+  .copy-error {
+    margin: var(--space-2) 0;
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+  }
+  .copy-error {
+    color: var(--status-down);
   }
 
   .script-meta {
     min-width: 0;
-    gap: 10px;
-    margin-top: 6px;
+    gap: var(--space-3);
+    margin-top: var(--space-2);
     color: var(--text-muted);
     font-family: var(--font-mono);
-    font-size: 9px;
+    font-size: var(--text-xs);
   }
 
   .script-meta a {
     display: inline-flex;
     flex: none;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-1);
     color: var(--text-muted);
   }
 
@@ -201,11 +260,17 @@
     .script-meta {
       align-items: flex-start;
       flex-direction: column;
-      gap: 5px;
+      gap: var(--space-1);
     }
 
     .script-meta span {
       width: 100%;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .modes button {
+      transition: none;
     }
   }
 </style>

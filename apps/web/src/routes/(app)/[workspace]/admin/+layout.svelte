@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from "$app/state";
-  import { Database, FileClock, ServerCog, ShieldCheck } from "@lucide/svelte";
+  import { Database, FileClock, Palette, ServerCog, ShieldCheck } from "@lucide/svelte";
 
   let { data, children } = $props();
   const root = $derived(`/${data.shell.workspace.slug}/admin`);
@@ -27,6 +27,9 @@
       <a class:active={active(`${root}/settings`)} href={`${root}/settings`}
         ><Database size={15} />Data & visibility</a
       >
+      <a class:active={active(`${root}/appearance`)} href={`${root}/appearance`}
+        ><Palette size={15} />Appearance</a
+      >
       <a class:active={active(`${root}/audit`)} href={`${root}/audit`}
         ><FileClock size={15} />Audit log</a
       >
@@ -37,9 +40,9 @@
 
 <style>
   .admin-shell {
-    width: min(100% - 40px, 1240px);
+    width: min(100% - 40px, var(--content-admin));
     margin: 0 auto;
-    padding: 20px 0 48px;
+    padding: var(--space-5) 0 var(--space-8);
   }
 
   header {
@@ -47,35 +50,37 @@
     min-height: 56px;
     align-items: flex-end;
     justify-content: space-between;
-    gap: 16px;
-    padding-bottom: 16px;
+    gap: var(--space-4);
+    padding-bottom: var(--space-4);
     border-bottom: 1px solid var(--border);
   }
 
   header span {
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--text-xs);
   }
 
   h1 {
-    margin: 4px 0 0;
-    font-size: 21px;
+    margin: var(--space-1) 0 0;
+    font-size: var(--text-xl);
+    font-weight: 600;
+    line-height: var(--leading-xl);
   }
 
   header > strong {
-    padding: 4px 7px;
-    border-radius: 999px;
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-pill);
     color: var(--text-muted);
     background: var(--surface-strong);
-    font-size: 10px;
-    font-weight: 650;
+    font-size: var(--text-xs);
+    font-weight: 620;
   }
 
   .admin-shell__body {
     display: grid;
     grid-template-columns: 180px minmax(0, 1fr);
-    gap: 28px;
-    padding-top: 20px;
+    gap: var(--space-8);
+    padding-top: var(--space-5);
   }
 
   nav {
@@ -85,25 +90,41 @@
   }
 
   nav a {
+    position: relative;
     display: flex;
     height: 32px;
     align-items: center;
-    gap: 8px;
-    padding: 0 9px;
-    border-radius: 5px;
+    gap: var(--space-2);
+    padding: 0 var(--space-2) 0 var(--space-3);
+    border-radius: var(--radius-button);
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--text-sm);
     text-decoration: none;
+    transition:
+      background-color 120ms ease,
+      color 120ms ease;
   }
 
-  nav a:hover,
-  nav a.active {
+  nav a:hover {
     color: var(--text);
     background: var(--surface-subtle);
   }
 
   nav a.active {
-    font-weight: 650;
+    color: var(--text);
+    background: color-mix(in srgb, var(--accent) 9%, transparent);
+    font-weight: 620;
+  }
+
+  nav a.active::before {
+    position: absolute;
+    top: 6px;
+    bottom: 6px;
+    left: 0;
+    width: 2px;
+    border-radius: 2px;
+    background: var(--accent);
+    content: "";
   }
 
   .admin-shell__content {
@@ -112,13 +133,13 @@
 
   @media (max-width: 780px) {
     .admin-shell {
-      width: min(100% - 24px, 1240px);
-      padding-top: 14px;
+      width: min(100% - 24px, var(--content-admin));
+      padding-top: var(--space-4);
     }
 
     .admin-shell__body {
       grid-template-columns: 1fr;
-      gap: 18px;
+      gap: var(--space-5);
     }
 
     nav {
@@ -129,6 +150,15 @@
 
     nav a {
       flex: 0 0 auto;
+    }
+
+    nav a.active::before {
+      top: auto;
+      right: var(--space-2);
+      bottom: 0;
+      left: var(--space-2);
+      width: auto;
+      height: 2px;
     }
   }
 
@@ -141,6 +171,12 @@
 
     nav a {
       min-width: 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    nav a {
+      transition: none;
     }
   }
 </style>

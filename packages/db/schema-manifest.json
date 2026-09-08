@@ -94,6 +94,10 @@
         {
           "file": "0023_notifications.sql",
           "sha256": "e9f1c743cf3cdd3e6112dc35fcc078677dfa39cdde9201a77e90edd3e52ecae2"
+        },
+        {
+          "file": "0024_dashboard_appearance.sql",
+          "sha256": "ddb7d3a74c8b58147370b4155db7acff49e488c8f79f213d789a0889b3d7195e"
         }
       ],
       "objects": [
@@ -395,7 +399,7 @@
           "type": "table",
           "name": "dashboards",
           "table": "dashboards",
-          "sql": "CREATE TABLE dashboards (\n  id TEXT PRIMARY KEY NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  slug TEXT NOT NULL,\n  name TEXT NOT NULL,\n  description TEXT NOT NULL DEFAULT '',\n  visibility TEXT NOT NULL CHECK (visibility IN ('private', 'authenticated', 'public')),\n  created_by TEXT NOT NULL REFERENCES user (id),\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  deleted_at INTEGER,\n  UNIQUE (workspace_id, slug)\n) STRICT"
+          "sql": "CREATE TABLE dashboards (\n  id TEXT PRIMARY KEY NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  slug TEXT NOT NULL,\n  name TEXT NOT NULL,\n  description TEXT NOT NULL DEFAULT '',\n  visibility TEXT NOT NULL CHECK (visibility IN ('private', 'authenticated', 'public')),\n  created_by TEXT NOT NULL REFERENCES user (id),\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  deleted_at INTEGER, appearance_json TEXT NOT NULL DEFAULT '{}'\n  CHECK (json_valid(appearance_json) AND length(CAST(appearance_json AS BLOB)) <= 2048),\n  UNIQUE (workspace_id, slug)\n) STRICT"
         },
         {
           "type": "table",
@@ -937,7 +941,7 @@
           "type": "table",
           "name": "dashboards",
           "table": "dashboards",
-          "sql": "CREATE TABLE dashboards (\n  id TEXT PRIMARY KEY NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  slug TEXT NOT NULL,\n  name TEXT NOT NULL,\n  description TEXT NOT NULL DEFAULT '',\n  visibility TEXT NOT NULL CHECK (visibility IN ('private', 'authenticated', 'public')),\n  created_by TEXT NOT NULL REFERENCES user (id),\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  deleted_at INTEGER,\n  UNIQUE (workspace_id, slug)\n) STRICT"
+          "sql": "CREATE TABLE dashboards (\n  id TEXT PRIMARY KEY NOT NULL,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  slug TEXT NOT NULL,\n  name TEXT NOT NULL,\n  description TEXT NOT NULL DEFAULT '',\n  visibility TEXT NOT NULL CHECK (visibility IN ('private', 'authenticated', 'public')),\n  created_by TEXT NOT NULL REFERENCES user (id),\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  deleted_at INTEGER, appearance_json TEXT NOT NULL DEFAULT '{}'\n  CHECK (json_valid(appearance_json) AND length(CAST(appearance_json AS BLOB)) <= 2048),\n  UNIQUE (workspace_id, slug)\n) STRICT"
         },
         {
           "type": "table",

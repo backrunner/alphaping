@@ -159,8 +159,7 @@
       ><span>Expected response prefix</span><textarea
         name="tcpResponsePrefix"
         rows="2"
-        maxlength="4096"
-      ></textarea></label
+        maxlength="4096"></textarea></label
     >
   </div>
   {#if executor === "agent"}
@@ -174,7 +173,7 @@
 <style>
   .fields {
     display: grid;
-    gap: 10px;
+    gap: var(--space-2);
   }
   .fields.two {
     grid-template-columns: repeat(2, 1fr);
@@ -183,13 +182,13 @@
     grid-template-columns: repeat(3, 1fr);
   }
   .fields.url-row {
-    grid-template-columns: 90px 1fr;
+    grid-template-columns: 96px 1fr;
   }
   label > span {
     display: block;
-    margin-bottom: 5px;
+    margin-bottom: var(--space-1);
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: var(--text-xs);
     font-weight: 620;
   }
   input,
@@ -197,62 +196,70 @@
   textarea {
     width: 100%;
     min-height: 32px;
-    padding: 0 9px;
+    padding: 0 var(--space-2);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-control);
     color: var(--text);
     background: var(--surface);
     font: inherit;
+    font-size: var(--text-sm);
   }
   textarea {
-    padding-block: 7px;
+    padding-block: var(--space-2);
     resize: vertical;
   }
   input:focus,
   select:focus,
   textarea:focus {
     border-color: var(--accent);
-    outline: 2px solid var(--focus-ring);
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
   }
   label small {
     display: flex;
     align-items: center;
-    gap: 6px;
-    margin-top: 5px;
+    gap: var(--space-2);
+    margin-top: var(--space-1);
     color: var(--text-faint);
-    font-size: 9px;
+    font-size: var(--text-xs);
   }
   nav {
     display: grid;
     grid-template-columns: 1fr auto 1fr;
     align-items: center;
-    gap: 8px;
-    margin-top: 5px;
+    gap: var(--space-2);
+    margin-top: var(--space-1);
     color: var(--text-faint);
-    font-size: 9px;
+    font-size: var(--text-xs);
   }
   nav a {
     display: inline-flex;
     align-items: center;
-    gap: 3px;
+    gap: var(--space-1);
     color: var(--accent);
     text-decoration: none;
+  }
+  nav a:hover {
+    color: var(--accent-hover);
   }
   nav a:last-child {
     justify-self: end;
   }
   nav strong {
-    font-weight: 550;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
   }
   label small input,
   .inline-check input {
-    width: 13px;
-    min-height: 13px;
+    width: 14px;
+    min-height: 14px;
   }
   .inline-check {
     display: inline-flex;
     align-items: center;
-    gap: 7px;
+    gap: var(--space-2);
+    color: var(--text-muted);
+    font-size: var(--text-sm);
   }
   .inline-check span {
     margin: 0;

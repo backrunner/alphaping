@@ -253,9 +253,9 @@
     display: inline-flex;
     min-height: 20px;
     align-items: center;
-    gap: 5px;
+    gap: var(--space-1);
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: var(--text-xs);
   }
 
   .live-state[data-state="healthy"] {

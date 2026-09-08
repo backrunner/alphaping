@@ -31,15 +31,15 @@
 
 <style>
   section {
-    margin-top: 24px;
+    margin-top: var(--space-6);
   }
   header {
-    margin-bottom: 10px;
+    margin-bottom: var(--space-3);
   }
   header > div {
     display: flex;
     align-items: baseline;
-    gap: 8px;
+    gap: var(--space-2);
   }
   h2,
   p {
@@ -47,10 +47,11 @@
   }
   h2 {
     font-size: 14px;
+    font-weight: 600;
   }
   header span {
     color: var(--text-faint);
-    font-size: 10px;
+    font-size: var(--text-xs);
   }
   ol {
     margin: 0;
@@ -60,9 +61,9 @@
   li {
     position: relative;
     display: flex;
-    gap: 10px;
+    gap: var(--space-3);
     min-height: 48px;
-    padding-bottom: 12px;
+    padding-bottom: var(--space-3);
   }
   li::before {
     position: absolute;
@@ -82,7 +83,7 @@
     height: 9px;
     margin-top: 4px;
     border: 2px solid var(--surface);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: var(--accent);
     box-shadow: 0 0 0 1px var(--accent);
   }
@@ -91,13 +92,14 @@
     display: block;
   }
   strong {
-    font-size: 11px;
+    font-size: var(--text-sm);
+    font-weight: 620;
     text-transform: capitalize;
   }
   small,
   section > p {
-    margin-top: 3px;
+    margin-top: var(--space-1);
     color: var(--text-faint);
-    font-size: 10px;
+    font-size: var(--text-xs);
   }
 </style>

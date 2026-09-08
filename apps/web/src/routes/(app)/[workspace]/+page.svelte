@@ -5,6 +5,7 @@
   import MachineCard from "$components/machines/machine-card.svelte";
   import ServiceRow from "$components/services/service-row.svelte";
   import Button from "$components/ui/button/button.svelte";
+  import EmptyState from "$components/ui/empty-state/empty-state.svelte";
   import { formatBytes, formatRate } from "$lib/utils/format";
 
   let { data } = $props();
@@ -16,7 +17,7 @@
   <header class="page-header">
     <div>
       <h1>Overview</h1>
-      <p>Updated from durable telemetry and live connections</p>
+      <p>Machine health, service status and recent activity</p>
     </div>
     {#if data.workspace.role === "admin"}
       <Button onclick={() => (window.location.href = `/${data.workspace.slug}/admin`)}
@@ -112,25 +113,27 @@
   {/if}
 
   {#if data.summary.machines === 0 && data.summary.services === 0}
-    <section class="empty">
-      <Boxes size={28} />
+    <EmptyState
+      icon={Boxes}
+      title={data.workspace.role === "admin" ? "No monitors configured" : "No monitors available"}
+      description={data.workspace.role === "admin"
+        ? "Create a machine or service monitor to begin collecting status."
+        : "Your account does not currently have access to a machine or service."}
+    >
       {#if data.workspace.role === "admin"}
-        <h2>No monitors configured</h2>
-        <p>Create a machine or service monitor to begin collecting status.</p>
         <Button onclick={() => (window.location.href = `/${data.workspace.slug}/admin`)}
           ><Plus size={14} />Add first monitor</Button
         >
-      {:else}
-        <h2>No monitors available</h2>
-        <p>Your account does not currently have access to a machine or service.</p>
       {/if}
-    </section>
+    </EmptyState>
   {/if}
 </main>
 
 <style>
   .content {
-    padding: 20px 22px 40px;
+    width: min(100% - 48px, var(--content-wide));
+    margin: 0 auto;
+    padding: var(--space-6) 0 var(--space-8);
   }
 
   .page-header,
@@ -138,7 +141,12 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 16px;
+    gap: var(--space-4);
+  }
+
+  .page-header {
+    padding-bottom: var(--space-4);
+    border-bottom: 0;
   }
 
   h1,
@@ -148,130 +156,87 @@
   }
 
   h1 {
-    font-size: 21px;
-    line-height: 1.2;
+    font-size: var(--text-xl);
+    font-weight: 600;
+    line-height: var(--leading-xl);
   }
 
   .page-header p {
-    margin-top: 4px;
+    margin-top: var(--space-1);
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--text-sm);
   }
 
   .summary {
     display: grid;
-    grid-template-columns: repeat(8, minmax(90px, 1fr));
-    margin: 20px 0 24px;
-    padding: 14px 0;
-    border-block: 1px solid var(--border);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+    margin: 24px 0 32px;
   }
-
   .summary :global(.metric) {
-    padding: 0 14px;
-    border-right: 1px solid var(--border);
+    min-width: 0;
+    padding: 16px 18px;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: var(--surface);
+    box-shadow: var(--shadow-card);
   }
-
-  .summary :global(.metric:first-child) {
-    padding-left: 0;
-  }
-
-  .summary :global(.metric:last-child) {
-    border-right: 0;
-  }
-
   .section {
-    margin-top: 26px;
+    margin-top: var(--space-6);
   }
 
   .section__header {
-    margin-bottom: 10px;
+    margin-bottom: var(--space-3);
   }
 
   .section__header div {
     display: flex;
     align-items: baseline;
-    gap: 8px;
+    gap: var(--space-2);
   }
 
   .section__header h2 {
-    font-size: 14px;
+    font-size: 20px;
+    font-weight: 600;
   }
 
-  .section__header span,
-  .section__header a {
-    color: var(--text-faint);
-    font-size: 10px;
+  .section__header span {
+    color: var(--text-muted);
+    font-size: var(--text-xs);
   }
 
   .section__header a {
     color: var(--accent);
+    font-size: var(--text-sm);
     text-decoration: none;
+  }
+
+  .section__header a:hover {
+    text-decoration: underline;
   }
 
   .machine-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 350px), 1fr));
-    gap: 10px;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+    gap: var(--space-4);
   }
 
-  .empty {
-    display: grid;
-    max-width: 480px;
-    justify-items: start;
-    gap: 9px;
-    margin: 56px auto;
-    padding: 28px;
-    border: 1px dashed var(--border-strong);
-    border-radius: 6px;
-    background: var(--surface);
-  }
-
-  .empty :global(svg) {
-    color: var(--text-faint);
-  }
-
-  .empty h2 {
-    font-size: 15px;
-  }
-
-  .empty p {
-    margin-bottom: 6px;
-    color: var(--text-muted);
-    font-size: 12px;
-  }
-
-  @media (max-width: 1050px) {
-    .summary {
-      grid-template-columns: repeat(4, 1fr);
-      row-gap: 18px;
-    }
-
-    .summary :global(.metric:nth-child(4)) {
-      border-right: 0;
-    }
-
-    .summary :global(.metric:nth-child(8)) {
-      border-right: 0;
-    }
-  }
-
-  @media (max-width: 780px) {
+  @media (max-width: 768px) {
     .content {
-      padding: 16px 12px 32px;
+      width: min(100% - 32px, var(--content-wide));
     }
   }
-
   @media (max-width: 560px) {
+    .content {
+      width: min(100% - 32px, var(--content-wide));
+      padding-top: 16px;
+    }
     .summary {
       grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
     }
-
     .summary :global(.metric) {
-      padding: 0 10px;
-    }
-
-    .summary :global(.metric:nth-child(even)) {
-      border-right: 0;
+      padding: 14px;
     }
   }
 </style>

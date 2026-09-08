@@ -31,9 +31,9 @@
     display: grid;
     width: min(100%, 520px);
     justify-items: center;
-    gap: 12px;
-    margin: 52px auto;
-    padding: 34px 28px;
+    gap: var(--space-3);
+    margin: var(--space-8) auto;
+    padding: var(--space-8) var(--space-6);
     border: 1px solid var(--border);
     border-radius: var(--radius-panel);
     color: var(--text-faint);
@@ -43,8 +43,8 @@
   }
 
   .empty-state.compact {
-    margin-block: 24px;
-    padding-block: 26px;
+    margin-block: var(--space-6);
+    padding-block: var(--space-6);
   }
 
   .empty-state__icon {
@@ -52,9 +52,9 @@
     width: 44px;
     height: 44px;
     place-items: center;
-    border-radius: 12px;
+    border-radius: var(--radius-panel);
     color: var(--accent);
-    background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+    background: var(--surface-subtle);
   }
 
   h2,
@@ -64,14 +64,15 @@
 
   h2 {
     color: var(--text);
-    font-size: 15px;
+    font-size: 14px;
+    font-weight: 600;
   }
 
   p {
     max-width: 42ch;
-    margin-top: 4px;
+    margin-top: var(--space-1);
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--text-sm);
     line-height: 1.5;
   }
 
@@ -79,6 +80,6 @@
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
-    gap: 8px;
+    gap: var(--space-2);
   }
 </style>

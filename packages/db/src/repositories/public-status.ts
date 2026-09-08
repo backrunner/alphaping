@@ -1,3 +1,4 @@
+import { parseSiteAppearance, type SiteAppearance } from "@alphaping/contracts";
 import {
   projectPublicStatusMachine,
   projectPublicStatusService,
@@ -31,6 +32,7 @@ interface PublicWorkspaceRow {
   telemetry_pk: number;
   dashboard_id: string;
   dashboard_name: string;
+  appearance_json: string;
 }
 
 interface CheckIdentityRow {
@@ -75,7 +77,7 @@ interface AnnouncementRow {
 
 export interface PublicStatusPage {
   workspace: { name: string; slug: string };
-  dashboard: { name: string };
+  dashboard: { name: string; appearance?: SiteAppearance };
   machines: readonly PublicStatusMachine[];
   services: readonly PublicStatusService[];
   incidents: readonly {
@@ -130,6 +132,7 @@ interface PublicMachineContextRow extends PublicMachineRow {
   workspace_slug: string;
   workspace_pk: number;
   dashboard_name: string;
+  appearance_json: string;
 }
 
 interface PublicServiceContextRow extends PublicServiceRow {
@@ -138,18 +141,19 @@ interface PublicServiceContextRow extends PublicServiceRow {
   workspace_slug: string;
   workspace_pk: number;
   dashboard_name: string;
+  appearance_json: string;
 }
 
 export interface PublicMachineStatusPage {
   workspace: { name: string; slug: string };
-  dashboard: { name: string };
+  dashboard: { name: string; appearance?: SiteAppearance };
   machine: PublicStatusMachine;
   updatedAt: number | null;
 }
 
 export interface PublicMachinesStatusPage {
   workspace: { name: string; slug: string };
-  dashboard: { name: string };
+  dashboard: { name: string; appearance?: SiteAppearance };
   machines: readonly PublicStatusMachine[];
   overallState: PublicStatusOverallState;
   updatedAt: number | null;
@@ -157,7 +161,7 @@ export interface PublicMachinesStatusPage {
 
 export interface PublicServiceStatusPage {
   workspace: { name: string; slug: string };
-  dashboard: { name: string };
+  dashboard: { name: string; appearance?: SiteAppearance };
   service: PublicStatusService;
   updatedAt: number | null;
 }
@@ -255,7 +259,7 @@ async function loadPublicWorkspace(
   const workspace = await controlDb
     .prepare(
       `SELECT w.id, w.name, w.slug, w.telemetry_pk, d.id AS dashboard_id,
-            d.name AS dashboard_name
+            d.name AS dashboard_name, d.appearance_json
      FROM workspaces w JOIN dashboards d ON d.id = w.default_dashboard_id
      WHERE w.slug = ? AND w.deleted_at IS NULL AND d.deleted_at IS NULL
        AND d.visibility = 'public'`,
@@ -281,7 +285,10 @@ export async function loadPublicMachinesStatusPage(
   );
   return {
     workspace: { name: workspace.name, slug: workspace.slug },
-    dashboard: { name: workspace.dashboard_name },
+    dashboard: {
+      name: workspace.dashboard_name,
+      appearance: parseSiteAppearance(workspace.appearance_json),
+    },
     machines,
     overallState: summarizePublicStatusState(machines.map((machine) => machine.state)),
     updatedAt: latest.reduce<number | null>(
@@ -301,7 +308,7 @@ export async function loadPublicMachineStatusPage(
   const machine = await controlDb
     .prepare(
       `SELECT w.id AS workspace_id, w.name AS workspace_name, w.slug AS workspace_slug,
-              w.telemetry_pk AS workspace_pk, d.name AS dashboard_name,
+              w.telemetry_pk AS workspace_pk, d.name AS dashboard_name, d.appearance_json,
               m.id, m.public_slug, m.telemetry_pk, m.name, m.description, m.offline_after_seconds,
               p.projection_profile
        FROM workspaces w
@@ -351,7 +358,10 @@ export async function loadPublicMachineStatusPage(
   });
   return {
     workspace: { name: machine.workspace_name, slug: machine.workspace_slug },
-    dashboard: { name: machine.dashboard_name },
+    dashboard: {
+      name: machine.dashboard_name,
+      appearance: parseSiteAppearance(machine.appearance_json),
+    },
     machine: projected,
     updatedAt: projected.observedAt,
   };
@@ -367,7 +377,7 @@ export async function loadPublicServiceStatusPage(
   const service = await controlDb
     .prepare(
       `SELECT w.id AS workspace_id, w.name AS workspace_name, w.slug AS workspace_slug,
-              w.telemetry_pk AS workspace_pk, d.name AS dashboard_name,
+              w.telemetry_pk AS workspace_pk, d.name AS dashboard_name, d.appearance_json,
               s.id, s.telemetry_pk, s.name, s.slug, s.description, p.projection_profile
        FROM workspaces w
        JOIN dashboards d ON d.id = w.default_dashboard_id
@@ -436,7 +446,10 @@ export async function loadPublicServiceStatusPage(
   });
   return {
     workspace: { name: service.workspace_name, slug: service.workspace_slug },
-    dashboard: { name: service.dashboard_name },
+    dashboard: {
+      name: service.dashboard_name,
+      appearance: parseSiteAppearance(service.appearance_json),
+    },
     service: projected,
     updatedAt: projected.lastCheckedAt,
   };
@@ -680,7 +693,10 @@ export async function loadPublicStatusPage(
   );
   return {
     workspace: { name: workspace.name, slug: workspace.slug },
-    dashboard: { name: workspace.dashboard_name },
+    dashboard: {
+      name: workspace.dashboard_name,
+      appearance: parseSiteAppearance(workspace.appearance_json),
+    },
     machines: publicMachines,
     services: publicServices,
     incidents,

@@ -6,6 +6,7 @@
   import IncidentCreateForm from "$components/incidents/incident-create-form.svelte";
   import IncidentItem from "$components/incidents/incident-item.svelte";
   import Button from "$components/ui/button/button.svelte";
+  import EmptyState from "$components/ui/empty-state/empty-state.svelte";
 
   let { data, form } = $props();
   let incidentFormOpen = $state<boolean | null>(null);
@@ -132,36 +133,40 @@
     {#if visibleIncidents.length > 0}
       {#each visibleIncidents as incident (incident.id)}<IncidentItem {incident} />{/each}
     {:else}
-      <div class="empty">
-        <Bell size={24} />
-        <h2>No incidents recorded</h2>
-        <p>Service interruptions and progress updates will appear here.</p>
-      </div>
+      <EmptyState
+        icon={Bell}
+        title="No incidents recorded"
+        description="Service interruptions and progress updates will appear here."
+        compact
+      />
     {/if}
   </section>
 </main>
 
 <style>
   main {
-    width: min(100% - 24px, 1040px);
+    width: min(100% - 24px, var(--content-wide));
     margin: 0 auto;
-    padding: 24px 0 48px;
+    padding: var(--space-6) 0 var(--space-8);
   }
   .page-header {
     display: flex;
     align-items: flex-end;
     justify-content: space-between;
-    gap: 18px;
-    padding-bottom: 18px;
+    gap: var(--space-4);
+    padding-bottom: var(--space-4);
     border-bottom: 1px solid var(--border);
   }
   .page-header a {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: var(--space-1);
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--text-xs);
     text-decoration: none;
+  }
+  .page-header a:hover {
+    color: var(--accent);
   }
   h1,
   h2,
@@ -169,105 +174,113 @@
     margin: 0;
   }
   h1 {
-    margin-top: 14px;
-    font-size: 22px;
+    margin-top: var(--space-2);
+    font-size: var(--text-xl);
+    font-weight: 600;
+    line-height: var(--leading-xl);
   }
   .page-header p {
-    margin-top: 3px;
+    margin-top: var(--space-1);
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--text-sm);
   }
   .actions {
     display: flex;
-    gap: 7px;
+    gap: var(--space-2);
   }
   section {
-    margin-top: 24px;
+    margin-top: var(--space-6);
   }
   section > header {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
-    margin-bottom: 10px;
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
   }
   section > header > div {
     display: flex;
     align-items: baseline;
-    gap: 8px;
+    gap: var(--space-2);
   }
   section h2 {
     font-size: 14px;
+    font-weight: 600;
   }
   section header span {
     color: var(--text-faint);
-    font-size: 10px;
+    font-size: var(--text-xs);
   }
   section header nav {
     display: flex;
     gap: 2px;
+    padding: 2px;
+    border-radius: var(--radius-pill);
+    background: var(--surface-subtle);
   }
   section header nav a {
-    padding: 4px 7px;
-    border-radius: 5px;
+    display: inline-flex;
+    height: 26px;
+    align-items: center;
+    padding: 0 var(--space-3);
+    border-radius: var(--radius-pill);
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: var(--text-xs);
     text-decoration: none;
+    transition:
+      background-color 120ms ease,
+      color 120ms ease;
+  }
+  section header nav a:hover {
+    color: var(--text);
   }
   section header nav a.active {
     color: var(--text);
-    background: var(--surface-strong);
-    font-weight: 650;
+    background: var(--surface);
+    box-shadow: 0 0 0 1px var(--border);
+    font-weight: 620;
   }
   .announcements article {
-    padding: 10px 0;
+    padding: var(--space-3) 0;
     border-top: 1px solid var(--border);
   }
   .announcements article > div {
     display: flex;
     justify-content: space-between;
-    gap: 10px;
+    gap: var(--space-2);
   }
   .announcements strong {
-    font-size: 11px;
+    font-size: var(--text-base);
+    font-weight: 620;
   }
   .announcements span,
   .announcements small {
     color: var(--text-faint);
-    font-size: 9px;
+    font-size: var(--text-xs);
   }
   .announcements p {
-    margin: 4px 0;
+    margin: var(--space-1) 0;
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: var(--text-sm);
     white-space: pre-wrap;
   }
-  .empty {
-    display: grid;
-    justify-items: start;
-    gap: 5px;
-    padding: 28px 0;
-    color: var(--text-faint);
-  }
-  .empty h2 {
-    color: var(--text);
-    font-size: 13px;
-  }
-  .empty p {
-    color: var(--text-muted);
-    font-size: 10px;
-  }
   .form-error {
-    margin: 0 0 10px;
-    padding: 8px 10px;
-    border-radius: 6px;
+    margin: 0 0 var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-control);
     color: var(--status-down);
     background: var(--status-down-bg);
-    font-size: 11px;
+    font-size: var(--text-sm);
   }
   @media (max-width: 720px) {
     .page-header {
       align-items: flex-start;
       flex-direction: column;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    section header nav a {
+      transition: none;
     }
   }
 </style>

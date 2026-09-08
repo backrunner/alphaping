@@ -77,10 +77,7 @@ export const actions: Actions = {
         String(form.get("incidentId") ?? ""),
         {
           state: String(form.get("state")) as
-            | "investigating"
-            | "identified"
-            | "monitoring"
-            | "resolved",
+            "investigating" | "identified" | "monitoring" | "resolved",
           body: String(form.get("body") ?? ""),
         },
       );
@@ -101,11 +98,7 @@ export const actions: Actions = {
         title: String(form.get("title") ?? ""),
         body: String(form.get("body") ?? ""),
         severity: String(form.get("severity")) as
-          | "info"
-          | "maintenance"
-          | "minor"
-          | "major"
-          | "critical",
+          "info" | "maintenance" | "minor" | "major" | "critical",
         visibility: String(form.get("visibility")) as "private" | "authenticated" | "public",
         startsAt: dateValue(form.get("startsAt"), timezoneOffset),
         expiresAt: dateValue(form.get("expiresAt"), timezoneOffset),

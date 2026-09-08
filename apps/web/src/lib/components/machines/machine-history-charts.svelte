@@ -143,12 +143,12 @@
   .charts {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 18px;
+    gap: var(--space-4);
   }
 
   section {
     min-width: 0;
-    padding: 8px;
+    padding: var(--space-2);
     border: 1px solid transparent;
     border-radius: var(--radius-control);
   }
@@ -162,19 +162,20 @@
     display: flex;
     align-items: baseline;
     justify-content: space-between;
-    gap: 8px;
-    margin-bottom: 7px;
+    gap: var(--space-2);
+    margin-bottom: var(--space-2);
   }
 
   strong {
-    font-size: 10px;
+    font-size: var(--text-xs);
+    font-weight: 600;
   }
 
   header span {
     overflow: hidden;
     color: var(--text-faint);
     font-family: var(--font-mono);
-    font-size: 9px;
+    font-size: var(--text-xs);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -184,8 +185,6 @@
     height: 88px;
     align-items: flex-end;
     gap: 1px;
-    padding-top: 8px;
-    border-top: 1px solid var(--border);
     border-bottom: 1px solid var(--border-strong);
   }
 
@@ -193,8 +192,9 @@
     min-width: 1px;
     height: var(--bar-height);
     flex: 1;
+    border-radius: 2px 2px 0 0;
     background: var(--accent);
-    opacity: 0.75;
+    opacity: 0.85;
   }
 
   .bars--memory i {

@@ -9,10 +9,9 @@
 <svelte:head><title>Sign in · AlphaPing</title></svelte:head>
 
 <main class="login">
-  <section>
+  <section class="login__card">
     <div class="login__brand"><Activity size={18} /><strong>AlphaPing</strong></div>
-    <h1>Sign in to your monitors</h1>
-    <p>Use the account created during deployment setup.</p>
+    <h1>Sign in</h1>
     <form method="POST">
       <input type="hidden" name="returnTo" value={data.returnTo} />
       {#if form?.message}<p class="login__error" role="alert">{form.message}</p>{/if}
@@ -44,69 +43,73 @@
     display: grid;
     min-height: 100dvh;
     place-items: center;
-    padding: 20px;
+    padding: 24px;
+    background: var(--bg);
   }
 
-  .login section {
-    width: min(100%, 360px);
+  .login__card {
+    width: min(100%, 420px);
+    padding: 32px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-panel);
+    background: var(--surface);
+    box-shadow: var(--shadow-panel);
   }
 
   .login__brand {
     display: flex;
     align-items: center;
-    gap: 7px;
+    gap: var(--space-2);
     color: var(--accent);
   }
 
-  h1 {
-    margin: 22px 0 7px;
-    font-size: 24px;
+  .login__brand strong {
+    font-size: var(--text-base);
   }
 
-  section > p {
-    margin: 0 0 22px;
-    color: var(--text-muted);
+  h1 {
+    margin: 28px 0 24px;
+    font-size: var(--text-xl);
+    font-weight: 600;
+    line-height: var(--leading-xl);
   }
 
   form {
     display: grid;
-    gap: 14px;
-    padding: 18px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--surface);
+    gap: var(--space-4);
   }
 
   label span {
     display: block;
-    margin-bottom: 6px;
+    margin-bottom: var(--space-2);
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--text-xs);
     font-weight: 600;
   }
 
   input {
     width: 100%;
-    height: 36px;
-    padding: 0 10px;
+    height: 44px;
+    padding: 0 var(--space-3);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-control);
     color: var(--text);
-    background: var(--bg);
+    background: var(--surface);
     font: inherit;
   }
 
-  input:focus {
-    border-color: var(--accent);
-    outline: 2px solid var(--focus-ring);
+  form > :global(button) {
+    width: 100%;
+    height: 44px;
   }
 
   .login__error {
     margin: 0;
-    padding: 8px 10px;
-    border-radius: 6px;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-button);
     color: var(--status-down);
     background: var(--status-down-bg);
-    font-size: 12px;
+    font-size: var(--text-sm);
+    line-height: var(--leading-sm);
   }
 </style>

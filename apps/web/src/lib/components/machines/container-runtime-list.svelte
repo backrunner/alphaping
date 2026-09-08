@@ -1,6 +1,12 @@
 <script lang="ts">
   import type { MachineContainerInventory } from "@alphaping/db";
-  import { CheckCircle2, CircleHelp, PauseCircle, ShieldAlert, TriangleAlert } from "@lucide/svelte";
+  import {
+    CheckCircle2,
+    CircleHelp,
+    PauseCircle,
+    ShieldAlert,
+    TriangleAlert,
+  } from "@lucide/svelte";
 
   let { runtimes }: { runtimes: MachineContainerInventory["runtimes"] } = $props();
 
@@ -78,11 +84,11 @@
 
 <style>
   section {
-    padding-top: 20px;
+    padding-top: var(--space-5);
   }
 
   header {
-    margin-bottom: 10px;
+    margin-bottom: var(--space-3);
   }
 
   h2,
@@ -91,13 +97,14 @@
   }
 
   h2 {
-    font-size: 14px;
+    font-size: var(--text-base);
+    font-weight: 600;
   }
 
   p {
     margin-top: 2px;
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: var(--text-xs);
   }
 
   .runtime-grid {
@@ -111,8 +118,8 @@
     min-width: 0;
     grid-template-columns: 20px minmax(0, 1fr) auto;
     align-items: center;
-    gap: 7px;
-    padding: 9px 10px;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
   }
 
   .runtime + .runtime {
@@ -138,17 +145,17 @@
   }
 
   .runtime-copy strong {
-    font-size: 10px;
+    font-size: var(--text-sm);
   }
 
   .runtime-copy small,
   .runtime-detail {
     color: var(--text-faint);
-    font-size: 9px;
+    font-size: var(--text-xs);
   }
 
   .runtime-state {
-    font-size: 9px;
+    font-size: var(--text-xs);
   }
 
   .runtime-detail {

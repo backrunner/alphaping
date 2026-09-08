@@ -46,10 +46,7 @@
 
   <section class="container-section" aria-labelledby="container-heading">
     <header>
-      <div>
-        <h2 id="container-heading">Containers</h2>
-        <p>Current state and resource usage</p>
-      </div>
+      <h2 id="container-heading">Containers</h2>
     </header>
     {#if inventory.containers.length === 0}
       <EmptyState
@@ -72,13 +69,8 @@
 
   .container-section h2 {
     color: var(--text);
-    font-size: 15px;
-  }
-
-  header p {
-    margin-top: 2px;
-    color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--text-base);
+    font-weight: 600;
   }
 
   .summary {
@@ -89,7 +81,7 @@
   }
 
   .summary > div {
-    padding: 9px 12px;
+    padding: var(--space-2) var(--space-3);
     border-right: 1px solid var(--border);
   }
 
@@ -99,14 +91,16 @@
   }
 
   .summary span {
-    color: var(--text-faint);
-    font-size: 11px;
+    color: var(--text-muted);
+    font-size: var(--text-xs);
   }
 
   .summary strong {
     margin-top: 2px;
     font-family: var(--font-mono);
-    font-size: 15px;
+    font-size: var(--text-lg);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
   }
 
   .summary strong.problem {
@@ -116,7 +110,7 @@
   .summary p {
     justify-self: end;
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--text-xs);
   }
 
   .summary time {
@@ -124,15 +118,15 @@
     margin-top: 2px;
     color: var(--text-faint);
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--text-xs);
   }
 
   .container-section {
-    padding-top: 20px;
+    padding-top: var(--space-6);
   }
 
   .container-section > header {
-    margin-bottom: 10px;
+    margin-bottom: var(--space-3);
   }
 
   @media (max-width: 820px) {
@@ -143,7 +137,7 @@
     .summary p {
       grid-column: 1 / -1;
       justify-self: start;
-      padding: 8px 12px;
+      padding: var(--space-2) var(--space-3);
       border-top: 1px solid var(--border);
     }
   }

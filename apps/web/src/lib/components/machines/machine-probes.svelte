@@ -86,25 +86,25 @@
   .summary {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 120px));
-    gap: 18px;
-    padding: 0 0 16px;
+    gap: var(--space-5);
+    padding: 0 0 var(--space-4);
     border-bottom: 1px solid var(--border);
   }
 
   .summary span,
   .metrics span {
     display: block;
-    color: var(--text-faint);
-    font-size: 11px;
-    font-weight: 650;
-    text-transform: uppercase;
+    color: var(--text-muted);
+    font-size: var(--text-xs);
   }
 
   .summary strong {
     display: block;
-    margin-top: 3px;
+    margin-top: var(--space-1);
     font-family: var(--font-mono);
-    font-size: 17px;
+    font-size: var(--text-lg);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
   }
 
   .summary strong.problem {
@@ -112,7 +112,7 @@
   }
 
   .task {
-    padding: 18px 0;
+    padding: var(--space-5) 0;
     border-bottom: 1px solid var(--border);
   }
 
@@ -127,12 +127,12 @@
 
   .task > header {
     justify-content: space-between;
-    gap: 16px;
+    gap: var(--space-4);
   }
 
   .identity {
     min-width: 0;
-    gap: 9px;
+    gap: var(--space-2);
   }
 
   .kind {
@@ -142,7 +142,7 @@
     flex: none;
     place-items: center;
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-control);
     color: var(--accent);
     background: var(--surface);
   }
@@ -153,17 +153,18 @@
 
   h2 {
     overflow: hidden;
-    font-size: 14px;
+    font-size: var(--text-base);
+    font-weight: 600;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .identity p {
     min-width: 0;
-    gap: 8px;
-    margin-top: 3px;
+    gap: var(--space-2);
+    margin-top: 2px;
     color: var(--text-faint);
-    font-size: 11px;
+    font-size: var(--text-xs);
   }
 
   .identity code {
@@ -176,29 +177,30 @@
   .metrics {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 12px;
-    margin: 15px 0 13px 37px;
+    gap: var(--space-3);
+    margin: var(--space-4) 0 var(--space-3) 36px;
   }
 
   .metrics strong {
     display: block;
-    margin-top: 3px;
+    margin-top: var(--space-1);
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--text-sm);
     font-weight: 600;
+    font-variant-numeric: tabular-nums;
   }
 
   footer {
     justify-content: space-between;
-    gap: 12px;
-    margin: 10px 0 0 37px;
+    gap: var(--space-3);
+    margin: var(--space-3) 0 0 36px;
     color: var(--text-faint);
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--text-xs);
   }
 
   footer span {
-    gap: 4px;
+    gap: var(--space-1);
   }
 
   footer code {
@@ -208,7 +210,7 @@
   @media (max-width: 680px) {
     .summary {
       grid-template-columns: repeat(3, 1fr);
-      gap: 10px;
+      gap: var(--space-3);
     }
 
     .metrics {

@@ -11,13 +11,7 @@ export interface MachineRuntimeStatus {
   kind: "docker" | "colima-docker" | "colima-containerd" | "apple-container" | "unknown";
   instance: string;
   availability:
-    | "available"
-    | "absent"
-    | "stopped"
-    | "permission-denied"
-    | "incompatible"
-    | "error"
-    | "unknown";
+    "available" | "absent" | "stopped" | "permission-denied" | "incompatible" | "error" | "unknown";
   version: string;
   detailCode: string;
 }

@@ -12,6 +12,7 @@
 
   import ServiceMonitorTable from "$components/services/service-monitor-table.svelte";
   import Button from "$components/ui/button/button.svelte";
+  import EmptyState from "$components/ui/empty-state/empty-state.svelte";
 
   let { data } = $props();
   const pageSize = 100;
@@ -136,82 +137,92 @@
       </nav>
     {/if}
   {:else}
-    <section class="empty">
-      <SquareActivity size={26} />
-      <h2>No services available</h2>
-      <p>No service has been configured or granted to this account.</p>
-    </section>
+    <EmptyState
+      icon={SquareActivity}
+      title="No services available"
+      description="No service has been configured or granted to this account."
+    />
   {/if}
 </main>
 
 <style>
   main {
-    width: min(100% - 24px, 1220px);
+    width: min(100% - 24px, var(--content-wide));
     margin: 0 auto;
-    padding: 24px 0 48px;
+    padding: var(--space-6) 0 var(--space-8);
   }
 
   .page-header {
     display: flex;
     align-items: flex-end;
     justify-content: space-between;
-    gap: 18px;
-    padding-bottom: 18px;
+    gap: var(--space-4);
+    padding-bottom: var(--space-4);
     border-bottom: 1px solid var(--border);
   }
 
   .page-header a {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: var(--space-1);
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--text-xs);
     text-decoration: none;
   }
 
+  .page-header a:hover {
+    color: var(--accent);
+  }
+
   h1,
-  h2,
   p {
     margin: 0;
   }
 
   h1 {
-    margin-top: 14px;
-    font-size: 22px;
+    margin-top: var(--space-2);
+    font-size: var(--text-xl);
+    font-weight: 600;
+    line-height: var(--leading-xl);
   }
 
-  .page-header p,
-  .empty p {
-    margin-top: 3px;
+  .page-header p {
+    margin-top: var(--space-1);
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--text-sm);
   }
 
   .toolbar {
     display: flex;
-    min-height: 54px;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 12px;
+    gap: var(--space-3);
+    padding: var(--space-3) 0;
   }
 
   .toolbar > span {
     margin-left: auto;
     color: var(--text-faint);
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
   }
 
   .search {
     display: flex;
-    width: min(300px, 40vw);
-    height: 30px;
+    width: min(260px, 100%);
+    height: 32px;
     align-items: center;
-    gap: 7px;
-    padding: 0 9px;
+    gap: var(--space-2);
+    padding: 0 var(--space-2);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-control);
     color: var(--text-faint);
     background: var(--surface);
+    box-shadow: 0 1px 2px rgb(16 24 40 / 0.04);
+    transition:
+      border-color 120ms ease,
+      box-shadow 120ms ease;
   }
 
   .search input {
@@ -222,87 +233,106 @@
     color: var(--text);
     background: transparent;
     font: inherit;
+    font-size: var(--text-sm);
+  }
+
+  .search input::placeholder {
+    color: var(--text-faint);
   }
 
   .search:focus-within {
     border-color: var(--accent);
-    outline: 2px solid var(--focus-ring);
-    outline-offset: 1px;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
   }
 
   .search button {
     height: 22px;
-    padding: 0 7px;
+    padding: 0 var(--space-2);
     border: 0;
-    border-radius: 4px;
+    border-radius: var(--radius-button);
     color: var(--text-muted);
     background: var(--surface-subtle);
     font: inherit;
-    font-size: 9px;
+    font-size: var(--text-xs);
     cursor: pointer;
+    transition:
+      background-color 120ms ease,
+      color 120ms ease;
+  }
+
+  .search button:hover {
+    color: var(--text);
+    background: var(--surface-strong);
   }
 
   .segments {
     display: flex;
     gap: 2px;
+    padding: 2px;
+    border-radius: var(--radius-pill);
+    background: var(--surface-subtle);
   }
 
   .segments a {
     display: inline-flex;
-    height: 28px;
+    height: 26px;
     align-items: center;
-    padding: 0 8px;
-    border: 0;
-    border-radius: 5px;
+    padding: 0 var(--space-3);
+    border-radius: var(--radius-pill);
     color: var(--text-muted);
-    background: transparent;
-    font-size: 10px;
+    font-size: var(--text-xs);
     text-decoration: none;
+    transition:
+      background-color 120ms ease,
+      color 120ms ease;
+  }
+
+  .segments a:hover {
+    color: var(--text);
   }
 
   .segments a.active {
     color: var(--text);
-    background: var(--surface-strong);
-    font-weight: 650;
-  }
-
-  .empty {
-    display: grid;
-    max-width: 480px;
-    justify-items: start;
-    gap: 6px;
-    margin: 56px auto;
-    padding: 28px;
-    border: 1px dashed var(--border-strong);
-    border-radius: 6px;
-    color: var(--text-faint);
     background: var(--surface);
-  }
-
-  .empty h2 {
-    color: var(--text);
-    font-size: 14px;
+    box-shadow: 0 0 0 1px var(--border);
+    font-weight: 620;
   }
 
   .pagination {
     display: grid;
     grid-template-columns: 1fr auto 1fr;
     align-items: center;
-    margin-top: 16px;
-    color: var(--text-faint);
-    font-size: 10px;
+    margin-top: var(--space-4);
+    font-size: var(--text-xs);
   }
 
   .pagination a,
   .pagination span {
     display: inline-flex;
+    height: 32px;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-1);
+    padding: 0 var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-button);
   }
 
   .pagination a {
-    color: var(--accent);
+    color: var(--text);
+    background: var(--surface);
     text-decoration: none;
+    transition:
+      border-color 120ms ease,
+      background-color 120ms ease;
+  }
+
+  .pagination a:hover {
+    border-color: var(--border-strong);
+    background: var(--surface-subtle);
+  }
+
+  .pagination span {
+    color: var(--text-faint);
   }
 
   .pagination a:last-child,
@@ -314,13 +344,12 @@
     color: var(--text-muted);
     font-family: var(--font-mono);
     font-weight: 500;
+    font-variant-numeric: tabular-nums;
   }
 
   @media (max-width: 680px) {
     .toolbar {
       align-items: stretch;
-      flex-wrap: wrap;
-      padding: 12px 0;
     }
 
     .search {
@@ -329,6 +358,15 @@
 
     .segments {
       overflow-x: auto;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .search,
+    .search button,
+    .segments a,
+    .pagination a {
+      transition: none;
     }
   }
 </style>

@@ -2,13 +2,13 @@
 
 ## 1. Design read
 
-AlphaPing 是面向 SRE、运维人员和开发者的高密度技术控制台。视觉语言必须安静、克制、可信、便于扫描，接近成熟基础设施产品，而不是营销 landing page。
+AlphaPing 面向个人用户、团队与公开探针访客。采用明快、精致、有层次的消费级产品视觉：公开探针页优先品牌表达和浏览体验，管理后台保留必要信息密度并统一柔和表面、排版和控件。
 
-- `DESIGN_VARIANCE: 3`
-- `MOTION_INTENSITY: 2`
-- `VISUAL_DENSITY: 9`
+- `DESIGN_VARIANCE: 6`
+- `MOTION_INTENSITY: 3`
+- `VISUAL_DENSITY: public 5 / console 7`
 
-含义：布局可预测，动效只解释状态变化，数据密度高，数字和状态优先于装饰。
+含义：清晰的视觉层次、适度留白、柔和立体感；状态与数值保持可信，动效用于反馈并尊重 reduced motion。
 
 ## 2. 技术基础
 
@@ -26,10 +26,10 @@ shadcn-svelte 和 Bits UI 是同一套组件体系的 source/primitives 层，�
 1. 状态优先：异常、离线、延迟和更新时间必须比装饰更醒目。
 2. 扫描优先：同类数据对齐、数字等宽、标签稳定，不让动态值推动布局。
 3. 逐层披露：列表显示最新态，详情显示诊断，图表默认折叠。
-4. 少用卡片：只给机器、服务等重复实体使用卡片。页面区段和卡片内部指标不用二次套卡。
-5. 颜色有语义：品牌 accent 只表示操作和选择，状态色只表示健康状态。
+4. 表面有层次：品牌区、重复资源和重要指标可使用柔和卡片；卡片内部用间距和分隔线组织。
+5. 颜色有语义：品牌 accent 用于操作、选择和品牌表达，状态色表示健康状态。
 6. 不靠颜色：状态同时有文字、图标、形状和 ARIA label。
-7. 专业文案：使用具体动词和可行动错误，不写营销口号或拟人化空话。
+7. 友好明确：公开页语言轻松自然，操作和错误说明保持具体，不夸大可用性或性能。
 
 ## 4. Color tokens
 
@@ -37,46 +37,46 @@ shadcn-svelte 和 Bits UI 是同一套组件体系的 source/primitives 层，�
 
 | Token | Value | 用途 |
 | --- | --- | --- |
-| `--bg` | `#f6f7f9` | 页面背景 |
+| `--bg` | `#f7f7f4` | 页面背景 |
 | `--surface` | `#ffffff` | 主表面 |
-| `--surface-subtle` | `#f0f2f5` | hover/次级分组 |
-| `--surface-strong` | `#e7eaee` | selected/pressed |
-| `--text` | `#191c20` | 主文本 |
-| `--text-muted` | `#626a73` | 次级文本 |
-| `--text-faint` | `#858d97` | 辅助时间和占位 |
-| `--border` | `#d9dee5` | 边框 |
-| `--border-strong` | `#b7c0ca` | focus/active boundary |
-| `--accent` | `#2463eb` | 主操作、选中 |
-| `--accent-hover` | `#1d4ed8` | hover |
+| `--surface-subtle` | `#f0f1ed` | hover/次级分组 |
+| `--surface-strong` | `#e4e7e1` | selected/pressed |
+| `--text` | `#252923` | 主文本 |
+| `--text-muted` | `#5f665d` | 次级文本 |
+| `--text-faint` | `#666e64` | 辅助时间和占位 |
+| `--border` | `#e1e5dd` | 边框 |
+| `--border-strong` | `#b5bdb1` | focus/active boundary |
+| `--accent` | `#6550d5` | 主操作、选中 |
+| `--accent-hover` | `#5540be` | hover |
 
 ### 4.2 Dark
 
 | Token | Value | 用途 |
 | --- | --- | --- |
-| `--bg` | `#101214` | 页面背景 |
-| `--surface` | `#171a1e` | 主表面 |
-| `--surface-subtle` | `#1e2227` | hover/次级分组 |
-| `--surface-strong` | `#282d33` | selected/pressed |
-| `--text` | `#f1f3f5` | 主文本 |
-| `--text-muted` | `#a7afb8` | 次级文本 |
-| `--text-faint` | `#7e8791` | 辅助时间和占位 |
-| `--border` | `#30363d` | 边框 |
-| `--border-strong` | `#4b5561` | focus/active boundary |
-| `--accent` | `#5b8cff` | 主操作、选中 |
-| `--accent-hover` | `#7aa2ff` | hover |
+| `--bg` | `#151716` | 页面背景 |
+| `--surface` | `#1e211f` | 主表面 |
+| `--surface-subtle` | `#272c28` | hover/次级分组 |
+| `--surface-strong` | `#343b35` | selected/pressed |
+| `--text` | `#eef1eb` | 主文本 |
+| `--text-muted` | `#b8c0b5` | 次级文本 |
+| `--text-faint` | `#a7b2a3` | 辅助时间和占位 |
+| `--border` | `#343b35` | 边框 |
+| `--border-strong` | `#616d5d` | focus/active boundary |
+| `--accent` | `#b5a6ff` | 主操作、选中 |
+| `--accent-hover` | `color-mix(in srgb, #b5a6ff 80%, white)` | hover |
 
 ### 4.3 Status
 
 | 状态 | Light/Dark 基色 | 非颜色表达 |
 | --- | --- | --- |
-| healthy/online | `#16864b` / `#35b86b` | Check 图标、`正常` |
-| degraded | `#a8660b` / `#d79a38` | Triangle 图标、`降级` |
-| down/fault | `#c83a3a` / `#ef6262` | X 图标、`故障` |
-| offline | `#5f6873` / `#8b949e` | WifiOff 图标、`离线` |
-| maintenance | `#6f55b5` / `#a78bfa` | Wrench 图标、`维护` |
-| unknown | `#7a828c` / `#929aa4` | CircleHelp 图标、`未知` |
+| healthy/online | `#187859` / `#6ad9aa` | Check 图标、`正常` |
+| degraded | `#925c13` / `#efc377` | Triangle 图标、`降级` |
+| down/fault | `#b83552` / `#ff91a6` | X 图标、`故障` |
+| offline | `#626981` / `#b2bad3` | WifiOff 图标、`离线` |
+| maintenance | `#7550ad` / `#c4a4ff` | Wrench 图标、`维护` |
+| unknown | `#626981` / `#b2bad3` | CircleHelp 图标、`未知` |
 
-状态背景使用基色的低透明度 tint，文字和图标必须满足 WCAG AA。不要在大面积背景上使用高饱和状态色。
+状态背景使用独立的柔和明暗 token，文字和图标必须满足 WCAG AA。不要在大面积背景上使用高饱和状态色。
 
 ## 5. Typography
 
@@ -84,8 +84,8 @@ shadcn-svelte 和 Bits UI 是同一套组件体系的 source/primitives 层，�
 - 数字和技术标识：Geist Mono，fallback 为系统 monospace。
 - 所有指标数字使用 `font-variant-numeric: tabular-nums`。
 - 字距固定为 0，不使用负 letter-spacing。
-- 页面标题 20-24 px，section 标题 14-16 px，卡片标题 13-14 px，正文 13-14 px，辅助文字 11-12 px。
-- 不在 dashboard 使用 hero-scale 字号。
+- 公开首页状态标题 42 px、手机 32 px；详情标题 34 px，section 标题 22 px，机器卡片标题 17 px。站点名位于导航，不在首屏重复。
+- 控制台标题 26 px；正文 14 px，次级正文 13 px，辅助文字 12 px。详情指标 22–26 px，最窄手机 18 px。
 - 单位与数值分开降权，例如主值 `812`，单位 `MiB/s` 使用 muted token。
 
 ## 6. Spacing 与尺寸
@@ -103,22 +103,22 @@ shadcn-svelte 和 Bits UI 是同一套组件体系的 source/primitives 层，�
 控件高度：
 
 - Compact：28 px。
-- Default：32 px。
-- Comfortable：36 px，只用于 setup 和少量表单。
-- Icon button：28x28 或 32x32，尺寸固定。
+- Default：36 px。
+- Comfortable：40–44 px，用于公开导航、搜索、登录和关键表单。
+- Icon button：36x36 px，紧凑场景可降至 28–32 px 并保留足够目标间距。
 
-页面外边距：mobile 12 px，tablet 16 px，desktop 20-24 px。高密度页面不使用 64 px 以上区段留白。
+公开页外边距：mobile 18 px、tablet 24 px、desktop 32 px，容器最大 1160 px；控制台按内容密度采用 16–28 px。公开区段间距 32–40 px。
 
 ## 7. Shape、border 和 elevation
 
-- Card radius：10 px，重复资源 hover 可使用 1 px translate 和轻阴影。
-- Input/menu radius：8 px，dialog/panel radius：12 px。
-- Tooltip radius：4 px。
-- Button radius：5 px。
+- Card radius：24 px；重复资源 hover 使用边框和阴影反馈，不移动卡片。
+- Input/menu radius：14 px，dialog/panel radius：32 px；公开 Hero 为 36 px，手机端为 28 px。
+- Tooltip radius：12 px。
+- Button radius：12 px。
 - Status capsule、tag、segmented control item 可以使用 full pill。
-- 紧凑控制台不使用超过 12 px 的普通卡片圆角。
+- 控制台与公开页使用同一形状语言，通过间距与字号区分密度。
 - 默认使用 1 px border 表达分组。
-- Popover、menu、dialog 使用明确 elevation；可点击资源卡允许低对比静态阴影和 hover elevation，页面 section 不做浮卡。
+- Popover、menu、dialog 使用明确 elevation；资源卡、公开 Hero 和摘要面板使用接触阴影与扩散阴影形成柔和层次，深色模式采用独立阴影 token。
 - 禁止 card inside card。卡片内部用 grid、divider 和 spacing 分组。
 
 ## 8. Layer tokens
@@ -139,14 +139,14 @@ toast      80
 
 ### 9.1 Desktop
 
-- 左侧导航宽 216 px，可折叠为 52 px icon rail。
-- 顶栏高 48 px，包含 workspace switcher、全局搜索、时间范围、主题和用户菜单。
+- 左侧导航列宽 244 px，内置 12 px 外边距的圆角浮动导航。
+- 顶栏高 72 px，包含 workspace switcher、全局搜索、主题和用户菜单。
 - 主内容占满剩余区域，最大内容宽度不强制限制到 marketing-style 1200 px。
 - 页面标题行包含标题、简短状态和主要操作，不使用巨大空白。
 
 ### 9.2 Mobile
 
-- 顶栏 48 px，使用 familiar menu icon 打开 sheet navigation。
+- 顶栏 60 px，使用菜单按钮打开 260 px 导航抽屉。
 - 机器 grid 单列，metric cell 仍保持 2 列或横向滚动，不把每项变成超高卡片。
 - 筛选器进入 bottom sheet/drawer。
 - 表格切换为 priority columns + row details，不水平压缩不可读文本。
@@ -163,7 +163,7 @@ toast      80
 
 ### 11.1 Overview band
 
-总览是全宽 metric strip，不做一排互不相关的大卡片：
+总览使用四列柔和指标卡片，窄屏使用两列；重要状态数字可直接进入筛选：
 
 ```text
 Machines 48 | Online 44 | Problems 3 | Offline 1 | Down 238 Mbps | Up 71 Mbps | Traffic 4.8 TB
@@ -309,3 +309,45 @@ Toast 只用于短暂结果。表单错误留在字段附近，后台处理状�
 - 默认、loading、empty、error、live healthy/degraded、stale、permission denied。
 
 使用 Playwright screenshot 进行回归。检查文本溢出、状态重叠、动态数字引起的 layout shift、键盘导航和图表展开后的尺寸稳定性。
+
+## 2026-09 交互修正
+
+安装命令使用可选择、滚动和调整高度的只读文本框，复制失败显示就地提示。平台选择为 pressed button group，避免未实现完整键盘语义的伪 tablist；完整命令包含脚本 checksum 验证。顶部搜索随可用机器/服务导航切换，空工作区隐藏；移动导航切换到桌面断点时必须解除 inert。状态时间线按真实桶数量分配轨道，不固定为 48 列。
+
+未上报的机器以缺失值和等待首次上报提示表示，不显示伪造的零值。安装平台切换或复制失败时清除先前的 Copied 反馈。紧凑状态徽标使用带名称的图像语义，不逐个设为 live region；容器指标的说明属于对应的 `dd`。
+
+## 2026-09-08 公开产品视觉重构（最新设计基准）
+
+用户明确要求从原有扁平 ToB 风格转向现代、明快、面向游客的 ToC 风格；本节优先于上文遗留的紧凑视觉限制。允许静态柔和渐变、品牌状态图形、表面层次和较大留白，不引入持续动画、WebGL、远程字体或装饰性网络请求。
+
+- 公开首页：站点品牌导航、整体状态 hero、可访问的状态图形、公开资源计数、机器卡片、服务时间线和事件区。数值与图形仅表达真实公开数据，缺失数据不伪造。
+- 主题预设：Iris、Ocean、Mint、Sunset、Rose，均有明暗 token；舒适/紧凑两种公开资源布局。
+- 管理员在 Appearance 页面保存站点标题、介绍、配色、默认明暗和密度，实时预览。写入 `dashboards.appearance_json`，仅 admin 可变更，包含审计与最终写入权限复核。
+- 游客可选择站点默认或个人配色、明暗和密度，个人选项只在浏览器保存，不增加 D1 写入；SSR 直接应用站点默认主题。
+- 所有公开路由与自定义域入口共用品牌/主题容器，公开投影与快照仅包含校验后的主题字段，禁止自定义 HTML、JavaScript、CSS 或外部追踪资源。
+- 主题升级不改变公开策略；查询复用已有 dashboard join，缓存 TTL 保持 30 秒 fresh / 5 分钟 fallback。
+
+## 2026-09-08 视觉精修：降低模板感（历史调整）
+
+用户进一步要求减少 AI 模板感、提升 UI 品质。保留现代、明快和可定制的公开体验，采用中性背景、精确排版和真实状态构成页面层次。
+
+- 删除大面积氛围渐变、轨道/卫星等装饰图形、重复的图标底座和口号式文案。
+- 公开首页以状态作为主标题，站点名只在导航中出现；介绍由站点管理员提供，缺省时不填充营销文案。
+- 使用暖白/炭灰中性表面。五套配色作为有限的品牌强调，不染色整页或将指标绘制成装饰性色带。
+- 重复资源卡片圆角 12 px，面板 16 px，控件 8 px；阴影保持轻微，悬停以边框和文字变化反馈，不整体漂浮。
+- 机器卡片优先设备身份和指标，移除重复的服务器装饰图标。服务以连续分隔的列表展示，让时间线可比较，减少同构卡片堆叠。
+- 品牌、状态、资源标题和指标采用明确的字号层级；辅助文字保持可读。主题设置使用直接的字段名称，不使用星光图标、编号步骤或宣传标题。
+- 保留五套配色、明暗模式、舒适/紧凑选择以及现有权限、缓存和查询行为；没有新 schema 或部署资源。
+
+## 2026-09-08 用户视觉偏好校准（当前优先）
+
+用户明确喜欢此前的大块 Hero，并希望尽量使用大圆角和阴影。这一偏好优先于上一轮收紧圆角、阴影与 Hero 的规则。保留直接文案、清晰排版和真实数据表达。
+
+- 公开首页恢复宽幅 Hero 面板，桌面圆角 36 px、手机 28 px；柔和静态渐变和状态图标形成重点。
+- 用户进一步要求恢复 Hero 的轨道效果：状态图标外使用双层细圆环和三个装饰节点，配色跟随主题；轨道保持静态，手机端隐藏，不表示遥测或资源数量。
+- 轨道下不添加文字说明。Navbar 使用探测中心、两层回波圆弧与信号节点组成的原创图标 Logo，不使用字母；favicon 与之同步。提供管理员自定义图片地址和实时预览；图片有固定尺寸，透明背景按 contain 显示，加载失败回退默认标志。仅允许公开 HTTPS 或站内路径，SVG 作为图片加载，不插入用户 SVG 标记。
+- Logo 保留已接受的回波图形，以静态 SVG 渐变、玻璃边缘高光、底部折射光和轻微浮雕表现立体质感。16 px 仍须辨识主体，不使用持续动画、实时背景采样或模糊滤镜。
+- 共享资源卡片圆角 24 px、面板 32 px、控件 14 px、按钮 12 px。阴影使用近处接触阴影和远处柔和扩散两层，明暗模式各自调节。
+- 公开详情标题区、主题预览和服务列表容器沿用圆角表面；服务内部继续用对齐的连续行组织数据。
+- 不恢复宣传口号、重复图标底座、持续动画或虚构遥测。五套配色及游客偏好继续有效。
+- 本轮为 UI 样式与状态图标调整，不改变数据、权限、缓存或部署要求。

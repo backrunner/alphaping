@@ -37,6 +37,8 @@
     { number: 5, label: "Defaults" },
   ];
 
+  const currentStepLabel = $derived(steps[step - 1]?.label ?? "");
+
   $effect(() => {
     const submittedStep = Number(form?.step ?? 1);
     if (submittedStep >= 1 && submittedStep <= 5) step = submittedStep as SetupStep;
@@ -72,7 +74,7 @@
 
   {#if data.installed}
     <section class="setup__installed">
-      <ShieldCheck size={28} />
+      <span class="setup__installed-mark"><ShieldCheck size={20} /></span>
       <h1>Initialization complete</h1>
       <p>The administrator and workspace are ready. Choose what to monitor first.</p>
       {#if data.workspaceSlug}
@@ -100,6 +102,12 @@
           </li>
         {/each}
       </ol>
+      <div class="setup__stepper-compact" aria-hidden="true">
+        <span>Step {step} of {steps.length} · {currentStepLabel}</span>
+        <span class="setup__stepper-track">
+          <span style:width={`${(step / steps.length) * 100}%`}></span>
+        </span>
+      </div>
     </nav>
 
     <section class="setup__content">

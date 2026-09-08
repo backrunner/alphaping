@@ -86,8 +86,8 @@
 
 <style>
   .updates {
-    margin-top: 22px;
-    padding-top: 18px;
+    margin-top: var(--space-6);
+    padding-top: var(--space-5);
     border-top: 1px solid var(--border);
   }
 
@@ -103,7 +103,7 @@
 
   header {
     justify-content: space-between;
-    gap: 12px;
+    gap: var(--space-3);
   }
 
   h2,
@@ -112,25 +112,26 @@
   }
 
   h2 {
-    font-size: 14px;
+    font-size: var(--text-base);
+    font-weight: 600;
   }
 
   header p,
   .history time,
   .empty {
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: var(--text-xs);
   }
 
   .quick-actions {
-    gap: 6px;
+    gap: var(--space-2);
   }
 
   .install {
     min-height: 58px;
-    gap: 12px;
-    margin-top: 12px;
-    padding-block: 10px;
+    gap: var(--space-3);
+    margin-top: var(--space-3);
+    padding-block: var(--space-3);
     border-block: 1px solid var(--border);
   }
 
@@ -140,28 +141,28 @@
 
   label > span {
     display: block;
-    margin-bottom: 5px;
+    margin-bottom: var(--space-1);
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: var(--text-xs);
     font-weight: 600;
   }
 
   input {
     height: 32px;
-    padding: 0 9px;
+    padding: 0 var(--space-3);
     border: 1px solid var(--border);
-    border-radius: 5px;
+    border-radius: var(--radius-control);
     color: var(--text);
     background: var(--surface);
     font: inherit;
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--text-sm);
   }
 
   .checkbox {
     display: flex;
     align-items: center;
-    gap: 7px;
+    gap: var(--space-2);
     margin-left: auto;
   }
 
@@ -175,9 +176,9 @@
   }
 
   .feedback {
-    margin-top: 8px;
+    margin-top: var(--space-2);
     color: var(--status-healthy);
-    font-size: 10px;
+    font-size: var(--text-sm);
   }
 
   .feedback.error,
@@ -186,39 +187,39 @@
   }
 
   .history {
-    margin-top: 16px;
+    margin-top: var(--space-4);
   }
 
   .history__heading,
   .history__row {
     min-height: 36px;
     justify-content: space-between;
-    gap: 16px;
+    gap: var(--space-4);
     border-bottom: 1px solid var(--border);
   }
 
   .history__heading {
     color: var(--text-faint);
-    font-size: 9px;
+    font-size: var(--text-xs);
     text-transform: uppercase;
   }
 
   .history__row > div {
-    gap: 9px;
+    gap: var(--space-2);
   }
 
-  .history__row strong,
-  .history__row > span {
-    font-size: 10px;
+  .history__row strong {
+    font-size: var(--text-sm);
   }
 
   .history__row > span {
     color: var(--text-muted);
     font-family: var(--font-mono);
+    font-size: var(--text-xs);
   }
 
   .empty {
-    padding: 12px 0;
+    padding: var(--space-3) 0;
   }
 
   @media (max-width: 620px) {

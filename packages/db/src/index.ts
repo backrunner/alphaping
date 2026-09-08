@@ -14,3 +14,4 @@ export * from "./repositories/workspace-shell.js";
 export * from "./schema/auth.js";
 export * from "./schema/control.js";
 export * from "./schema/telemetry.js";
+export * from "./repositories/dashboard-appearance.js";

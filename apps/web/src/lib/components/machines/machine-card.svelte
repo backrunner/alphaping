@@ -6,7 +6,19 @@
   import { formatBytes, formatPercent, formatRate, formatRelativeTime } from "$lib/utils/format";
 
   let { machine, workspaceSlug }: { machine: DashboardMachine; workspaceSlug: string } = $props();
+  const hasTelemetry = $derived(machine.observedAt !== null);
   const labels = $derived(Object.entries(machine.labels).slice(0, 2));
+  const cpuPercent = $derived(Math.min(100, machine.cpuPermille / 10));
+  const memoryPercent = $derived(
+    machine.memoryTotalBytes > 0
+      ? Math.min(100, (machine.memoryUsedBytes / machine.memoryTotalBytes) * 100)
+      : 0,
+  );
+  const storagePercent = $derived(
+    machine.storageTotalBytes > 0
+      ? Math.min(100, (machine.storageUsedBytes / machine.storageTotalBytes) * 100)
+      : 0,
+  );
 </script>
 
 <a
@@ -37,28 +49,41 @@
     <div class="machine__metric">
       <Cpu size={14} />
       <span>CPU</span>
-      <strong>{formatPercent(machine.cpuPermille)}</strong>
+      <strong>{hasTelemetry ? formatPercent(machine.cpuPermille) : "—"}</strong>
+      <span class="machine__bar" aria-hidden="true"
+        ><span style={`width: ${cpuPercent}%`}></span></span
+      >
     </div>
     <div class="machine__metric">
       <MemoryStick size={14} />
       <span>Memory</span>
-      <strong>{formatBytes(machine.memoryUsedBytes)}</strong>
-      <small>/ {formatBytes(machine.memoryTotalBytes)}</small>
+      <strong>{hasTelemetry ? formatBytes(machine.memoryUsedBytes) : "—"}</strong>
+      <small>/ {hasTelemetry ? formatBytes(machine.memoryTotalBytes) : "—"}</small>
+      <span class="machine__bar" aria-hidden="true"
+        ><span style={`width: ${memoryPercent}%`}></span></span
+      >
     </div>
     <div class="machine__metric">
       <HardDrive size={14} />
       <span>Storage</span>
-      <strong>{formatBytes(machine.storageUsedBytes)}</strong>
-      <small>/ {formatBytes(machine.storageTotalBytes)}</small>
+      <strong>{hasTelemetry ? formatBytes(machine.storageUsedBytes) : "—"}</strong>
+      <small>/ {hasTelemetry ? formatBytes(machine.storageTotalBytes) : "—"}</small>
+      <span class="machine__bar" aria-hidden="true"
+        ><span style={`width: ${storagePercent}%`}></span></span
+      >
     </div>
   </div>
 
   <footer class="machine__footer">
     <div class="machine__network" aria-label="Current network throughput">
-      <span><ArrowDown size={13} /> {formatRate(machine.networkRxBps)}</span>
-      <span><ArrowUp size={13} /> {formatRate(machine.networkTxBps)}</span>
+      <span><ArrowDown size={13} /> {hasTelemetry ? formatRate(machine.networkRxBps) : "—"}</span>
+      <span><ArrowUp size={13} /> {hasTelemetry ? formatRate(machine.networkTxBps) : "—"}</span>
       <small>
-        Total {formatBytes(machine.networkRxTotal)} down / {formatBytes(machine.networkTxTotal)} up
+        {#if hasTelemetry}
+          Total {formatBytes(machine.networkRxTotal)} down / {formatBytes(machine.networkTxTotal)} up
+        {:else}
+          Awaiting first report
+        {/if}
       </small>
     </div>
     <div class="machine__last-seen">
@@ -73,8 +98,10 @@
 
 <style>
   .machine {
-    display: block;
+    display: flex;
     min-width: 0;
+    min-height: 184px;
+    flex-direction: column;
     border: 1px solid var(--border);
     border-radius: var(--radius-card);
     color: inherit;
@@ -102,8 +129,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 10px;
-    padding: 10px 12px;
+    gap: var(--space-2);
+    padding: var(--space-3);
   }
 
   .machine__identity {
@@ -115,7 +142,7 @@
     display: block;
     overflow: hidden;
     color: var(--text);
-    font-size: 14px;
+    font-size: var(--text-base);
     font-weight: 650;
     text-decoration: none;
     text-overflow: ellipsis;
@@ -131,7 +158,7 @@
     margin-top: 2px;
     overflow: hidden;
     color: var(--text-faint);
-    font-size: 11px;
+    font-size: var(--text-xs);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -139,19 +166,19 @@
   .machine__labels {
     display: flex;
     min-height: 16px;
-    gap: 4px;
-    margin-top: 4px;
+    gap: var(--space-1);
+    margin-top: var(--space-1);
     overflow: hidden;
   }
 
   .machine__labels span {
     max-width: 130px;
     overflow: hidden;
-    padding: 1px 5px;
-    border-radius: 999px;
+    padding: 1px var(--space-1);
+    border-radius: var(--radius-pill);
     color: var(--text-muted);
     background: var(--surface-subtle);
-    font-size: 10px;
+    font-size: var(--text-xs);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -166,8 +193,8 @@
     display: grid;
     min-width: 0;
     grid-template-columns: 16px 1fr;
-    gap: 3px 5px;
-    padding: 9px 10px;
+    gap: 3px var(--space-1);
+    padding: var(--space-2);
     color: var(--text-faint);
   }
 
@@ -177,7 +204,7 @@
 
   .machine__metric span {
     overflow: hidden;
-    font-size: 11px;
+    font-size: var(--text-xs);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -186,7 +213,7 @@
     grid-column: 1 / -1;
     color: var(--text);
     font-family: var(--font-mono);
-    font-size: 14px;
+    font-size: var(--text-base);
     font-variant-numeric: tabular-nums;
   }
 
@@ -195,15 +222,33 @@
     overflow: hidden;
     color: var(--text-faint);
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--text-xs);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
+  .machine__bar {
+    display: block;
+    height: 3px;
+    grid-column: 1 / -1;
+    overflow: hidden;
+    border-radius: var(--radius-pill);
+    background: var(--surface-strong);
+  }
+
+  .machine__bar > span {
+    display: block;
+    height: 100%;
+    border-radius: var(--radius-pill);
+    background: var(--accent);
+    transition: width 150ms ease;
+  }
+
   .machine__footer {
+    margin-top: auto;
     color: var(--text-muted);
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--text-xs);
   }
 
   .machine__network,
@@ -217,7 +262,7 @@
     min-width: 0;
     display: grid;
     grid-template-columns: repeat(2, max-content);
-    gap: 2px 10px;
+    gap: 2px var(--space-3);
   }
 
   .machine__network span {
@@ -228,13 +273,13 @@
   .machine__network small {
     grid-column: 1 / -1;
     color: var(--text-faint);
-    font-size: 10px;
+    font-size: var(--text-xs);
     white-space: nowrap;
   }
 
   .machine__last-seen {
     flex: none;
-    gap: 5px;
+    gap: var(--space-1);
     color: var(--text-faint);
   }
 

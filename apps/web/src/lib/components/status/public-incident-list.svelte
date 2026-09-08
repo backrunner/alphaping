@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Activity, Check, Crosshair, Search } from "@lucide/svelte";
   import type { PublicStatusPage } from "@alphaping/db";
 
   let { incidents }: { incidents: PublicStatusPage["incidents"] } = $props();
@@ -28,7 +29,12 @@
         <ol>
           {#each incident.updates as update (update.id)}
             <li>
-              <span></span>
+              <span class={`node node--${update.state}`} aria-hidden="true">
+                {#if update.state === "resolved"}<Check size={12} strokeWidth={2.2} />
+                {:else if update.state === "monitoring"}<Activity size={12} />
+                {:else if update.state === "identified"}<Crosshair size={12} />
+                {:else}<Search size={12} />{/if}
+              </span>
               <div>
                 <strong>{update.state}</strong>
                 <p>{update.body}</p>
@@ -44,42 +50,43 @@
 
 <style>
   section {
-    margin-top: 28px;
+    margin-top: var(--space-8);
   }
 
   section > header {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 10px;
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
   }
 
   section > header > div {
     display: flex;
     align-items: baseline;
-    gap: 8px;
+    gap: var(--space-2);
   }
 
   h2 {
     margin: 0;
-    font-size: 14px;
+    font-size: var(--text-base);
+    font-weight: 600;
   }
 
   header span {
     color: var(--text-faint);
-    font-size: 10px;
+    font-size: var(--text-xs);
   }
 
   .incident {
-    padding: 14px 0;
+    padding: var(--space-4) 0;
     border-top: 1px solid var(--border);
   }
 
   .incident-title {
     display: flex;
     justify-content: space-between;
-    gap: 12px;
+    gap: var(--space-3);
   }
 
   .incident-title strong,
@@ -88,40 +95,48 @@
   }
 
   .incident-title strong {
-    font-size: 12px;
+    font-size: var(--text-base);
+    font-weight: 600;
   }
 
   .incident-title span,
   .incident time {
-    margin-top: 2px;
+    margin-top: var(--space-1);
     color: var(--text-faint);
-    font-size: 9px;
+    font-size: var(--text-xs);
     text-transform: capitalize;
   }
 
+  .incident-title > time {
+    flex: none;
+    margin-top: 0;
+    text-transform: none;
+  }
+
   .incident > p {
-    margin-top: 7px;
+    margin: var(--space-2) 0 0;
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--text-sm);
+    line-height: var(--leading-sm);
   }
 
   .affected {
     display: flex;
     flex-wrap: wrap;
-    gap: 5px;
-    margin-top: 8px;
+    gap: var(--space-1);
+    margin-top: var(--space-2);
   }
 
   .affected span {
-    padding: 3px 6px;
-    border-radius: 999px;
+    padding: 2px var(--space-2);
+    border-radius: var(--radius-pill);
     color: var(--text-muted);
-    background: var(--surface-strong);
-    font-size: 9px;
+    background: var(--surface-subtle);
+    font-size: var(--text-xs);
   }
 
   ol {
-    margin: 14px 0 0;
+    margin: var(--space-4) 0 0;
     padding: 0;
     list-style: none;
   }
@@ -129,25 +144,21 @@
   li {
     position: relative;
     display: grid;
-    min-height: 55px;
-    grid-template-columns: 10px 1fr;
-    gap: 9px;
+    grid-template-columns: 22px minmax(0, 1fr);
+    gap: var(--space-2);
+    padding-bottom: var(--space-4);
   }
 
-  li > span {
-    z-index: 1;
-    width: 8px;
-    height: 8px;
-    margin-top: 4px;
-    border-radius: 999px;
-    background: var(--accent);
+  li:last-child {
+    padding-bottom: 0;
   }
 
+  /* Thin vertical rail connecting the update nodes */
   li::before {
     position: absolute;
-    top: 8px;
+    top: 22px;
     bottom: 0;
-    left: 3px;
+    left: 10px;
     width: 1px;
     background: var(--border);
     content: "";
@@ -157,22 +168,55 @@
     display: none;
   }
 
+  .node {
+    z-index: 1;
+    display: grid;
+    width: 22px;
+    height: 22px;
+    place-items: center;
+    border-radius: var(--radius-pill);
+    color: var(--text-muted);
+    background: var(--surface-subtle);
+  }
+
+  .node--resolved {
+    color: var(--status-healthy);
+    background: var(--status-healthy-bg);
+  }
+
+  .node--monitoring {
+    color: var(--accent);
+    background: var(--surface-subtle);
+  }
+
+  .node--identified,
+  .node--investigating {
+    color: var(--status-degraded);
+    background: var(--status-degraded-bg);
+  }
+
   li strong {
-    font-size: 10px;
+    font-size: var(--text-xs);
+    font-weight: 600;
     text-transform: capitalize;
   }
 
   li p {
-    margin: 2px 0;
+    margin: var(--space-1) 0;
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: var(--text-xs);
+    line-height: var(--leading-xs);
     white-space: pre-wrap;
+  }
+
+  li time {
+    font-size: var(--text-xs);
   }
 
   @media (max-width: 560px) {
     .incident-title {
       flex-direction: column;
-      gap: 2px;
+      gap: var(--space-1);
     }
   }
 </style>

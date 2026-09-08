@@ -136,7 +136,7 @@
 
 <style>
   section {
-    padding-top: 24px;
+    padding-top: var(--space-6);
     border-top: 1px solid var(--border);
   }
 
@@ -145,11 +145,11 @@
     display: flex;
     align-items: flex-end;
     justify-content: space-between;
-    gap: 12px;
+    gap: var(--space-3);
   }
 
   header {
-    margin-bottom: 14px;
+    margin-bottom: var(--space-4);
   }
 
   h2,
@@ -158,16 +158,23 @@
   }
 
   h2 {
-    font-size: 15px;
+    font-size: 14px;
+    font-weight: 600;
   }
 
-  p,
+  p {
+    display: block;
+    margin-top: var(--space-1);
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+  }
+
   .estimate span,
   .form-footer > span {
     display: block;
-    margin-top: 2px;
+    margin-top: var(--space-1);
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: var(--text-xs);
   }
 
   .estimate {
@@ -176,23 +183,25 @@
 
   .estimate strong {
     font-family: var(--font-mono);
-    font-size: 13px;
+    font-size: var(--text-lg);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
   }
 
   .fields {
     display: grid;
     grid-template-columns: repeat(4, minmax(130px, 1fr));
-    gap: 12px;
-    padding: 12px 0 18px;
+    gap: var(--space-3);
+    padding: var(--space-3) 0 var(--space-5);
     border-top: 1px solid var(--border);
   }
 
   label > span {
     display: block;
-    margin-bottom: 5px;
+    margin-bottom: var(--space-1);
     color: var(--text-muted);
-    font-size: 10px;
-    font-weight: 650;
+    font-size: var(--text-xs);
+    font-weight: 620;
   }
 
   label > div {
@@ -200,32 +209,36 @@
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
     border: 1px solid var(--border);
-    border-radius: 5px;
+    border-radius: var(--radius-control);
     background: var(--surface);
+    transition:
+      border-color 120ms ease,
+      box-shadow 120ms ease;
   }
 
   label > div:focus-within {
     border-color: var(--accent);
-    outline: 2px solid var(--focus-ring);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
   }
 
   input {
     min-width: 0;
     height: 32px;
-    padding: 0 8px;
+    padding: 0 var(--space-2);
     border: 0;
     outline: 0;
     color: var(--text);
     background: transparent;
     font: inherit;
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--text-sm);
+    font-variant-numeric: tabular-nums;
   }
 
   small {
-    padding-right: 8px;
+    padding-right: var(--space-2);
     color: var(--text-faint);
-    font-size: 9px;
+    font-size: var(--text-xs);
   }
 
   .form-footer {
@@ -241,6 +254,12 @@
   @media (max-width: 520px) {
     .fields {
       grid-template-columns: 1fr;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    label > div {
+      transition: none;
     }
   }
 </style>

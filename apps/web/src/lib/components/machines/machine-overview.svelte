@@ -19,6 +19,7 @@
   import { formatBytes, formatPercent, formatRate } from "$lib/utils/format";
 
   let { detail, latest }: { detail: MachineDetail; latest: DashboardMachine } = $props();
+  const hasTelemetry = $derived(latest.observedAt !== null);
   let selectedMetric = $state<MachineMetric | null>(null);
 
   function formatTimestamp(value: number | null) {
@@ -57,7 +58,7 @@
         aria-label="View CPU history"
         onclick={() => (selectedMetric = "cpu")}><ChartLine size={13} /></button
       ></span
-    ><strong>{formatPercent(latest.cpuPermille)}</strong>
+    ><strong>{hasTelemetry ? formatPercent(latest.cpuPermille) : "—"}</strong>
   </div>
   <div>
     <span><Activity size={13} />Load 1m</span><strong>{formatLoad(latest.load1mMilli)}</strong>
@@ -71,8 +72,8 @@
         onclick={() => (selectedMetric = "memory")}><ChartLine size={13} /></button
       ></span
     >
-    <strong>{formatBytes(latest.memoryUsedBytes)}</strong>
-    <small>of {formatBytes(latest.memoryTotalBytes)}</small>
+    <strong>{hasTelemetry ? formatBytes(latest.memoryUsedBytes) : "—"}</strong>
+    <small>of {hasTelemetry ? formatBytes(latest.memoryTotalBytes) : "—"}</small>
   </div>
   <div>
     <span
@@ -83,8 +84,8 @@
         onclick={() => (selectedMetric = "storage")}><ChartLine size={13} /></button
       ></span
     >
-    <strong>{formatBytes(latest.storageUsedBytes)}</strong>
-    <small>of {formatBytes(latest.storageTotalBytes)}</small>
+    <strong>{hasTelemetry ? formatBytes(latest.storageUsedBytes) : "—"}</strong>
+    <small>of {hasTelemetry ? formatBytes(latest.storageTotalBytes) : "—"}</small>
   </div>
   <div>
     <span><Clock3 size={13} />Uptime</span><strong>{formatUptime(latest.uptimeSeconds)}</strong>
@@ -98,13 +99,13 @@
         onclick={() => (selectedMetric = "network")}><ChartLine size={13} /></button
       ></span
     >
-    <strong>{formatRate(latest.networkRxBps)}</strong>
-    <small>{formatBytes(latest.networkRxTotal)} total</small>
+    <strong>{hasTelemetry ? formatRate(latest.networkRxBps) : "—"}</strong>
+    <small>{hasTelemetry ? formatBytes(latest.networkRxTotal) : "—"} total</small>
   </div>
   <div>
     <span><ArrowUp size={13} />Upload</span>
-    <strong>{formatRate(latest.networkTxBps)}</strong>
-    <small>{formatBytes(latest.networkTxTotal)} total</small>
+    <strong>{hasTelemetry ? formatRate(latest.networkTxBps) : "—"}</strong>
+    <small>{hasTelemetry ? formatBytes(latest.networkTxTotal) : "—"} total</small>
   </div>
 </div>
 
@@ -125,7 +126,6 @@
 <section class="details-section">
   <header>
     <h2>System and Agent</h2>
-    <span>Current identity, collection, and diagnostics</span>
   </header>
   <dl class="detail-grid">
     <div>
@@ -208,12 +208,12 @@
   .metric-strip {
     display: grid;
     grid-template-columns: repeat(7, minmax(0, 1fr));
-    padding-bottom: 18px;
+    padding-bottom: var(--space-5);
   }
 
   .metric-strip > div {
     min-width: 0;
-    padding: 0 14px;
+    padding: 0 var(--space-4);
     border-right: 1px solid var(--border);
   }
 
@@ -233,22 +233,25 @@
 
   .metric-strip span {
     align-items: center;
-    gap: 5px;
+    gap: var(--space-1);
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: var(--text-xs);
   }
 
   .metric-strip span button {
     display: inline-grid;
-    width: 22px;
-    height: 22px;
+    width: 24px;
+    height: 24px;
     margin-left: auto;
     place-items: center;
     border: 0;
-    border-radius: 6px;
+    border-radius: var(--radius-button);
     color: var(--text-faint);
     background: transparent;
     cursor: pointer;
+    transition:
+      background-color 120ms ease,
+      color 120ms ease;
   }
 
   .metric-strip span button:hover {
@@ -257,10 +260,12 @@
   }
 
   .metric-strip strong {
-    margin-top: 6px;
+    margin-top: var(--space-1);
     overflow: hidden;
     font-family: var(--font-mono);
-    font-size: 15px;
+    font-size: var(--text-lg);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -270,7 +275,7 @@
     overflow: hidden;
     color: var(--text-faint);
     font-family: var(--font-mono);
-    font-size: 9px;
+    font-size: var(--text-xs);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -278,11 +283,11 @@
   .notice {
     display: flex;
     align-items: center;
-    gap: 9px;
-    margin-bottom: 16px;
-    padding: 10px 11px;
+    gap: var(--space-2);
+    margin-bottom: var(--space-4);
+    padding: var(--space-3);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-control);
     color: var(--text-muted);
     background: var(--surface);
   }
@@ -294,34 +299,26 @@
 
   .notice strong {
     color: var(--text);
-    font-size: 11px;
+    font-size: var(--text-sm);
   }
 
   .notice span {
-    margin-top: 1px;
-    font-size: 10px;
+    margin-top: 2px;
+    font-size: var(--text-xs);
   }
 
   .details-section {
-    padding-top: 20px;
+    padding-top: var(--space-5);
   }
 
   .details-section header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 11px;
+    margin-bottom: var(--space-3);
   }
 
   h2 {
     margin: 0;
-    font-size: 14px;
-  }
-
-  .details-section header span {
-    color: var(--text-muted);
-    font-size: 10px;
+    font-size: var(--text-base);
+    font-weight: 600;
   }
 
   .detail-grid {
@@ -333,20 +330,19 @@
 
   .detail-grid > div {
     min-width: 0;
-    padding: 11px 12px;
+    padding: var(--space-3);
   }
 
   .detail-grid dt {
-    color: var(--text-faint);
-    font-size: 9px;
-    text-transform: uppercase;
+    color: var(--text-muted);
+    font-size: var(--text-xs);
   }
 
   .detail-grid dd {
-    margin: 4px 0 0;
+    margin: var(--space-1) 0 0;
     overflow: hidden;
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--text-sm);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -360,7 +356,7 @@
   .detail-grid .error-detail span {
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: var(--space-1);
   }
 
   .detail-grid .error-detail {
@@ -388,7 +384,11 @@
     }
 
     .metric-strip {
-      row-gap: 18px;
+      row-gap: var(--space-5);
+    }
+
+    .metric-strip > div:nth-child(odd) {
+      padding-left: 0;
     }
 
     .metric-strip > div:nth-child(even) {
@@ -398,7 +398,11 @@
 
   @media (max-width: 520px) {
     .metric-strip > div {
-      padding: 0 10px;
+      padding: 0 var(--space-3);
+    }
+
+    .metric-strip > div:nth-child(odd) {
+      padding-left: 0;
     }
 
     .detail-grid {

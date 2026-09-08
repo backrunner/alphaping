@@ -1,4 +1,6 @@
 <script lang="ts">
+  import PublicSurface from "$components/status/public-surface.svelte";
+  import PublicNavigation from "$components/status/public-navigation.svelte";
   import { ArrowLeft, Box, Cpu, HardDrive, MemoryStick, Network, Radio } from "@lucide/svelte";
 
   import StatusLabel from "$components/status/status-label.svelte";
@@ -8,100 +10,112 @@
 </script>
 
 <svelte:head>
-  <title>{data.machine.name} status · {data.workspace.name}</title>
+  <title
+    >{data.machine.name} status · {data.dashboard.appearance?.title || data.workspace.name}</title
+  >
   <meta name="description" content={`Current public machine status for ${data.machine.name}`} />
 </svelte:head>
 
-<main>
-  <a class="back" href={`/status/${data.workspace.slug}/machines`}
-    ><ArrowLeft size={15} />All machines</a
-  >
-  <header class="resource-header">
-    <div>
-      <span class="workspace">{data.workspace.name}</span>
-      <h1>{data.machine.name}</h1>
-      {#if data.machine.description}<p>{data.machine.description}</p>{/if}
-    </div>
-    <StatusLabel status={data.machine.state} />
-  </header>
+<PublicSurface appearance={data.dashboard.appearance} workspace={data.workspace.slug}>
+  <main>
+    <PublicNavigation
+      workspace={data.workspace}
+      title={data.dashboard.appearance?.title}
+      logoUrl={data.dashboard.appearance?.logoUrl}
+    />
+    <a class="back" href={`/status/${data.workspace.slug}/machines`}
+      ><ArrowLeft size={15} />All machines</a
+    >
+    <header class="resource-header">
+      <div>
+        <h1>{data.machine.name}</h1>
+        {#if data.machine.description}<p>{data.machine.description}</p>{/if}
+      </div>
+      <StatusLabel status={data.machine.state} />
+    </header>
 
-  {#if data.machine.cpuPermille !== null}
-    <section class="metric-grid" aria-label="Published machine metrics">
-      <div>
-        <span><Cpu size={15} />CPU</span><strong>{formatPercent(data.machine.cpuPermille)}</strong>
-      </div>
-      <div>
-        <span><MemoryStick size={15} />Memory</span>
-        <strong>{formatBytes(data.machine.memoryUsedBytes ?? 0)}</strong>
-        <small>of {formatBytes(data.machine.memoryTotalBytes ?? 0)}</small>
-      </div>
-      <div>
-        <span><HardDrive size={15} />Storage</span>
-        <strong>{formatBytes(data.machine.storageUsedBytes ?? 0)}</strong>
-        <small>of {formatBytes(data.machine.storageTotalBytes ?? 0)}</small>
-      </div>
-      <div>
-        <span><Network size={15} />Network</span>
-        <strong>{formatRate(data.machine.networkRxBps ?? 0)} down</strong>
-        <small>{formatRate(data.machine.networkTxBps ?? 0)} up</small>
-      </div>
-    </section>
-  {:else}
-    <section class="summary-only">
-      <Radio size={18} />
-      <div>
-        <strong>Summary status only</strong><span>Resource metrics are not published.</span>
-      </div>
-    </section>
-  {/if}
-
-  {#if data.machine.containers.length > 0}
-    <section class="containers" aria-labelledby="containers-title">
-      <header>
+    {#if data.machine.cpuPermille !== null}
+      <section class="metric-grid" aria-label="Published machine metrics">
         <div>
-          <h2 id="containers-title">Containers</h2>
-          <p>Explicitly published workloads</p>
+          <span><Cpu size={14} />CPU</span><strong>{formatPercent(data.machine.cpuPermille)}</strong
+          >
+          <small>current utilization</small>
         </div>
-        <span>{data.machine.containers.length}</span>
-      </header>
-      <div class="container-list">
-        {#each data.machine.containers as container (container.name)}
-          <article>
-            <Box size={15} />
-            <div>
-              <strong>{container.name}</strong><span>{container.state} · {container.health}</span>
-            </div>
-            {#if container.cpuPermille !== null}
-              <small
-                >{formatPercent(container.cpuPermille)} · {formatBytes(
-                  container.memoryUsedBytes ?? 0,
-                )}</small
-              >
-            {/if}
-          </article>
-        {/each}
-      </div>
-    </section>
-  {/if}
+        <div>
+          <span><MemoryStick size={14} />Memory</span>
+          <strong>{formatBytes(data.machine.memoryUsedBytes ?? 0)}</strong>
+          <small>of {formatBytes(data.machine.memoryTotalBytes ?? 0)}</small>
+        </div>
+        <div>
+          <span><HardDrive size={14} />Storage</span>
+          <strong>{formatBytes(data.machine.storageUsedBytes ?? 0)}</strong>
+          <small>of {formatBytes(data.machine.storageTotalBytes ?? 0)}</small>
+        </div>
+        <div>
+          <span><Network size={14} />Download</span>
+          <strong>{formatRate(data.machine.networkRxBps ?? 0)}</strong>
+          <small>{formatRate(data.machine.networkTxBps ?? 0)} up</small>
+        </div>
+      </section>
+    {:else}
+      <section class="summary-only">
+        <Radio size={18} />
+        <div>
+          <strong>Summary status only</strong><span>Resource metrics are not published.</span>
+        </div>
+      </section>
+    {/if}
 
-  <footer>
-    <span>Updated {formatRelativeTime(data.updatedAt)}</span><span>Powered by AlphaPing</span>
-  </footer>
-</main>
+    {#if data.machine.containers.length > 0}
+      <section class="containers" aria-labelledby="containers-title">
+        <header>
+          <div>
+            <h2 id="containers-title">Containers</h2>
+            <p>Explicitly published workloads</p>
+          </div>
+          <span>{data.machine.containers.length}</span>
+        </header>
+        <div class="container-list">
+          {#each data.machine.containers as container (container.name)}
+            <article>
+              <Box size={15} />
+              <div>
+                <strong>{container.name}</strong><span>{container.state} · {container.health}</span>
+              </div>
+              {#if container.cpuPermille !== null}
+                <small
+                  >{formatPercent(container.cpuPermille)} · {formatBytes(
+                    container.memoryUsedBytes ?? 0,
+                  )}</small
+                >
+              {/if}
+            </article>
+          {/each}
+        </div>
+      </section>
+    {/if}
+
+    <footer>
+      <span title={data.updatedAt === null ? undefined : new Date(data.updatedAt).toLocaleString()}
+        >Updated {formatRelativeTime(data.updatedAt)}</span
+      ><span>Powered by AlphaPing</span>
+    </footer>
+  </main>
+</PublicSurface>
 
 <style>
   main {
-    width: min(100% - 28px, 920px);
+    max-width: var(--content-narrow);
     margin: 0 auto;
-    padding: 30px 0 36px;
+    padding: 0 32px 40px;
   }
 
   .back {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-2);
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--text-sm);
     text-decoration: none;
   }
 
@@ -111,18 +125,15 @@
 
   .resource-header {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
-    gap: 20px;
-    margin-top: 22px;
-    padding-bottom: 22px;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .workspace {
-    color: var(--text-faint);
-    font-size: 11px;
-    font-weight: 650;
+    gap: var(--space-4);
+    margin-top: 24px;
+    padding: 32px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-panel);
+    background: linear-gradient(120deg, var(--surface), var(--accent-soft));
+    box-shadow: var(--shadow-panel);
   }
 
   h1,
@@ -132,37 +143,35 @@
   }
 
   h1 {
-    margin-top: 5px;
-    font-size: 26px;
+    margin-top: var(--space-1);
+    font-size: 34px;
+    font-weight: 600;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
   }
 
   .resource-header p {
     max-width: 64ch;
-    margin-top: 6px;
+    margin-top: var(--space-2);
     color: var(--text-muted);
-    font-size: 13px;
-    line-height: 1.5;
+    font-size: var(--text-sm);
+    line-height: var(--leading-base);
   }
 
   .metric-grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    margin-top: 24px;
-    overflow: hidden;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-panel);
-    background: var(--surface);
-    box-shadow: var(--shadow-card);
+    gap: 16px;
+    margin-top: var(--space-6);
   }
 
   .metric-grid > div {
     min-width: 0;
-    padding: 16px;
-    border-right: 1px solid var(--border);
-  }
-
-  .metric-grid > div:last-child {
-    border-right: 0;
+    padding: 24px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    background: var(--surface);
+    box-shadow: var(--shadow-card);
   }
 
   .metric-grid span,
@@ -173,33 +182,35 @@
 
   .metric-grid span {
     align-items: center;
-    gap: 7px;
+    gap: var(--space-2);
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--text-xs);
   }
 
   .metric-grid strong {
-    margin-top: 9px;
-    overflow: hidden;
+    margin-top: 16px;
     font-family: var(--font-mono);
-    font-size: 15px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    font-size: 26px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
   }
 
   .metric-grid small {
-    margin-top: 3px;
+    margin-top: var(--space-1);
     color: var(--text-faint);
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
   }
 
   .summary-only {
     display: flex;
     align-items: center;
-    gap: 10px;
-    margin-top: 24px;
-    padding: 16px;
+    gap: var(--space-3);
+    margin-top: var(--space-6);
+    padding: var(--space-4);
     border: 1px solid var(--border);
     border-radius: var(--radius-card);
     color: var(--text-faint);
@@ -214,34 +225,37 @@
 
   .summary-only strong {
     color: var(--text);
-    font-size: 13px;
+    font-size: var(--text-sm);
+    font-weight: 600;
   }
 
   .summary-only span {
-    margin-top: 2px;
-    font-size: 12px;
+    margin-top: var(--space-1);
+    font-size: var(--text-xs);
   }
 
   .containers {
-    margin-top: 30px;
+    margin-top: var(--space-8);
   }
 
   .containers > header {
     display: flex;
-    align-items: center;
+    align-items: baseline;
     justify-content: space-between;
-    margin-bottom: 10px;
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
   }
 
   .containers h2 {
-    font-size: 16px;
+    font-size: var(--text-base);
+    font-weight: 600;
   }
 
   .containers p,
   .containers > header > span {
-    margin-top: 2px;
-    color: var(--text-muted);
-    font-size: 12px;
+    margin-top: var(--space-1);
+    color: var(--text-faint);
+    font-size: var(--text-xs);
   }
 
   .container-list {
@@ -250,11 +264,12 @@
 
   .container-list article {
     display: grid;
-    min-height: 54px;
-    grid-template-columns: 22px minmax(0, 1fr) auto;
+    min-height: 52px;
+    grid-template-columns: 20px minmax(0, 1fr) auto;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
     border-bottom: 1px solid var(--border);
+    color: var(--text-muted);
   }
 
   .container-list article:last-child {
@@ -267,24 +282,42 @@
   }
 
   .container-list strong {
-    font-size: 13px;
+    color: var(--text);
+    font-size: var(--text-sm);
+    font-weight: 600;
   }
 
   .container-list span,
   .container-list small {
-    margin-top: 2px;
+    margin-top: var(--space-1);
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--text-xs);
+  }
+
+  .container-list small {
+    margin-top: 0;
+    color: var(--text-faint);
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
 
   footer {
     display: flex;
+    flex-wrap: wrap;
     justify-content: space-between;
-    margin-top: 32px;
-    padding-top: 14px;
+    gap: var(--space-1) var(--space-3);
+    margin-top: var(--space-8);
+    padding-top: var(--space-3);
     border-top: 1px solid var(--border);
     color: var(--text-faint);
-    font-size: 11px;
+    font-size: var(--text-xs);
+  }
+
+  @media (max-width: 768px) {
+    main {
+      padding: 0 24px 32px;
+    }
   }
 
   @media (max-width: 700px) {
@@ -292,23 +325,37 @@
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
-    .metric-grid > div:nth-child(2) {
-      border-right: 0;
+    .metric-grid {
+      gap: 12px;
     }
-
-    .metric-grid > div:nth-child(-n + 2) {
-      border-bottom: 1px solid var(--border);
+    .metric-grid > div {
+      padding: 18px;
+    }
+    .metric-grid strong {
+      font-size: 22px;
     }
   }
 
-  @media (max-width: 460px) {
-    .resource-header {
-      flex-direction: column;
+  @media (max-width: 480px) {
+    main {
+      padding: 0 18px 28px;
     }
 
-    footer {
+    .resource-header {
+      padding: 24px;
+      align-items: flex-start;
       flex-direction: column;
-      gap: 4px;
+    }
+  }
+  @media (max-width: 360px) {
+    .metric-grid > div {
+      padding: 14px;
+    }
+    .metric-grid strong {
+      font-size: 18px;
+    }
+    h1 {
+      font-size: 28px;
     }
   }
 </style>

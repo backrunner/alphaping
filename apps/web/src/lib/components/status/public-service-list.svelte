@@ -55,15 +55,20 @@
               <StatusLabel status={service.state} />
             </div>
           </div>
-          <div class="track">
-            <StatusCapsules
-              buckets={service.timeline}
-              label={`${service.name} availability over 24 hours`}
-            />
-          </div>
-          <div class="track-label">
-            <span>24 hours ago</span><span>Checked {formatRelativeTime(service.lastCheckedAt)}</span
-            >
+          <div class="history">
+            <div class="track">
+              <StatusCapsules
+                buckets={service.timeline}
+                label={`${service.name} availability over 24 hours`}
+              />
+            </div>
+            <div class="track-label">
+              <span>24 hours ago</span><span
+                >{service.lastCheckedAt === null
+                  ? "Not checked yet"
+                  : `Checked ${formatRelativeTime(service.lastCheckedAt)}`}</span
+              >
+            </div>
           </div>
         </article>
       {/each}
@@ -83,50 +88,79 @@
 </section>
 
 <style>
+  section {
+    margin-top: var(--space-8);
+  }
+
   section > header {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 10px;
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
   }
 
   section > header > div {
     display: flex;
     align-items: baseline;
-    gap: 8px;
+    gap: var(--space-2);
   }
 
   h2 {
     margin: 0;
-    font-size: 14px;
+    font-size: 22px;
+    font-weight: 600;
   }
 
   header span,
   header small {
     color: var(--text-faint);
-    font-size: 10px;
+    font-size: var(--text-xs);
   }
 
   .service-list {
-    border-block: 1px solid var(--border);
+    padding: 0 28px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-panel);
+    background: var(--surface);
+    box-shadow: var(--shadow-card);
   }
-
+  .service:last-child {
+    border-bottom: 0;
+  }
   .service {
-    padding: 14px 0;
-    border-top: 1px solid var(--border);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+    align-items: center;
+    gap: 40px;
+    min-width: 0;
+    padding: 24px 0;
+    border-bottom: 1px solid var(--border);
   }
-
-  .service:first-child {
-    border-top: 0;
+  :global([data-density="compact"]) .service {
+    padding: 16px 0;
   }
-
   .service-line {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
+    flex-direction: column;
     gap: 14px;
-    margin-bottom: 10px;
+    min-width: 0;
+  }
+  .history {
+    min-width: 0;
+  }
+  @media (max-width: 620px) {
+    .service-list {
+      padding: 0 20px;
+    }
+    .service {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 18px;
+    }
+  }
+
+  .identity {
+    min-width: 0;
   }
 
   .identity strong,
@@ -135,7 +169,8 @@
   }
 
   .identity strong {
-    font-size: 13px;
+    font-size: 16px;
+    font-weight: 580;
   }
 
   .identity a {
@@ -148,21 +183,25 @@
   }
 
   .identity span {
-    margin-top: 2px;
+    margin-top: var(--space-1);
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: var(--text-xs);
   }
 
   .service-metrics {
     display: flex;
+    justify-content: flex-start;
+    flex: none;
     align-items: center;
-    gap: 12px;
+    gap: var(--space-3);
   }
 
   .service-metrics > span {
     color: var(--text-muted);
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
 
   .track {
@@ -172,15 +211,16 @@
   .track-label {
     display: flex;
     justify-content: space-between;
-    margin-top: 6px;
+    gap: var(--space-3);
+    margin-top: var(--space-2);
     color: var(--text-faint);
-    font-size: 9px;
+    font-size: var(--text-xs);
   }
 
   .empty {
-    padding: 22px 0;
+    padding: var(--space-6) 0;
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--text-sm);
   }
 
   .pagination {
@@ -188,16 +228,16 @@
     grid-template-columns: 1fr auto 1fr;
     align-items: center;
     min-height: 32px;
-    margin-top: 10px;
+    margin-top: var(--space-3);
     color: var(--text-faint);
-    font-size: 10px;
+    font-size: var(--text-xs);
   }
 
   .pagination a,
   .pagination span {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-1);
   }
 
   .pagination a {
@@ -213,18 +253,18 @@
   .pagination strong {
     color: var(--text-muted);
     font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
     font-weight: 500;
   }
 
   @media (max-width: 560px) {
-    .service-line {
-      align-items: flex-start;
+    section > header {
+      flex-wrap: wrap;
     }
 
     .service-metrics {
-      align-items: flex-end;
-      flex-direction: column-reverse;
-      gap: 5px;
+      align-items: center;
+      gap: var(--space-1);
     }
   }
 </style>

@@ -84,17 +84,17 @@
 
 <style>
   .form-panel {
-    margin-top: 24px;
-    padding-block: 16px;
+    margin-top: var(--space-6);
+    padding-block: var(--space-4);
     border-block: 1px solid var(--border);
   }
   header {
-    margin-bottom: 10px;
+    margin-bottom: var(--space-3);
   }
   header > div {
     display: flex;
     align-items: baseline;
-    gap: 8px;
+    gap: var(--space-2);
   }
   h2,
   p {
@@ -102,21 +102,22 @@
   }
   h2 {
     font-size: 14px;
+    font-weight: 600;
   }
   header span {
     color: var(--text-faint);
-    font-size: 10px;
+    font-size: var(--text-xs);
   }
   form {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 12px;
+    gap: var(--space-3);
   }
   label > span {
     display: block;
-    margin-bottom: 5px;
+    margin-bottom: var(--space-1);
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: var(--text-xs);
     font-weight: 620;
   }
   input,
@@ -124,36 +125,38 @@
   textarea {
     width: 100%;
     min-height: 32px;
-    padding: 0 9px;
+    padding: 0 var(--space-2);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-control);
     color: var(--text);
     background: var(--surface);
     font: inherit;
+    font-size: var(--text-sm);
   }
   textarea {
-    padding-block: 7px;
+    padding-block: var(--space-2);
     resize: vertical;
   }
   input:focus,
   select:focus,
   textarea:focus {
     border-color: var(--accent);
-    outline: 2px solid var(--focus-ring);
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
   }
   .wide {
     grid-column: 1 / -1;
   }
   .actions {
     display: flex;
-    gap: 7px;
+    gap: var(--space-2);
   }
   .form-error {
-    padding: 8px 10px;
-    border-radius: 6px;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-control);
     color: var(--status-down);
     background: var(--status-down-bg);
-    font-size: 11px;
+    font-size: var(--text-sm);
   }
   @media (max-width: 720px) {
     form {

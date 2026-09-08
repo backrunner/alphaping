@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Tooltip } from "bits-ui";
   import type { Snippet } from "svelte";
+  import { onMount } from "svelte";
   import type { WorkspaceShellData } from "@alphaping/db";
 
   import AppSidebar from "./app-sidebar.svelte";
@@ -8,6 +9,14 @@
 
   let { shell, children }: { shell: WorkspaceShellData; children: Snippet } = $props();
   let mobileNavOpen = $state(false);
+  onMount(() => {
+    const desktop = matchMedia("(min-width: 781px)");
+    const resize = () => {
+      if (desktop.matches) mobileNavOpen = false;
+    };
+    desktop.addEventListener("change", resize);
+    return () => desktop.removeEventListener("change", resize);
+  });
 
   function openMobileNavigation(): void {
     mobileNavOpen = true;
@@ -65,7 +74,7 @@
   .shell {
     display: grid;
     min-height: 100dvh;
-    grid-template-columns: 216px minmax(0, 1fr);
+    grid-template-columns: 244px minmax(0, 1fr);
   }
 
   .workspace,

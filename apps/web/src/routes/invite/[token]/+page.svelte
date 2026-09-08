@@ -10,7 +10,7 @@
 <svelte:head><title>Workspace invitation · AlphaPing</title></svelte:head>
 
 <main class="invite">
-  <section aria-labelledby="invite-title">
+  <section class="invite__card" aria-labelledby="invite-title">
     <div class="invite__brand"><span>A</span><strong>AlphaPing</strong></div>
     <div class="invite__heading">
       <UserPlus size={20} />
@@ -32,7 +32,7 @@
     {:else if data.authenticated && data.invitation.recipientMatchesAuthenticatedEmail}
       <form method="POST">
         {#if form?.message}<p class="form-error" role="alert">{form.message}</p>{/if}
-        <div class="invite__state">
+        <div class="invite__state invite__state--ok">
           <Check size={16} />
           <div><strong>Signed in</strong><span>{data.authenticatedEmail}</span></div>
         </div>
@@ -94,17 +94,22 @@
     display: grid;
     min-height: 100dvh;
     place-items: center;
-    padding: 20px;
+    padding: var(--space-3);
   }
 
-  .invite > section {
-    width: min(100%, 420px);
+  .invite__card {
+    width: min(100%, 400px);
+    padding: var(--space-6);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-panel);
+    background: var(--surface);
+    box-shadow: var(--shadow-panel);
   }
 
   .invite__brand {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
   }
 
   .invite__brand span {
@@ -112,42 +117,51 @@
     width: 24px;
     height: 24px;
     place-items: center;
-    border-radius: 5px;
+    border-radius: var(--radius-button);
     color: var(--accent-ink);
     background: var(--accent);
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--text-xs);
+    font-weight: 750;
+  }
+
+  .invite__brand strong {
+    font-size: var(--text-base);
   }
 
   .invite__heading {
     display: flex;
     align-items: flex-start;
-    gap: 10px;
-    margin: 28px 0 18px;
-    padding-bottom: 18px;
+    gap: var(--space-3);
+    margin: var(--space-5) 0;
+    padding-bottom: var(--space-5);
     border-bottom: 1px solid var(--border);
   }
 
   .invite__heading > :global(svg) {
+    flex: none;
     margin-top: 2px;
     color: var(--accent);
   }
 
   h1 {
-    margin: 0 0 4px;
-    font-size: 22px;
+    margin: 0 0 var(--space-1);
+    font-size: var(--text-xl);
+    font-weight: 600;
+    line-height: var(--leading-xl);
   }
 
   .invite__heading p,
   .invite__state span {
     margin: 0;
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--text-sm);
+    line-height: var(--leading-sm);
   }
 
   form {
     display: grid;
-    gap: 14px;
+    gap: var(--space-4);
   }
 
   label span,
@@ -157,66 +171,99 @@
   }
 
   label span {
-    margin-bottom: 6px;
+    margin-bottom: var(--space-2);
     color: var(--text-muted);
-    font-size: 11px;
-    font-weight: 650;
+    font-size: var(--text-xs);
+    font-weight: 600;
   }
 
   input {
     width: 100%;
     height: 36px;
-    padding: 0 10px;
+    padding: 0 var(--space-3);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-control);
     color: var(--text);
     background: var(--surface);
     font: inherit;
   }
 
-  input:focus {
-    border-color: var(--accent);
-    outline: 2px solid var(--focus-ring);
+  form > :global(button) {
+    width: 100%;
+    height: 36px;
   }
 
   .invite__state {
     display: flex;
     align-items: flex-start;
-    gap: 9px;
-    padding: 12px;
+    gap: var(--space-3);
+    padding: var(--space-3);
     border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--surface);
+    border-radius: var(--radius-control);
+    background: var(--surface-subtle);
+  }
+
+  .invite__state > :global(svg) {
+    flex: none;
+    margin-top: 1px;
+    color: var(--accent);
+  }
+
+  .invite__state strong {
+    font-size: var(--text-sm);
+    font-weight: 600;
+  }
+
+  .invite__state span {
+    margin-top: var(--space-1);
+  }
+
+  .invite__state--ok {
+    border-color: color-mix(in srgb, var(--status-healthy) 45%, var(--border));
+    background: var(--status-healthy-bg);
+  }
+
+  .invite__state--ok > :global(svg) {
+    color: var(--status-healthy);
   }
 
   .invite__state--error {
     border-color: color-mix(in srgb, var(--status-down) 45%, var(--border));
-    color: var(--status-down);
     background: var(--status-down-bg);
   }
 
-  .invite__state span {
-    margin-top: 2px;
+  .invite__state--error > :global(svg),
+  .invite__state--error strong {
+    color: var(--status-down);
   }
 
   .invite__signin {
-    display: inline-flex;
-    height: 32px;
+    display: flex;
+    height: 36px;
     align-items: center;
-    gap: 6px;
-    margin-top: 14px;
-    color: var(--accent);
-    font-size: 12px;
-    font-weight: 650;
+    justify-content: center;
+    gap: var(--space-2);
+    margin-top: var(--space-4);
+    border-radius: var(--radius-button);
+    color: var(--accent-ink);
+    background: var(--accent);
+    font-size: var(--text-base);
+    font-weight: 600;
     text-decoration: none;
+    transition: background-color 140ms ease;
+  }
+
+  .invite__signin:hover {
+    background: var(--accent-hover);
   }
 
   .form-error {
     margin: 0;
-    padding: 8px 10px;
-    border-radius: 6px;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-button);
     color: var(--status-down);
     background: var(--status-down-bg);
-    font-size: 11px;
+    font-size: var(--text-sm);
+    line-height: var(--leading-sm);
   }
 </style>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Info, OctagonAlert, TriangleAlert, Wrench } from "@lucide/svelte";
   import type { PublicStatusPage } from "@alphaping/db";
 
   let { announcements }: { announcements: PublicStatusPage["announcements"] } = $props();
@@ -8,9 +9,23 @@
   <section class="announcements" aria-label="Announcements">
     {#each announcements as announcement (announcement.id)}
       <article class={`announcement announcement--${announcement.severity}`}>
-        <div><strong>{announcement.title}</strong><span>{announcement.severity}</span></div>
-        <p>{announcement.body}</p>
-        <small>Visible until {new Date(announcement.expiresAt).toLocaleString()}</small>
+        <span class="node" aria-hidden="true">
+          {#if announcement.severity === "maintenance"}<Wrench size={13} />
+          {:else if announcement.severity === "critical"}<OctagonAlert size={13} />
+          {:else if announcement.severity === "minor" || announcement.severity === "major"}<TriangleAlert
+              size={13}
+            />
+          {:else}<Info size={13} />{/if}
+        </span>
+        <div class="content">
+          <header>
+            <strong>{announcement.title}</strong><span class="severity"
+              >{announcement.severity}</span
+            >
+          </header>
+          <p>{announcement.body}</p>
+          <small>Visible until {new Date(announcement.expiresAt).toLocaleString()}</small>
+        </div>
       </article>
     {/each}
   </section>
@@ -19,16 +34,36 @@
 <style>
   .announcements {
     display: grid;
-    gap: 8px;
-    margin-bottom: 24px;
+    margin-bottom: var(--space-6);
   }
 
   .announcement {
     --announcement-accent: var(--accent);
 
-    padding: 11px 12px;
-    border: 1px solid var(--border);
-    background: var(--surface);
+    position: relative;
+    display: grid;
+    grid-template-columns: 22px minmax(0, 1fr);
+    gap: var(--space-2);
+    padding-bottom: var(--space-4);
+  }
+
+  .announcement:last-child {
+    padding-bottom: 0;
+  }
+
+  /* Thin vertical rail connecting the timeline nodes */
+  .announcement::before {
+    position: absolute;
+    top: 22px;
+    bottom: 0;
+    left: 10px;
+    width: 1px;
+    background: var(--border);
+    content: "";
+  }
+
+  .announcement:last-child::before {
+    display: none;
   }
 
   .announcement--maintenance {
@@ -44,40 +79,54 @@
     --announcement-accent: var(--status-down);
   }
 
-  .announcement > div {
+  .node {
+    z-index: 1;
+    display: grid;
+    width: 22px;
+    height: 22px;
+    place-items: center;
+    color: var(--announcement-accent);
+    background: var(--bg);
+  }
+
+  .content {
+    min-width: 0;
+  }
+
+  header {
     display: flex;
-    align-items: center;
+    align-items: baseline;
     justify-content: space-between;
-    gap: 12px;
+    gap: var(--space-3);
   }
 
-  .announcement strong {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    font-size: 12px;
+  strong {
+    font-size: var(--text-sm);
+    font-weight: 600;
   }
 
-  .announcement strong::before {
-    width: 7px;
-    height: 7px;
+  .severity {
     flex: none;
-    border-radius: 2px;
-    background: var(--announcement-accent);
-    content: "";
-  }
-
-  .announcement span,
-  .announcement small {
-    color: var(--text-faint);
-    font-size: 9px;
+    padding: 1px var(--space-2);
+    border-radius: var(--radius-pill);
+    color: var(--announcement-accent);
+    background: var(--surface-subtle);
+    font-size: var(--text-xs);
     text-transform: capitalize;
   }
 
-  .announcement p {
-    margin: 5px 0;
+  p {
+    margin: var(--space-1) 0 0;
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--text-sm);
+    line-height: var(--leading-sm);
     white-space: pre-wrap;
+  }
+
+  small {
+    display: block;
+    margin-top: var(--space-1);
+    color: var(--text-faint);
+    font-size: var(--text-xs);
   }
 </style>

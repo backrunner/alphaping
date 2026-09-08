@@ -114,9 +114,9 @@
 
 <style>
   .tokens {
-    max-width: 900px;
-    margin-top: 22px;
-    padding-top: 18px;
+    max-width: var(--content-narrow);
+    margin-top: var(--space-6);
+    padding-top: var(--space-5);
     border-top: 1px solid var(--border);
   }
 
@@ -131,7 +131,7 @@
 
   header {
     justify-content: space-between;
-    gap: 12px;
+    gap: var(--space-3);
   }
 
   h2,
@@ -140,19 +140,20 @@
   }
 
   h2 {
-    font-size: 14px;
+    font-size: var(--text-base);
+    font-weight: 600;
   }
 
   header p,
   .empty {
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: var(--text-xs);
   }
 
   .feedback {
-    margin-top: 10px;
+    margin-top: var(--space-3);
     color: var(--status-healthy);
-    font-size: 10px;
+    font-size: var(--text-sm);
   }
 
   .feedback--error {
@@ -164,22 +165,22 @@
     min-width: 0;
     align-items: center;
     flex-wrap: wrap;
-    gap: 6px 10px;
-    margin-top: 12px;
+    gap: var(--space-2) var(--space-3);
+    margin-top: var(--space-3);
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: var(--text-xs);
   }
 
   .installers > span {
     color: var(--text-faint);
-    font-size: 9px;
+    font-size: var(--text-xs);
     text-transform: uppercase;
   }
 
   .installers a {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-1);
     color: var(--text-muted);
   }
 
@@ -188,13 +189,13 @@
     max-width: min(100%, 430px);
     color: var(--text-muted);
     font-family: var(--font-mono);
-    font-size: 9px;
+    font-size: var(--text-xs);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .token-list {
-    margin-top: 14px;
+    margin-top: var(--space-4);
     border-top: 1px solid var(--border);
   }
 
@@ -202,25 +203,25 @@
   .token-list__row {
     display: grid;
     grid-template-columns: minmax(220px, 1fr) minmax(210px, auto) 150px;
-    gap: 16px;
+    gap: var(--space-4);
     min-height: 44px;
     border-bottom: 1px solid var(--border);
   }
 
   .token-list__heading {
     color: var(--text-faint);
-    font-size: 9px;
+    font-size: var(--text-xs);
     text-transform: uppercase;
   }
 
   .token-list__row > div:first-child {
     min-width: 0;
-    gap: 7px;
+    gap: var(--space-2);
   }
 
   .token-list__row code {
     overflow: hidden;
-    font-size: 10px;
+    font-size: var(--text-xs);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -230,17 +231,17 @@
     flex-direction: column;
     color: var(--text-muted);
     font-family: var(--font-mono);
-    font-size: 9px;
+    font-size: var(--text-xs);
   }
 
   .token-state {
     justify-content: space-between;
-    gap: 4px;
+    gap: var(--space-1);
   }
 
   .token-state > span {
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: var(--text-xs);
     text-transform: capitalize;
   }
 
@@ -249,7 +250,7 @@
   }
 
   .empty {
-    padding: 14px 0;
+    padding: var(--space-4) 0;
   }
 
   @media (max-width: 700px) {
@@ -259,8 +260,8 @@
 
     .token-list__row {
       grid-template-columns: 1fr auto;
-      gap: 6px 12px;
-      padding-block: 10px;
+      gap: var(--space-2) var(--space-3);
+      padding-block: var(--space-3);
     }
 
     .token-list__row > div:nth-child(2) {

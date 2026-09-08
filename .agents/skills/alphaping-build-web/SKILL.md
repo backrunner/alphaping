@@ -5,7 +5,7 @@ description: Build and review AlphaPing's SvelteKit control plane, compact monit
 
 # Build AlphaPing Web
 
-Implement a dense, accessible operations console that runs only on Cloudflare Workers.
+Implement a modern, bright, customizable public probe experience and an accessible operations console, running only on Cloudflare Workers.
 
 ## Read First
 
@@ -28,20 +28,18 @@ Read [Cloudflare cost](../../06-cloudflare-storage-cost.md) for polling, history
 7. Use shadcn-svelte owned source with Bits UI primitives and the AlphaPing tokens. Keep Lucide Svelte as the single icon family.
 8. Implement all states: loading, empty, error, stale, denied, disabled, active, and responsive.
 9. Add focused unit/integration tests and Playwright flows/screenshots proportional to the behavior.
-10. Run formatting, lint, typecheck, tests, build, accessibility, and relevant visual checks.
+10. Run formatting, lint, typecheck, tests, build, accessibility, and relevant visual checks. Run SvelteKit sync/typecheck and Vite build sequentially: both write `.svelte-kit`, and overlapping them can produce incompatible server/client build IDs.
 
 ## Product UI Rules
 
-- Use `DESIGN_VARIANCE 3`, `MOTION_INTENSITY 2`, `VISUAL_DENSITY 9`.
-- Keep page sections unframed. Use cards only for repeated resources such as machines.
-- Never nest cards. Group metrics with grid tracks, spacing, and sparse dividers.
-- Use 6 px card/input radius, fixed 28/32 px controls, and full pills only for semantic statuses/tags.
+- Follow the latest `.agents/07-ui-design-system.md` design baseline: modern consumer-facing public pages, with a denser console using the same visual language.
+- Use broad Hero panels, generous corner radii, soft layered shadows, clear type hierarchy and direct copy. Follow the latest user preference baseline; allow static theme gradients and real status illustrations, and avoid repeated icon tiles or promotional filler.
 - Use Geist Sans/Mono, tabular numerals, stable dimensions, and no viewport-scaled fonts.
-- Keep charts collapsed by default and do not fetch history before expansion.
+- Keep history requests on demand; decorative graphics must not imply fictional telemetry.
 - Use status text/icon/shape in addition to color.
-- Keep navigation dynamic: hide Machines or Services when the workspace has none configured.
-- Keep Containers under Machine detail, never as a top-level module.
-- Avoid decorative gradients, glows, glass, oversized headings, marketing copy, continuous motion, and generic card grids.
+- Keep navigation dynamic and Containers under Machine detail.
+- Support validated site appearance defaults and browser-only visitor overrides; never accept arbitrary HTML/CSS/scripts or tracking assets.
+- Respect reduced motion and WCAG AA; avoid continuous decorative animation and heavyweight rendering dependencies.
 
 ## RBAC Rules
 

@@ -13,6 +13,9 @@
     label,
     compact = false,
   }: { buckets: readonly Bucket[]; label: string; compact?: boolean } = $props();
+  const id = $props.id();
+  let inspected = $state<number | null>(null);
+  const inspectedBucket = $derived(inspected === null ? undefined : buckets[inspected]);
   let activeIndex = $state(0);
   let capsuleButtons: HTMLButtonElement[] = [];
 
@@ -60,47 +63,108 @@
   }
 </script>
 
-<div class:compact class="capsules" role="group" aria-label={label}>
-  {#each buckets as bucket, index (bucket.bucketStart)}
-    <button
-      bind:this={capsuleButtons[index]}
-      type="button"
-      class={`capsule capsule--${bucket.state}`}
-      aria-label={details(bucket)}
-      title={details(bucket)}
-      tabindex={index === activeIndex ? 0 : -1}
-      onfocus={() => (activeIndex = index)}
-      onkeydown={(event) => handleKeydown(event, index)}
-    ></button>
-  {/each}
+<svelte:window
+  onkeydown={(event) => {
+    if (event.key === "Escape") inspected = null;
+  }}
+/>
+
+<div
+  class="timeline-wrap"
+  role="presentation"
+  onpointerleave={(event) => {
+    if (!event.currentTarget.contains(document.activeElement)) inspected = null;
+  }}
+>
+  <div
+    class:compact
+    class="capsules"
+    style:--capsule-count={Math.max(1, buckets.length)}
+    role="group"
+    aria-label={label}
+  >
+    {#each buckets as bucket, index (bucket.bucketStart)}
+      <button
+        bind:this={capsuleButtons[index]}
+        type="button"
+        class={`capsule capsule--${bucket.state}`}
+        aria-label={details(bucket)}
+        aria-describedby={inspected === index ? `${id}-tooltip` : undefined}
+        onpointerenter={() => (inspected = index)}
+        onclick={() => (inspected = index)}
+        onblur={() => (inspected = null)}
+        tabindex={index === activeIndex ? 0 : -1}
+        onfocus={() => {
+          activeIndex = index;
+          inspected = index;
+        }}
+        onkeydown={(event) => handleKeydown(event, index)}
+      ></button>
+    {/each}
+  </div>
+  {#if inspectedBucket}<div class="bucket-tooltip" id={`${id}-tooltip`} role="tooltip">
+      {details(inspectedBucket)}
+    </div>{/if}
 </div>
 
 <style>
+  .timeline-wrap {
+    position: relative;
+    min-width: 0;
+  }
+  .bucket-tooltip {
+    position: absolute;
+    z-index: var(--z-popover);
+    bottom: calc(100% + 10px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(260px, 100%);
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    color: var(--text);
+    background: var(--surface);
+    box-shadow: var(--shadow-popover);
+    font-size: 11px;
+    line-height: 1.65;
+  }
+  .bucket-tooltip::after {
+    content: "";
+    position: absolute;
+    inset: 100% 0 -12px;
+  }
   .capsules {
     display: grid;
     min-width: 0;
-    grid-template-columns: repeat(var(--capsule-count, 48), minmax(3px, 1fr));
-    gap: 3px;
+    grid-template-columns: repeat(var(--capsule-count, 48), minmax(0, 1fr));
+    gap: 2px;
   }
 
   .capsule {
     display: block;
+    min-width: 0;
     width: 100%;
     height: 24px;
+    padding: 0;
     border: 0;
-    border-radius: 999px;
+    border-radius: 5px;
     outline: 0;
     background: var(--surface-strong);
+    transition: background-color 150ms ease;
   }
 
   .compact .capsule {
     height: 20px;
   }
 
+  .capsule:hover {
+    outline: 2px solid var(--border-strong);
+    outline-offset: 1px;
+  }
+
   .capsule:focus-visible {
-    box-shadow:
-      0 0 0 2px var(--accent),
-      0 0 0 3px var(--surface);
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 1px;
   }
 
   .capsule--healthy {

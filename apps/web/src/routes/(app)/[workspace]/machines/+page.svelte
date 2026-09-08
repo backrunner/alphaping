@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import { page } from "$app/state";
   import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Search, Server } from "@lucide/svelte";
   import { SvelteURLSearchParams } from "svelte/reactivity";
@@ -35,7 +36,9 @@
     return { down: 0, degraded: 1, offline: 2, unknown: 3, maintenance: 4, healthy: 5 }[state];
   }
 
-  function submitFilters(): void {
+  async function submitFilters(): Promise<void> {
+    // Bits UI updates its form value during the next Svelte DOM flush.
+    await tick();
     document.querySelector<HTMLFormElement>(".filters")?.requestSubmit();
   }
 
@@ -209,21 +212,23 @@
         />
         <button class="search-submit" type="submit">Search</button>
       </form>
-      <nav class="segments" aria-label="Filter machine status">
-        {#each statusFilters as option}
-          <a
-            class:active={status === option[0]}
-            aria-current={status === option[0] ? "page" : undefined}
-            href={filterHref("status", option[0])}>{option[1]}</a
-          >
-        {/each}
-      </nav>
-      <span class="result-count">
-        {visibleMachines.length === 0 ? 0 : (currentPage - 1) * pageSize + 1}-{Math.min(
-          currentPage * pageSize,
-          filteredMachines.length,
-        )} of {filteredMachines.length}
-      </span>
+      <div class="toolbar__row">
+        <nav class="segments" aria-label="Filter machine status">
+          {#each statusFilters as option}
+            <a
+              class:active={status === option[0]}
+              aria-current={status === option[0] ? "page" : undefined}
+              href={filterHref("status", option[0])}>{option[1]}</a
+            >
+          {/each}
+        </nav>
+        <span class="result-count">
+          {visibleMachines.length === 0 ? 0 : (currentPage - 1) * pageSize + 1}-{Math.min(
+            currentPage * pageSize,
+            filteredMachines.length,
+          )} of {filteredMachines.length}
+        </span>
+      </div>
     </div>
 
     {#if filteredMachines.length > 0}
@@ -262,27 +267,31 @@
 
 <style>
   .machines-page {
-    width: min(100% - 24px, 1180px);
+    width: min(100% - 48px, var(--content-wide));
     margin: 0 auto;
-    padding: 28px 0 52px;
+    padding: var(--space-6) 0 var(--space-8);
   }
 
   .page-header {
     display: flex;
-    align-items: flex-end;
+    align-items: center;
     justify-content: space-between;
-    gap: 18px;
-    padding-bottom: 18px;
+    gap: var(--space-4);
+    padding-bottom: var(--space-4);
     border-bottom: 1px solid var(--border);
   }
 
   .page-header a {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: var(--space-1);
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--text-xs);
     text-decoration: none;
+  }
+
+  .page-header a:hover {
+    color: var(--text);
   }
 
   h1,
@@ -291,39 +300,40 @@
   }
 
   h1 {
-    margin-top: 14px;
-    font-size: 24px;
+    margin-top: var(--space-3);
+    font-size: var(--text-xl);
+    font-weight: 600;
+    line-height: var(--leading-xl);
   }
 
-  .page-header p,
   .page-header p {
-    margin-top: 3px;
+    margin-top: var(--space-1);
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--text-sm);
   }
 
   .toolbar {
-    display: grid;
-    min-height: 94px;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-content: center;
-    gap: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    margin: var(--space-4) 0;
   }
 
   .filters {
     display: flex;
     min-width: 0;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-2);
   }
 
   .search {
     display: flex;
-    width: min(300px, 42vw);
-    height: 30px;
+    width: 260px;
+    height: 32px;
     align-items: center;
-    gap: 7px;
-    padding: 0 9px;
+    gap: var(--space-2);
+    padding: 0 var(--space-3);
     border: 1px solid var(--border);
     border-radius: var(--radius-control);
     color: var(--text-faint);
@@ -339,6 +349,7 @@
     color: var(--text);
     background: transparent;
     font: inherit;
+    font-size: var(--text-base);
   }
 
   .search:focus-within {
@@ -348,30 +359,41 @@
   }
 
   .search-submit {
-    height: 34px;
+    height: 32px;
     min-width: 0;
+    padding: 0 var(--space-3);
     border: 1px solid var(--border);
-    border-radius: var(--radius-control);
-    color: var(--text-muted);
+    border-radius: var(--radius-button);
+    color: var(--text);
     background: var(--surface);
     font: inherit;
-    font-size: 12px;
+    font-size: var(--text-base);
+    font-weight: 600;
+    cursor: pointer;
+    transition:
+      border-color 120ms ease,
+      background-color 120ms ease;
+  }
+
+  .search-submit:hover {
+    border-color: var(--border-strong);
+    background: var(--surface-subtle);
   }
 
   .filters :global(.select-trigger) {
     width: auto;
-    max-width: 132px;
+    max-width: 150px;
   }
 
-  .search-submit {
-    padding: 0 9px;
-    color: var(--text);
-    cursor: pointer;
+  .toolbar__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
   }
 
   .segments {
     display: flex;
-    grid-column: 1;
     gap: 2px;
   }
 
@@ -379,55 +401,77 @@
     display: inline-flex;
     height: 28px;
     align-items: center;
-    padding: 0 8px;
-    border: 0;
-    border-radius: 5px;
+    padding: 0 var(--space-3);
+    border-radius: var(--radius-pill);
     color: var(--text-muted);
     background: transparent;
-    font-size: 12px;
+    font-size: var(--text-sm);
     text-decoration: none;
+    transition:
+      background-color 120ms ease,
+      color 120ms ease;
+  }
+
+  .segments a:hover {
+    color: var(--text);
   }
 
   .segments a.active {
     color: var(--text);
     background: var(--surface-strong);
-    font-weight: 650;
+    font-weight: 600;
   }
 
   .result-count {
-    grid-column: 2;
-    grid-row: 2;
-    align-self: center;
     color: var(--text-faint);
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--text-xs);
+    white-space: nowrap;
   }
 
   .machine-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 350px), 1fr));
-    gap: 14px;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+    gap: var(--space-4);
   }
 
   .pagination {
     display: grid;
     grid-template-columns: 1fr auto 1fr;
     align-items: center;
-    margin-top: 16px;
-    color: var(--text-faint);
-    font-size: 11px;
+    gap: var(--space-3);
+    margin-top: var(--space-4);
   }
 
   .pagination a,
   .pagination span {
     display: inline-flex;
+    height: 32px;
     align-items: center;
-    gap: 4px;
+    justify-self: start;
+    gap: var(--space-1);
+    padding: 0 var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-button);
+    font-size: var(--text-sm);
   }
 
   .pagination a {
-    color: var(--accent);
+    color: var(--text);
+    background: var(--surface);
     text-decoration: none;
+    transition:
+      border-color 120ms ease,
+      background-color 120ms ease;
+  }
+
+  .pagination a:hover {
+    border-color: var(--border-strong);
+    background: var(--surface-subtle);
+  }
+
+  .pagination span {
+    color: var(--text-faint);
   }
 
   .pagination a:last-child,
@@ -436,25 +480,22 @@
   }
 
   .pagination strong {
+    justify-self: center;
     color: var(--text-muted);
     font-family: var(--font-mono);
+    font-size: var(--text-xs);
     font-weight: 500;
+  }
+
+  @media (max-width: 768px) {
+    .machines-page {
+      width: min(100% - 32px, var(--content-wide));
+    }
   }
 
   @media (max-width: 680px) {
     .page-header {
       align-items: flex-start;
-    }
-
-    .toolbar {
-      align-items: stretch;
-      grid-template-columns: 1fr auto;
-      padding: 12px 0;
-    }
-
-    .filters {
-      grid-column: 1 / -1;
-      flex-wrap: wrap;
     }
 
     .search {
@@ -466,8 +507,26 @@
       flex: 1 1 140px;
     }
 
+    .toolbar__row {
+      align-items: flex-start;
+      flex-direction: column;
+      gap: var(--space-2);
+    }
+
+    .result-count {
+      align-self: flex-end;
+    }
+
     .segments {
+      max-width: 100%;
       overflow-x: auto;
+    }
+  }
+
+  @media (max-width: 560px) {
+    .machines-page {
+      width: min(100% - 24px, var(--content-wide));
+      padding-top: var(--space-4);
     }
   }
 </style>

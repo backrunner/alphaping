@@ -161,30 +161,34 @@
 
 <style>
   main {
-    width: min(100% - 24px, 1120px);
+    width: min(100% - 48px, var(--content-wide));
     margin: 0 auto;
-    padding: 28px 0 52px;
+    padding: var(--space-6) 0 var(--space-8);
   }
 
   .page-header {
-    padding-bottom: 17px;
+    padding-bottom: var(--space-4);
     border-bottom: 1px solid var(--border);
   }
 
   .page-header > a {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: var(--space-1);
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--text-xs);
     text-decoration: none;
+  }
+
+  .page-header > a:hover {
+    color: var(--text);
   }
 
   .title-row {
     display: flex;
     align-items: center;
-    gap: 10px;
-    margin-top: 14px;
+    gap: var(--space-3);
+    margin-top: var(--space-3);
   }
 
   .title-row form {
@@ -197,71 +201,102 @@
   }
 
   h1 {
-    font-size: 24px;
+    min-width: 0;
+    overflow: hidden;
+    font-size: var(--text-xl);
+    font-weight: 600;
+    line-height: var(--leading-xl);
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .page-header p {
     display: flex;
-    gap: 9px;
-    margin-top: 5px;
+    gap: var(--space-2);
+    margin-top: var(--space-1);
     color: var(--text-muted);
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--text-xs);
   }
 
   .page-header p span::before {
-    margin-right: 9px;
+    margin-right: var(--space-2);
     content: "·";
   }
 
   .page-error {
-    margin: 10px 0 0;
-    padding: 8px 10px;
+    margin: var(--space-3) 0 0;
+    padding: var(--space-2) var(--space-3);
     border-radius: var(--radius-control);
     color: var(--status-down);
     background: var(--status-down-bg);
-    font-size: 12px;
+    font-size: var(--text-sm);
   }
 
   .machine-tabs :global(.tabs) {
     display: flex;
+    height: 38px;
     overflow-x: auto;
-    gap: 2px;
-    padding: 10px 0;
+    gap: var(--space-1);
     border-bottom: 1px solid var(--border);
   }
 
   .machine-tabs :global(.tab) {
-    height: 28px;
+    height: 100%;
     flex: none;
-    padding: 0 9px;
+    padding: 0 var(--space-3);
     border: 0;
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-button) var(--radius-button) 0 0;
     color: var(--text-muted);
     background: transparent;
     font: inherit;
-    font-size: 12px;
+    font-size: var(--text-base);
     cursor: pointer;
+    transition:
+      background-color 120ms ease,
+      color 120ms ease;
+  }
+
+  .machine-tabs :global(.tab:hover) {
+    color: var(--text);
+  }
+
+  .machine-tabs :global(.tab:focus-visible) {
+    outline-offset: -2px;
+  }
+
+  .machine-tabs :global(.tab:hover:not([data-state="active"])) {
+    background: var(--surface-subtle);
   }
 
   .machine-tabs :global(.tab[data-state="active"]) {
     color: var(--text);
-    background: var(--surface-strong);
-    box-shadow: 0 1px 2px rgb(16 24 40 / 0.07);
-    font-weight: 650;
+    box-shadow: inset 0 -2px 0 var(--accent);
+    font-weight: 600;
   }
 
   .machine-tabs :global(.panel) {
-    padding-top: 18px;
+    padding-top: var(--space-5);
+  }
+
+  @media (max-width: 768px) {
+    main {
+      width: min(100% - 32px, var(--content-wide));
+    }
   }
 
   @media (max-width: 520px) {
+    main {
+      width: min(100% - 24px, var(--content-wide));
+      padding-top: var(--space-4);
+    }
+
     .machine-tabs :global(.tabs) {
       gap: 0;
     }
 
     .machine-tabs :global(.tab) {
-      padding-inline: 8px;
+      padding-inline: var(--space-2);
     }
 
     .title-row {

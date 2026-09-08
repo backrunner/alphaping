@@ -235,15 +235,18 @@
   summary {
     display: grid;
     width: 100%;
-    height: 26px;
+    height: 28px;
     grid-template-columns: auto 1fr auto;
     align-items: center;
-    gap: 7px;
+    gap: var(--space-2);
     color: var(--accent);
-    font-size: 9px;
-    font-weight: 650;
+    font-size: var(--text-xs);
+    font-weight: 620;
     list-style: none;
     cursor: pointer;
+  }
+  summary:hover {
+    color: var(--accent-hover);
   }
   summary::-webkit-details-marker {
     display: none;
@@ -251,11 +254,11 @@
   summary > span {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: var(--space-1);
   }
   summary small {
     color: var(--text-faint);
-    font-size: 9px;
+    font-size: var(--text-xs);
     font-weight: 400;
   }
   summary :global(.chevron) {
@@ -266,31 +269,37 @@
   }
   .body {
     min-height: 126px;
-    padding: 8px 0 4px;
+    padding: var(--space-2) 0 var(--space-1);
     border-top: 1px solid var(--border);
   }
   .ranges {
     display: flex;
     flex-wrap: wrap;
     gap: 2px;
-    margin-bottom: 10px;
+    margin-bottom: var(--space-2);
   }
   .ranges button,
   .state button {
-    height: 24px;
-    padding: 0 7px;
+    height: 26px;
+    padding: 0 var(--space-2);
     border: 0;
-    border-radius: 5px;
+    border-radius: var(--radius-button);
     color: var(--text-muted);
     background: transparent;
     font: inherit;
-    font-size: 9px;
+    font-size: var(--text-xs);
     cursor: pointer;
+    transition:
+      background-color 120ms ease,
+      color 120ms ease;
+  }
+  .ranges button:hover {
+    color: var(--text);
   }
   .ranges button.active {
     color: var(--text);
     background: var(--surface-strong);
-    font-weight: 650;
+    font-weight: 620;
   }
   .ranges button:disabled {
     cursor: wait;
@@ -301,9 +310,9 @@
     min-height: 86px;
     align-items: center;
     justify-content: center;
-    gap: 7px;
+    gap: var(--space-2);
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: var(--text-sm);
   }
   .state.error {
     color: var(--status-down);
@@ -313,25 +322,31 @@
     color: var(--text);
     background: var(--surface);
   }
+  .state button:hover {
+    border-color: var(--border-strong);
+    background: var(--surface-subtle);
+  }
   .charts {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 16px;
+    gap: var(--space-4);
   }
   .charts header {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
-    gap: 8px;
-    margin-bottom: 6px;
+    gap: var(--space-2);
+    margin-bottom: var(--space-2);
   }
   .charts strong {
-    font-size: 9px;
+    font-size: var(--text-xs);
+    font-weight: 620;
   }
   .charts header span {
     color: var(--text-faint);
     font-family: var(--font-mono);
-    font-size: 8px;
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
   }
   .states,
   .bars {
@@ -345,11 +360,11 @@
     min-width: 1px;
     height: 100%;
     flex: 1;
+    border-radius: 2px 2px 0 0;
     background: var(--text-faint);
     opacity: 0.75;
   }
-  .states i.status-healthy,
-  .bars i {
+  .states i.status-healthy {
     background: var(--status-healthy);
   }
   .states i.status-degraded {
@@ -362,7 +377,9 @@
     min-width: 1px;
     height: var(--bar-height);
     flex: 1;
-    opacity: 0.75;
+    border-radius: 2px 2px 0 0;
+    background: var(--accent);
+    opacity: 0.7;
   }
   .sr-only {
     position: absolute;

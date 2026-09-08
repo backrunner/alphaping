@@ -23,13 +23,11 @@
 <section class="metric-strip" aria-label="Service summary">
   <div>
     <span><Radio size={13} />Checks</span><strong>{service.checkCount}</strong>
-    <small>{service.checkCount === 1 ? "configured check" : "configured checks"}</small>
   </div>
   <div>
     <span><Gauge size={13} />Current latency</span><strong
       >{formatLatency(service.latencyMs)}</strong
     >
-    <small>latest completed result</small>
   </div>
   <div>
     <span><Clock3 size={13} />24 hour availability</span>
@@ -66,13 +64,13 @@
   .metric-strip {
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
-    padding: 18px 0;
+    padding: var(--space-5) 0;
     border-bottom: 1px solid var(--border);
   }
 
   .metric-strip > div {
     min-width: 0;
-    padding: 0 14px;
+    padding: 0 var(--space-4);
     border-right: 1px solid var(--border);
   }
 
@@ -93,76 +91,79 @@
 
   .metric-strip span {
     align-items: center;
-    gap: 5px;
+    gap: var(--space-1);
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: var(--text-xs);
   }
 
   .metric-strip strong {
-    margin-top: 6px;
+    margin-top: var(--space-2);
     overflow: hidden;
     font-family: var(--font-mono);
-    font-size: 15px;
+    font-size: var(--text-lg);
+    font-weight: 600;
     font-variant-numeric: tabular-nums;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .metric-strip small {
-    margin-top: 2px;
+    margin-top: var(--space-1);
     overflow: hidden;
     color: var(--text-faint);
     font-family: var(--font-mono);
-    font-size: 9px;
+    font-size: var(--text-xs);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .timeline {
-    padding-top: 20px;
+    padding-top: var(--space-5);
   }
 
   .timeline header {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 10px;
+    gap: var(--space-3);
+    margin-bottom: var(--space-2);
   }
 
   .timeline header > div {
     display: flex;
     align-items: baseline;
-    gap: 8px;
+    gap: var(--space-2);
   }
 
   .timeline h2 {
     margin: 0;
     font-size: 14px;
+    font-weight: 600;
   }
 
   .timeline header span,
   .timeline-labels {
     color: var(--text-faint);
-    font-size: 10px;
+    font-size: var(--text-xs);
   }
 
   .timeline header strong {
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--text-sm);
+    font-variant-numeric: tabular-nums;
   }
 
   .timeline-labels {
     display: flex;
     justify-content: space-between;
-    margin-top: 6px;
+    margin-top: var(--space-2);
     font-family: var(--font-mono);
   }
 
   @media (max-width: 860px) {
     .metric-strip {
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      row-gap: 18px;
+      row-gap: var(--space-5);
     }
 
     .metric-strip > div:nth-child(even) {
@@ -176,7 +177,7 @@
 
   @media (max-width: 420px) {
     .metric-strip > div {
-      padding: 0 10px;
+      padding: 0 var(--space-2);
     }
   }
 </style>

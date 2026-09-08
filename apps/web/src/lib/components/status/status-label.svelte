@@ -22,7 +22,12 @@
   };
 </script>
 
-<span class:compact class={`status status--${status}`} aria-label={`Status: ${labels[status]}`}>
+<span
+  class:compact
+  class={`status status--${status}`}
+  role="img"
+  aria-label={`Status: ${labels[status]}`}
+>
   {#if status === "healthy"}
     <Check size={12} strokeWidth={2.2} />
   {:else if status === "degraded"}
@@ -46,11 +51,11 @@
     display: inline-flex;
     height: 22px;
     align-items: center;
-    gap: 5px;
-    padding: 0 8px;
-    border-radius: 999px;
-    font-size: 11px;
-    font-weight: 650;
+    gap: var(--space-1);
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-pill);
+    font-size: var(--text-xs);
+    font-weight: 600;
     white-space: nowrap;
   }
 

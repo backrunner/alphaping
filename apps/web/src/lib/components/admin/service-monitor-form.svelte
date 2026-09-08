@@ -86,8 +86,8 @@
   section > header {
     display: flex;
     align-items: flex-start;
-    gap: 10px;
-    margin-bottom: 18px;
+    gap: var(--space-2);
+    margin-bottom: var(--space-5);
   }
   section > header > :global(svg) {
     color: var(--accent);
@@ -97,23 +97,24 @@
     margin: 0;
   }
   h2 {
-    margin-bottom: 3px;
-    font-size: 15px;
+    margin-bottom: var(--space-1);
+    font-size: 14px;
+    font-weight: 600;
   }
   header p {
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--text-sm);
   }
   form {
     display: grid;
-    gap: 13px;
+    gap: var(--space-3);
   }
   .segments {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 2px;
     padding: 2px;
-    border-radius: 6px;
+    border-radius: var(--radius-pill);
     background: var(--surface-subtle);
   }
   .segments button {
@@ -121,53 +122,61 @@
     height: 28px;
     align-items: center;
     justify-content: center;
-    gap: 6px;
+    gap: var(--space-2);
     border: 0;
-    border-radius: 5px;
+    border-radius: var(--radius-pill);
     color: var(--text-muted);
     background: transparent;
     font: inherit;
-    font-size: 10px;
+    font-size: var(--text-xs);
     cursor: pointer;
+    transition:
+      background-color 120ms ease,
+      color 120ms ease;
+  }
+  .segments button:hover {
+    color: var(--text);
   }
   .segments button.active {
     color: var(--text);
     background: var(--surface);
     box-shadow: 0 0 0 1px var(--border);
-    font-weight: 650;
+    font-weight: 620;
   }
   .identity {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-    gap: 10px;
+    gap: var(--space-2);
   }
   label > span {
     display: block;
-    margin-bottom: 5px;
+    margin-bottom: var(--space-1);
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: var(--text-xs);
     font-weight: 620;
   }
   input {
     width: 100%;
     min-height: 32px;
-    padding: 0 9px;
+    padding: 0 var(--space-2);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-control);
     color: var(--text);
     background: var(--surface);
     font: inherit;
+    font-size: var(--text-sm);
   }
   input:focus {
     border-color: var(--accent);
-    outline: 2px solid var(--focus-ring);
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
   }
   .form-error,
   .form-success {
     margin: 0;
-    padding: 8px 10px;
-    border-radius: 6px;
-    font-size: 11px;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-control);
+    font-size: var(--text-sm);
   }
   .form-error {
     color: var(--status-down);
@@ -180,6 +189,11 @@
   @media (max-width: 680px) {
     .identity {
       grid-template-columns: 1fr;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .segments button {
+      transition: none;
     }
   }
 </style>

@@ -81,26 +81,44 @@
 
 <style>
   .add-check {
-    margin-top: 18px;
-    padding-top: 14px;
+    margin-top: var(--space-5);
+    padding-top: var(--space-4);
     border-top: 1px solid var(--border);
   }
 
   summary {
     display: inline-flex;
+    height: 32px;
     align-items: center;
-    gap: 6px;
-    color: var(--accent);
-    font-size: 11px;
-    font-weight: 650;
+    gap: var(--space-2);
+    padding: 0 var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-button);
+    color: var(--text);
+    background: var(--surface);
+    font-size: var(--text-base);
+    font-weight: 600;
+    list-style: none;
     cursor: pointer;
+    transition:
+      border-color 120ms ease,
+      background-color 120ms ease;
+  }
+
+  summary::-webkit-details-marker {
+    display: none;
+  }
+
+  summary:hover {
+    border-color: var(--border-strong);
+    background: var(--surface-subtle);
   }
 
   form {
     display: grid;
     max-width: 760px;
-    gap: 13px;
-    margin-top: 14px;
+    gap: var(--space-3);
+    margin-top: var(--space-4);
   }
 
   .segments {
@@ -108,7 +126,7 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 2px;
     padding: 2px;
-    border-radius: 6px;
+    border-radius: var(--radius-pill);
     background: var(--surface-subtle);
   }
 
@@ -117,52 +135,61 @@
     height: 28px;
     align-items: center;
     justify-content: center;
-    gap: 6px;
+    gap: var(--space-2);
     border: 0;
-    border-radius: 5px;
+    border-radius: var(--radius-pill);
     color: var(--text-muted);
     background: transparent;
     font: inherit;
-    font-size: 10px;
+    font-size: var(--text-xs);
     cursor: pointer;
+    transition:
+      background-color 120ms ease,
+      color 120ms ease;
+  }
+
+  .segments button:hover {
+    color: var(--text);
   }
 
   .segments button.active {
     color: var(--text);
     background: var(--surface);
     box-shadow: 0 0 0 1px var(--border);
-    font-weight: 650;
+    font-weight: 620;
   }
 
   .check-name > span {
     display: block;
-    margin-bottom: 5px;
+    margin-bottom: var(--space-1);
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: var(--text-xs);
     font-weight: 620;
   }
 
   .check-name input {
     width: 100%;
     min-height: 32px;
-    padding: 0 9px;
+    padding: 0 var(--space-2);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-control);
     color: var(--text);
     background: var(--surface);
     font: inherit;
+    font-size: var(--text-sm);
   }
 
   .check-name input:focus {
     border-color: var(--accent);
-    outline: 2px solid var(--focus-ring);
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
   }
 
   .result {
     margin: 0;
-    padding: 8px 10px;
-    border-radius: 6px;
-    font-size: 10px;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-control);
+    font-size: var(--text-sm);
   }
 
   .result--error {
@@ -178,5 +205,12 @@
   footer {
     display: flex;
     justify-content: flex-end;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    summary,
+    .segments button {
+      transition: none;
+    }
   }
 </style>

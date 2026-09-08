@@ -190,28 +190,65 @@
 
 <style>
   section {
-    margin-top: 24px;
+    margin-top: var(--space-6);
+  }
+
+  header {
+    margin-bottom: var(--space-3);
+  }
+  header > div {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+  }
+  h2,
+  p {
+    margin: 0;
+  }
+  h2 {
+    font-size: 14px;
+    font-weight: 600;
+  }
+  header span {
+    color: var(--text-faint);
+    font-size: var(--text-xs);
   }
 
   .pagination {
     display: grid;
     grid-template-columns: 1fr auto 1fr;
     align-items: center;
-    margin-top: 12px;
-    color: var(--text-faint);
-    font-size: 10px;
+    margin-top: var(--space-3);
+    font-size: var(--text-xs);
   }
 
   .pagination a,
   .pagination span {
     display: inline-flex;
+    height: 32px;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-1);
+    padding: 0 var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-button);
   }
 
   .pagination a {
-    color: var(--accent);
+    color: var(--text);
+    background: var(--surface);
     text-decoration: none;
+    transition:
+      border-color 120ms ease,
+      background-color 120ms ease;
+  }
+
+  .pagination a:hover {
+    border-color: var(--border-strong);
+    background: var(--surface-subtle);
+  }
+
+  .pagination span {
+    color: var(--text-faint);
   }
 
   .pagination a:last-child,
@@ -223,37 +260,28 @@
     color: var(--text-muted);
     font-family: var(--font-mono);
     font-weight: 500;
+    font-variant-numeric: tabular-nums;
   }
-  header {
-    margin-bottom: 10px;
-  }
-  header > div {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-  }
-  h2,
-  p {
-    margin: 0;
-  }
-  h2 {
-    font-size: 14px;
-  }
-  header span {
-    color: var(--text-faint);
-    font-size: 10px;
-  }
+
   .table {
-    border-block: 1px solid var(--border);
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    background: var(--surface);
+    box-shadow: var(--shadow-card);
   }
   article {
     display: grid;
     grid-template-columns: 24px minmax(180px, 1fr) 130px 80px 80px;
     align-items: center;
-    gap: 10px;
+    gap: var(--space-2);
     min-height: 66px;
-    padding: 9px 0;
+    padding: var(--space-2) var(--space-3);
     border-top: 1px solid var(--border);
+    transition: background-color 120ms ease;
+  }
+  article:hover {
+    background: var(--surface-subtle);
   }
   article:first-child {
     border-top: 0;
@@ -274,42 +302,41 @@
   .main strong {
     display: flex;
     align-items: center;
-    gap: 5px;
-    font-size: 12px;
+    gap: var(--space-1);
+    font-size: var(--text-base);
+    font-weight: 620;
   }
   .main strong :global(svg) {
     flex: none;
     color: var(--status-down);
   }
   .main code {
-    margin-top: 3px;
+    margin-top: var(--space-1);
     color: var(--text-muted);
     font-family: var(--font-mono);
-    font-size: 9px;
-  }
-  .type,
-  .number,
-  .muted {
-    font-size: 10px;
+    font-size: var(--text-xs);
   }
   .type,
   .muted {
     color: var(--text-faint);
+    font-size: var(--text-xs);
   }
   .number {
     font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    font-variant-numeric: tabular-nums;
   }
   .detail {
     display: flex;
     grid-column: 2 / -1;
-    gap: 14px;
+    gap: var(--space-4);
     color: var(--text-faint);
-    font-size: 9px;
+    font-size: var(--text-xs);
   }
   .detail span {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-1);
   }
   .detail .failure {
     color: var(--status-down);
@@ -319,55 +346,66 @@
   }
   .policy summary {
     display: inline-flex;
+    height: 26px;
     align-items: center;
-    gap: 5px;
+    gap: var(--space-1);
     color: var(--accent);
-    font-size: 9px;
-    font-weight: 650;
+    font-size: var(--text-xs);
+    font-weight: 620;
     cursor: pointer;
+  }
+  .policy summary:hover {
+    color: var(--accent-hover);
   }
   .policy form {
     display: grid;
-    gap: 10px;
-    margin-top: 9px;
-    padding: 10px 0 2px;
+    gap: var(--space-3);
+    margin-top: var(--space-2);
+    padding: var(--space-3) 0 var(--space-1);
     border-top: 1px solid var(--border);
   }
   .policy__fields {
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 8px;
+    gap: var(--space-2);
   }
   .policy label > span {
     display: block;
-    margin-bottom: 4px;
+    margin-bottom: var(--space-1);
     color: var(--text-muted);
-    font-size: 9px;
+    font-size: var(--text-xs);
   }
   .policy input[type="number"] {
     width: 100%;
-    min-height: 30px;
-    padding: 0 8px;
+    min-height: 32px;
+    padding: 0 var(--space-2);
     border: 1px solid var(--border);
-    border-radius: 5px;
+    border-radius: var(--radius-control);
     color: var(--text);
     background: var(--surface);
     font: inherit;
-    font-size: 10px;
+    font-size: var(--text-sm);
+  }
+  .policy input[type="number"]:focus {
+    border-color: var(--accent);
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
   }
   .policy footer {
     display: flex;
     align-items: center;
-    gap: 14px;
+    gap: var(--space-4);
   }
   .policy .inline-check {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-2);
+    color: var(--text-muted);
+    font-size: var(--text-sm);
   }
   .policy .inline-check input {
-    width: 13px;
-    height: 13px;
+    width: 14px;
+    height: 14px;
   }
   .policy .inline-check span {
     margin: 0;
@@ -376,16 +414,23 @@
     display: inline-flex;
     height: 28px;
     align-items: center;
-    gap: 5px;
+    gap: var(--space-1);
     margin-left: auto;
-    padding: 0 9px;
+    padding: 0 var(--space-2);
     border: 1px solid var(--border);
-    border-radius: 5px;
+    border-radius: var(--radius-button);
     color: var(--text);
     background: var(--surface);
     font: inherit;
-    font-size: 10px;
+    font-size: var(--text-xs);
     cursor: pointer;
+    transition:
+      border-color 120ms ease,
+      background-color 120ms ease;
+  }
+  .policy button:hover {
+    border-color: var(--border-strong);
+    background: var(--surface-subtle);
   }
   .policy button.delete {
     margin-left: auto;
@@ -397,15 +442,15 @@
   .policy__message {
     margin: 0;
     color: var(--status-healthy);
-    font-size: 9px;
+    font-size: var(--text-xs);
   }
   .policy__message--error {
     color: var(--status-down);
   }
   section > p {
-    margin-top: 3px;
+    margin-top: var(--space-1);
     color: var(--text-faint);
-    font-size: 10px;
+    font-size: var(--text-xs);
   }
   section > p.section-message {
     color: var(--status-healthy);
@@ -421,7 +466,7 @@
     .detail {
       grid-column: 2 / -1;
       flex-wrap: wrap;
-      gap: 6px 12px;
+      gap: var(--space-2) var(--space-3);
     }
     .policy__fields {
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -434,7 +479,7 @@
     .policy footer {
       align-items: flex-start;
       flex-direction: column;
-      gap: 8px;
+      gap: var(--space-2);
     }
     .policy button {
       width: 100%;
@@ -443,6 +488,13 @@
     }
     .policy button.delete {
       margin-left: 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    article,
+    .policy button,
+    .pagination a {
+      transition: none;
     }
   }
 </style>

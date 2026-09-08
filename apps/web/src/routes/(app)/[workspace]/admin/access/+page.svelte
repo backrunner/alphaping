@@ -32,16 +32,16 @@
 <style>
   .access-page {
     display: grid;
-    gap: 24px;
-    padding-bottom: 40px;
+    gap: var(--space-6);
+    padding-bottom: var(--space-8);
   }
 
   .action-error {
     margin: 0;
-    padding: 8px 10px;
-    border-radius: 6px;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-control);
     color: var(--status-down);
     background: var(--status-down-bg);
-    font-size: 11px;
+    font-size: var(--text-sm);
   }
 </style>

@@ -52,28 +52,35 @@
 
 <style>
   .service-table {
-    border-block: 1px solid var(--border);
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    background: var(--surface);
+    box-shadow: var(--shadow-card);
   }
 
   .table-head,
   .service-row {
     display: grid;
-    grid-template-columns: minmax(140px, 1.2fr) 110px 80px 70px 90px minmax(280px, 2fr);
+    grid-template-columns: minmax(140px, 1.2fr) 110px 80px 70px 96px minmax(280px, 2fr);
     align-items: center;
-    gap: 12px;
+    gap: var(--space-3);
+    padding: 0 var(--space-3);
   }
 
   .table-head {
-    height: 32px;
+    height: 34px;
     color: var(--text-faint);
-    font-size: 10px;
+    background: var(--surface-subtle);
+    font-size: var(--text-xs);
     font-weight: 620;
   }
 
   .service-row {
-    min-height: 54px;
+    min-height: 56px;
     border-top: 1px solid var(--border);
     color: var(--text);
+    transition: background-color 120ms ease;
   }
 
   .service-row:hover {
@@ -98,7 +105,8 @@
 
   .identity strong {
     overflow: hidden;
-    font-size: 12px;
+    font-size: var(--text-base);
+    font-weight: 620;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -106,12 +114,12 @@
   .identity small,
   .muted {
     color: var(--text-faint);
-    font-size: 10px;
+    font-size: var(--text-xs);
   }
 
   .number {
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--text-sm);
     font-variant-numeric: tabular-nums;
   }
 
@@ -127,8 +135,12 @@
 
     .service-row {
       grid-template-columns: 1fr auto auto;
-      gap: 8px;
-      padding: 10px 0;
+      gap: var(--space-2);
+      padding: var(--space-2) var(--space-3);
+    }
+
+    .service-row:first-child {
+      border-top: 0;
     }
 
     .service-row > :nth-child(4),
@@ -138,6 +150,12 @@
 
     .timeline {
       grid-column: 1 / -1;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .service-row {
+      transition: none;
     }
   }
 </style>

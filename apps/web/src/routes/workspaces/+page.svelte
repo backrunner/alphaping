@@ -40,7 +40,7 @@
     <header>
       <div>
         <h1 id="workspace-heading">Workspaces</h1>
-        <p>Select an operations workspace or recover one pending deletion.</p>
+        <p>Select a workspace or recover one pending deletion.</p>
       </div>
       <div class="workspace-count">
         <span
@@ -146,9 +146,9 @@
 
 <style>
   main {
-    width: min(100% - 24px, 780px);
+    width: min(100% - 24px, var(--content-form));
     margin: 0 auto;
-    padding: 22px 0 48px;
+    padding: var(--space-6) 0 var(--space-8);
   }
 
   .page-header,
@@ -164,12 +164,12 @@
 
   .page-header {
     justify-content: space-between;
-    padding-bottom: 18px;
+    padding-bottom: var(--space-4);
     border-bottom: 1px solid var(--border);
   }
 
   .brand {
-    gap: 9px;
+    gap: var(--space-2);
   }
 
   .brand > span {
@@ -177,26 +177,27 @@
     width: 26px;
     height: 26px;
     place-items: center;
-    border-radius: 5px;
+    border-radius: var(--radius-button);
     color: var(--accent-ink);
     background: var(--accent);
     font-family: var(--font-mono);
+    font-size: var(--text-sm);
     font-weight: 750;
   }
 
   .brand strong {
-    font-size: 13px;
+    font-size: var(--text-base);
   }
 
   .workspace-list {
-    padding-top: 28px;
+    padding-top: var(--space-6);
   }
 
   .workspace-list > header {
     align-items: flex-start;
     justify-content: space-between;
-    gap: 16px;
-    margin-bottom: 14px;
+    gap: var(--space-4);
+    margin-bottom: var(--space-4);
   }
 
   h1,
@@ -205,7 +206,9 @@
   }
 
   h1 {
-    font-size: 22px;
+    font-size: var(--text-xl);
+    font-weight: 600;
+    line-height: var(--leading-xl);
   }
 
   .workspace-list header p,
@@ -214,13 +217,23 @@
   .recovery > span,
   .empty {
     color: var(--text-muted);
-    font-size: 10px;
+  }
+
+  .workspace-list header p {
+    margin-top: var(--space-1);
+    font-size: var(--text-sm);
+    line-height: var(--leading-sm);
   }
 
   .workspace-count {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: var(--space-3);
+  }
+
+  .workspace-count > span {
+    font-size: var(--text-xs);
+    white-space: nowrap;
   }
 
   .create-workspace {
@@ -229,18 +242,27 @@
 
   .create-workspace summary {
     display: inline-flex;
-    height: 30px;
+    height: 32px;
     align-items: center;
-    gap: 5px;
-    padding: 0 9px;
+    gap: var(--space-2);
+    padding: 0 var(--space-3);
     border: 1px solid var(--border);
-    border-radius: 5px;
+    border-radius: var(--radius-button);
     color: var(--text);
     background: var(--surface);
-    font-size: 10px;
-    font-weight: 650;
+    font-size: var(--text-base);
+    font-weight: 600;
     list-style: none;
     cursor: pointer;
+    transition:
+      background-color 140ms ease,
+      border-color 140ms ease;
+  }
+
+  .create-workspace summary:hover,
+  .create-workspace[open] summary {
+    border-color: var(--border-strong);
+    background: var(--surface-subtle);
   }
 
   .create-workspace summary::-webkit-details-marker {
@@ -249,23 +271,23 @@
 
   .create-workspace form {
     position: absolute;
-    z-index: 4;
-    top: 36px;
+    z-index: var(--z-popover);
+    top: calc(100% + var(--space-2));
     right: 0;
     display: grid;
-    width: min(520px, calc(100vw - 24px));
-    gap: 12px;
-    padding: 14px;
-    border: 1px solid var(--border-strong);
-    border-radius: 6px;
+    width: min(480px, calc(100vw - 24px));
+    gap: var(--space-3);
+    padding: var(--space-4);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-panel);
     background: var(--surface);
-    box-shadow: 0 12px 32px color-mix(in srgb, var(--text) 12%, transparent);
+    box-shadow: var(--shadow-popover);
   }
 
   .create-fields {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
+    gap: var(--space-3);
   }
 
   .create-fields label:first-child {
@@ -274,46 +296,44 @@
 
   .create-fields span {
     display: block;
-    margin-bottom: 4px;
+    margin-bottom: var(--space-1);
     color: var(--text-muted);
-    font-size: 9px;
+    font-size: var(--text-xs);
+    font-weight: 600;
   }
 
   .create-fields input,
   .create-fields select {
     width: 100%;
     height: 32px;
-    padding: 0 8px;
+    padding: 0 var(--space-3);
     border: 1px solid var(--border);
-    border-radius: 5px;
+    border-radius: var(--radius-control);
     color: var(--text);
     background: var(--surface);
     font: inherit;
-    font-size: 10px;
   }
 
   .create-workspace form > :global(button) {
     justify-self: end;
   }
 
-  .workspace-list header p {
-    margin-top: 4px;
-    font-size: 11px;
-  }
-
   .rows {
-    border-block: 1px solid var(--border);
-  }
-
-  article {
-    min-height: 64px;
-    gap: 11px;
-    padding: 10px 0;
     border-top: 1px solid var(--border);
   }
 
-  article:first-child {
-    border-top: 0;
+  article {
+    min-height: 60px;
+    gap: var(--space-3);
+    margin: 0 calc(-1 * var(--space-3));
+    padding: var(--space-3);
+    border-bottom: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    transition: background-color 140ms ease;
+  }
+
+  article:hover {
+    background: var(--surface-subtle);
   }
 
   article > :global(svg) {
@@ -321,8 +341,9 @@
     color: var(--text-faint);
   }
 
-  article.deleted {
-    background: color-mix(in srgb, var(--status-down-bg) 32%, transparent);
+  article.deleted,
+  article.deleted:hover {
+    background: color-mix(in srgb, var(--status-down-bg) 40%, transparent);
   }
 
   .identity {
@@ -337,60 +358,70 @@
 
   .identity strong {
     overflow: hidden;
-    font-size: 12px;
+    font-size: var(--text-base);
+    font-weight: 600;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .identity span {
-    margin-top: 2px;
+    margin-top: var(--space-1);
     font-family: var(--font-mono);
+    font-size: var(--text-xs);
   }
 
   article > a {
-    gap: 5px;
+    flex: none;
+    gap: var(--space-1);
     color: var(--accent);
-    font-size: 10px;
-    font-weight: 650;
+    font-size: var(--text-sm);
+    font-weight: 600;
     text-decoration: none;
   }
 
+  article > a:hover {
+    text-decoration: underline;
+  }
+
   .recovery {
-    gap: 12px;
+    gap: var(--space-3);
   }
 
   .recovery > span {
-    gap: 5px;
+    gap: var(--space-1);
+    font-size: var(--text-xs);
   }
 
   .error {
-    margin-bottom: 10px;
-    padding: 8px 10px;
-    border-radius: 6px;
+    margin-bottom: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-button);
     color: var(--status-down);
     background: var(--status-down-bg);
-    font-size: 10px;
+    font-size: var(--text-sm);
+    line-height: var(--leading-sm);
   }
 
   .empty {
-    padding: 18px 0;
+    padding: var(--space-5) var(--space-3);
+    font-size: var(--text-sm);
   }
 
   .pagination {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
-    padding-top: 12px;
+    gap: var(--space-3);
+    padding-top: var(--space-3);
     color: var(--text-faint);
-    font-size: 10px;
+    font-size: var(--text-xs);
   }
 
   .pagination a,
   .pagination span {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-1);
   }
 
   .pagination a {
@@ -401,8 +432,9 @@
   .pagination strong {
     color: var(--text-muted);
     font-family: var(--font-mono);
-    font-size: 9px;
+    font-size: var(--text-xs);
     font-weight: 500;
+    font-variant-numeric: tabular-nums;
   }
 
   @media (max-width: 560px) {
@@ -441,7 +473,7 @@
     }
 
     .identity {
-      width: calc(100% - 32px);
+      width: calc(100% - 17px - var(--space-3));
       flex: none;
     }
 
@@ -449,13 +481,13 @@
     .recovery {
       width: 100%;
       justify-content: flex-end;
-      padding-left: 28px;
+      padding-left: calc(17px + var(--space-3));
     }
 
     .recovery {
       align-items: flex-end;
       flex-direction: column;
-      gap: 7px;
+      gap: var(--space-2);
     }
   }
 </style>

@@ -60,53 +60,60 @@
 
 <style>
   details {
-    padding-block: 8px;
+    padding-block: var(--space-2);
     border-bottom: 1px solid var(--border);
   }
   summary {
     color: var(--text-muted);
-    font-size: 10px;
-    font-weight: 650;
+    font-size: var(--text-sm);
+    font-weight: 620;
     cursor: pointer;
   }
+  summary:hover {
+    color: var(--text);
+  }
   details[open] summary {
-    margin-bottom: 12px;
+    margin-bottom: var(--space-3);
   }
   div {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 10px;
+    gap: var(--space-2);
   }
   label > span {
     display: block;
-    margin-bottom: 5px;
+    margin-bottom: var(--space-1);
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: var(--text-xs);
     font-weight: 620;
   }
   input {
     width: 100%;
     min-height: 32px;
-    padding: 0 9px;
+    padding: 0 var(--space-2);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-control);
     color: var(--text);
     background: var(--surface);
     font: inherit;
+    font-size: var(--text-sm);
   }
   input:focus {
     border-color: var(--accent);
-    outline: 2px solid var(--focus-ring);
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
   }
   .inline-check {
     display: inline-flex;
     min-height: 32px;
     align-items: center;
-    gap: 7px;
+    gap: var(--space-2);
+    color: var(--text-muted);
+    font-size: var(--text-sm);
   }
   .inline-check input {
-    width: 13px;
-    min-height: 13px;
+    width: 14px;
+    min-height: 14px;
   }
   .inline-check span {
     margin: 0;

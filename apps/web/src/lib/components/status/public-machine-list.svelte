@@ -1,287 +1,183 @@
 <script lang="ts">
-  import {
-    ArrowRight,
-    Box,
-    ChevronDown,
-    ChevronUp,
-    Cpu,
-    HardDrive,
-    MemoryStick,
-    Network,
-  } from "@lucide/svelte";
+  import { ArrowUpRight, Search, Server } from "@lucide/svelte";
   import type { PublicStatusMachine } from "@alphaping/db";
-
-  import StatusLabel from "$components/status/status-label.svelte";
-  import { formatBytes, formatPercent, formatRate, formatRelativeTime } from "$lib/utils/format";
-
+  import PublicMachineCard from "./public-machine-card.svelte";
   let {
     machines,
     workspaceSlug,
   }: { machines: readonly PublicStatusMachine[]; workspaceSlug: string } = $props();
-  const previewSize = 25;
-  let expanded = $state(false);
-  const visibleMachines = $derived(expanded ? machines : machines.slice(0, previewSize));
+  let query = $state("");
+  const filtered = $derived(
+    machines.filter((machine) =>
+      `${machine.name} ${machine.description}`.toLowerCase().includes(query.trim().toLowerCase()),
+    ),
+  );
+  const visible = $derived(filtered.slice(0, 12));
 </script>
 
-{#if machines.length > 0}
-  <section aria-labelledby="public-machines-title">
-    <header>
-      <div>
-        <h2 id="public-machines-title">Infrastructure</h2>
-        <p>{machines.length} published machines</p>
-      </div>
-      <a href={`/status/${workspaceSlug}/machines`}>View all machines<ArrowRight size={13} /></a>
-    </header>
-    <div class="machine-list">
-      {#each visibleMachines as machine}
-        <article>
-          <div class="machine-main">
-            <div class="machine-name">
-              <a href={`/status/${workspaceSlug}/machines/${machine.slug}`}
-                ><strong>{machine.name}</strong></a
-              >{#if machine.description}<span>{machine.description}</span>{/if}
-            </div>
-            <StatusLabel status={machine.state} />
-            <span class="observed">{formatRelativeTime(machine.observedAt)}</span>
-          </div>
-          {#if machine.cpuPermille !== null}
-            <div class="metrics">
-              <span
-                ><Cpu size={12} /><small>CPU</small><strong
-                  >{formatPercent(machine.cpuPermille)}</strong
-                ></span
-              >
-              <span
-                ><MemoryStick size={12} /><small>Memory</small><strong
-                  >{formatBytes(machine.memoryUsedBytes ?? 0)} / {formatBytes(
-                    machine.memoryTotalBytes ?? 0,
-                  )}</strong
-                ></span
-              >
-              <span
-                ><HardDrive size={12} /><small>Storage</small><strong
-                  >{formatBytes(machine.storageUsedBytes ?? 0)} / {formatBytes(
-                    machine.storageTotalBytes ?? 0,
-                  )}</strong
-                ></span
-              >
-              <span
-                ><Network size={12} /><small>Down / up</small><strong
-                  >{formatRate(machine.networkRxBps ?? 0)} / {formatRate(
-                    machine.networkTxBps ?? 0,
-                  )}</strong
-                ></span
-              >
-            </div>
-          {/if}
-          {#if machine.containers.length > 0}
-            <div class="containers" aria-label={`Published containers on ${machine.name}`}>
-              {#each machine.containers as container}
-                <span
-                  ><Box size={11} /><strong>{container.name}</strong><small
-                    >{container.state}{container.health !== "none"
-                      ? ` · ${container.health}`
-                      : ""}</small
-                  >{#if container.cpuPermille !== null}<em
-                      >{formatPercent(container.cpuPermille)} · {formatBytes(
-                        container.memoryUsedBytes ?? 0,
-                      )}</em
-                    >{/if}</span
-                >
-              {/each}
-            </div>
-          {/if}
-        </article>
-      {/each}
+<section aria-labelledby="public-machines-title">
+  <header>
+    <div>
+      <h2 id="public-machines-title">Machines <span>{machines.length}</span></h2>
     </div>
-    {#if machines.length > previewSize}
-      <button
-        class="machine-toggle"
-        type="button"
-        aria-expanded={expanded}
-        onclick={() => (expanded = !expanded)}
+    <a class="all-link" href={`/status/${workspaceSlug}/machines`}
+      >View all<ArrowUpRight size={15} /></a
+    >
+  </header>
+  {#if machines.length > 0}
+    <label class="search"
+      ><Search size={15} /><input
+        type="search"
+        aria-label="Find a public machine"
+        placeholder="Find a machine…"
+        bind:value={query}
+      /><span>{filtered.length} found</span></label
+    >
+    <div class="machine-grid">
+      {#each visible as machine (machine.slug)}<PublicMachineCard
+          {machine}
+          {workspaceSlug}
+        />{/each}
+    </div>
+    {#if filtered.length === 0}<div class="empty">
+        <Search size={22} /><strong>No machines match your search</strong><span
+          >Try a different name.</span
+        ><button type="button" onclick={() => (query = "")}>Clear search</button>
+      </div>{/if}
+    {#if filtered.length > visible.length}<a
+        class="more"
+        href={`/status/${workspaceSlug}/machines?q=${encodeURIComponent(query)}`}
+        >View all {filtered.length} machines<ArrowUpRight size={15} /></a
+      >{/if}
+  {:else}<div class="empty">
+      <Server size={24} /><strong>No machines shared yet</strong><span
+        >Published machines will appear here.</span
       >
-        {#if expanded}<ChevronUp size={13} />Show first {previewSize}{:else}<ChevronDown
-            size={13}
-          />Show all {machines.length} machines{/if}
-      </button>
-    {/if}
-  </section>
-{/if}
+    </div>{/if}
+</section>
 
 <style>
   section {
-    margin-top: 26px;
+    margin: 36px 0;
+    scroll-margin-top: 24px;
   }
-
   header {
     display: flex;
-    align-items: flex-end;
+    align-items: center;
     justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 10px;
+    gap: 16px;
+    margin-bottom: 20px;
   }
-
-  header a {
-    display: inline-flex;
-    min-height: 28px;
-    align-items: center;
-    gap: 5px;
-    color: var(--accent);
-    font-size: 11px;
-    font-weight: 650;
-    text-decoration: none;
-  }
-
-  header a:hover {
-    color: var(--accent-hover);
-  }
-
-  h2,
-  p {
-    margin: 0;
-  }
-
   h2 {
-    font-size: 14px;
-  }
-
-  p {
-    margin-top: 2px;
-    color: var(--text-muted);
-    font-size: 10px;
-  }
-
-  .machine-list {
-    border-top: 1px solid var(--border);
-  }
-
-  .machine-toggle {
-    display: inline-flex;
-    height: 30px;
-    align-items: center;
-    gap: 5px;
-    margin-top: 9px;
-    padding: 0;
-    border: 0;
-    color: var(--accent);
-    background: transparent;
-    font: inherit;
-    font-size: 10px;
-    font-weight: 650;
-    cursor: pointer;
-  }
-
-  article {
-    padding: 11px 0;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .machine-main {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto 64px;
+    display: flex;
     align-items: center;
     gap: 10px;
-  }
-
-  .machine-name strong,
-  .machine-name span {
-    display: block;
-  }
-
-  .machine-name strong {
-    font-size: 12px;
-  }
-
-  .machine-name span,
-  .observed {
-    margin-top: 2px;
-    color: var(--text-muted);
-    font-size: 9px;
-  }
-
-  .observed {
-    text-align: right;
-  }
-
-  .metrics {
-    display: grid;
-    grid-template-columns: 0.7fr 1.2fr 1.2fr 1.5fr;
-    gap: 12px;
-    margin-top: 10px;
-    padding-top: 9px;
-    border-top: 1px solid var(--surface-strong);
-  }
-
-  .metrics > span {
-    display: grid;
-    grid-template-columns: 14px 1fr;
-    align-items: center;
-    column-gap: 4px;
-  }
-
-  .metrics :global(svg) {
-    color: var(--text-faint);
-  }
-
-  .metrics small {
-    color: var(--text-muted);
-    font-size: 9px;
-  }
-
-  .metrics strong {
-    grid-column: 2;
-    margin-top: 2px;
-    font-family: var(--font-mono);
-    font-size: 10px;
+    margin: 0;
+    font-size: 22px;
     font-weight: 600;
   }
-
-  .containers {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 5px;
-    margin-top: 9px;
-  }
-
-  .containers > span {
-    display: inline-flex;
-    height: 24px;
-    align-items: center;
-    gap: 5px;
+  h2 span {
+    display: grid;
+    place-items: center;
+    min-width: 28px;
+    height: 26px;
     padding: 0 7px;
-    border-radius: 999px;
-    color: var(--text-muted);
-    background: var(--surface-subtle);
-    font-size: 9px;
+    background: transparent;
+    color: var(--text-faint);
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
   }
-
-  .containers strong {
+  .all-link,
+  .more {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--accent);
+    font-size: 12px;
+    text-decoration: none;
+    min-height: 32px;
+  }
+  .all-link:hover,
+  .more:hover {
+    text-decoration: underline;
+  }
+  .search {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 0 16px;
+    height: 44px;
+    margin-bottom: 20px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-control);
+    color: var(--text-faint);
+    background: var(--surface);
+  }
+  .search:focus-within {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+  .search input {
+    min-width: 0;
+    flex: 1;
+    border: 0;
+    outline: 0;
+    background: transparent;
     color: var(--text);
+    font-size: 13px;
   }
-
-  .containers small,
-  .containers em {
-    font-size: 9px;
-    font-style: normal;
+  .search > span {
+    font-size: 11px;
   }
-
-  .containers em {
-    font-family: var(--font-mono);
+  .machine-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
   }
-
-  @media (max-width: 680px) {
-    .metrics {
-      grid-template-columns: 1fr 1fr;
+  .empty {
+    display: grid;
+    justify-items: center;
+    gap: 10px;
+    padding: 40px 20px;
+    border: 1px dashed var(--border-strong);
+    border-radius: 18px;
+    color: var(--text-muted);
+    font-size: 13px;
+  }
+  .empty strong {
+    color: var(--text);
+    font-size: 15px;
+  }
+  .empty button {
+    margin-top: 6px;
+    padding: 8px 14px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    color: var(--accent);
+    cursor: pointer;
+  }
+  .more {
+    justify-content: center;
+    margin-top: 20px;
+  }
+  :global([data-density="compact"]) .machine-grid {
+    gap: 12px;
+  }
+  @media (max-width: 1000px) {
+    .machine-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
-
-    .machine-main {
-      grid-template-columns: minmax(0, 1fr) auto;
+  }
+  @media (max-width: 620px) {
+    .machine-grid {
+      grid-template-columns: 1fr;
+      gap: 16px;
     }
-
-    .observed {
-      grid-column: 1 / -1;
-      text-align: left;
+    h2 {
+      font-size: 22px;
     }
   }
 </style>

@@ -32,39 +32,37 @@
   .metric {
     display: block;
     min-width: 0;
-    border-radius: 4px;
+    border-radius: var(--radius-button);
     color: inherit;
     text-decoration: none;
+    transition: background-color 120ms ease;
   }
 
   a.metric:hover {
     background: var(--surface-subtle);
   }
 
-  a.metric:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-  }
-
   .metric__label {
     display: block;
-    margin-bottom: 4px;
+    margin-bottom: var(--space-1);
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--text-xs);
   }
 
   .metric__value {
     color: var(--text);
     font-family: var(--font-mono);
-    font-size: 18px;
-    font-weight: 620;
+    font-size: 22px;
+    font-weight: 600;
     font-variant-numeric: tabular-nums;
+    line-height: var(--leading-xl);
   }
 
   .metric__detail {
-    margin-left: 5px;
+    display: block;
+    margin-top: 4px;
     color: var(--text-faint);
-    font-size: 11px;
+    font-size: var(--text-xs);
     white-space: nowrap;
   }
 

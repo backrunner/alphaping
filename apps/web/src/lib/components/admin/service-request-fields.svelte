@@ -31,14 +31,12 @@
         ><span>Request headers</span><textarea
           name="requestHeaders"
           rows="3"
-          placeholder="Accept: application/json"
-        ></textarea></label
+          placeholder="Accept: application/json"></textarea></label
       ><label
         ><span>Secret request headers</span><textarea
           name="secretRequestHeaders"
           rows="3"
-          placeholder="Authorization: Bearer ..."
-        ></textarea></label
+          placeholder="Authorization: Bearer ..."></textarea></label
       >
     </div>
     <label
@@ -125,26 +123,30 @@
 
 <style>
   details {
-    padding-block: 8px;
+    padding-block: var(--space-2);
     border-block: 1px solid var(--border);
   }
 
   summary {
     color: var(--text-muted);
-    font-size: 10px;
-    font-weight: 650;
+    font-size: var(--text-sm);
+    font-weight: 620;
     cursor: pointer;
   }
 
+  summary:hover {
+    color: var(--text);
+  }
+
   details[open] summary {
-    margin-bottom: 12px;
+    margin-bottom: var(--space-3);
   }
 
   .fields,
   .assertions,
   .assertion {
     display: grid;
-    gap: 10px;
+    gap: var(--space-2);
   }
 
   .fields.two {
@@ -152,8 +154,7 @@
   }
 
   .assertions {
-    gap: 8px;
-    padding-top: 6px;
+    padding-top: var(--space-1);
   }
 
   .assertions__header,
@@ -161,13 +162,13 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
+    gap: var(--space-2);
   }
 
   .assertions__header {
     color: var(--text-muted);
-    font-size: 10px;
-    font-weight: 650;
+    font-size: var(--text-xs);
+    font-weight: 620;
   }
 
   .assertions button,
@@ -176,8 +177,13 @@
     color: var(--accent);
     background: transparent;
     font: inherit;
-    font-size: 10px;
+    font-size: var(--text-xs);
     cursor: pointer;
+  }
+
+  .assertions button:hover,
+  .assertion__footer button:hover {
+    color: var(--accent-hover);
   }
 
   .assertions button:disabled {
@@ -186,9 +192,9 @@
   }
 
   .assertion {
-    padding: 10px;
+    padding: var(--space-2) var(--space-3);
     border: 1px solid var(--border);
-    border-radius: 5px;
+    border-radius: var(--radius-control);
     background: var(--surface-subtle);
   }
 
@@ -203,20 +209,20 @@
   .empty {
     margin: 0;
     color: var(--text-faint);
-    font-size: 10px;
+    font-size: var(--text-xs);
   }
 
   .inline-check {
     display: inline-flex;
     align-items: center;
-    gap: 7px;
+    gap: var(--space-2);
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: var(--text-sm);
   }
 
   .inline-check input {
-    width: 13px;
-    min-height: 13px;
+    width: 14px;
+    min-height: 14px;
   }
 
   .inline-check span {
@@ -225,9 +231,9 @@
 
   label > span {
     display: block;
-    margin-bottom: 5px;
+    margin-bottom: var(--space-1);
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: var(--text-xs);
     font-weight: 620;
   }
 
@@ -236,16 +242,17 @@
   textarea {
     width: 100%;
     min-height: 32px;
-    padding: 0 9px;
+    padding: 0 var(--space-2);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-control);
     color: var(--text);
     background: var(--surface);
     font: inherit;
+    font-size: var(--text-sm);
   }
 
   textarea {
-    padding-block: 7px;
+    padding-block: var(--space-2);
     resize: vertical;
   }
 
@@ -253,21 +260,22 @@
   select:focus,
   textarea:focus {
     border-color: var(--accent);
-    outline: 2px solid var(--focus-ring);
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
   }
 
   label small {
     display: flex;
     align-items: center;
-    gap: 6px;
-    margin-top: 5px;
+    gap: var(--space-2);
+    margin-top: var(--space-1);
     color: var(--text-faint);
-    font-size: 9px;
+    font-size: var(--text-xs);
   }
 
   label small input {
-    width: 13px;
-    min-height: 13px;
+    width: 14px;
+    min-height: 14px;
   }
 
   @media (max-width: 680px) {

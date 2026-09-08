@@ -56,8 +56,8 @@
 
 <style>
   .deleted {
-    margin-top: 28px;
-    padding-top: 20px;
+    margin-top: var(--space-8);
+    padding-top: var(--space-5);
     border-top: 1px solid var(--border);
   }
 
@@ -69,8 +69,8 @@
 
   header {
     align-items: flex-start;
-    gap: 9px;
-    margin-bottom: 12px;
+    gap: var(--space-2);
+    margin-bottom: var(--space-3);
   }
 
   header > :global(svg) {
@@ -84,22 +84,32 @@
 
   h2 {
     font-size: 14px;
+    font-weight: 600;
   }
 
-  header p,
-  time {
+  header p {
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: var(--text-sm);
   }
 
   .rows {
-    border-block: 1px solid var(--border);
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    background: var(--surface);
+    box-shadow: var(--shadow-card);
   }
 
   .row {
-    min-height: 46px;
-    gap: 12px;
+    min-height: 48px;
+    gap: var(--space-3);
+    padding: 0 var(--space-3);
     border-top: 1px solid var(--border);
+    transition: background-color 120ms ease;
+  }
+
+  .row:hover {
+    background: var(--surface-subtle);
   }
 
   .row:first-child {
@@ -109,27 +119,31 @@
   .row > span {
     width: 56px;
     color: var(--text-faint);
-    font-size: 9px;
-    text-transform: uppercase;
+    font-size: var(--text-xs);
+    text-transform: capitalize;
   }
 
   .row strong {
     min-width: 0;
     overflow: hidden;
     flex: 1;
-    font-size: 11px;
+    font-size: var(--text-sm);
+    font-weight: 620;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .row time {
+    color: var(--text-muted);
     font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
   }
 
   .feedback {
-    margin-bottom: 8px;
+    margin-bottom: var(--space-2);
     color: var(--status-healthy);
-    font-size: 10px;
+    font-size: var(--text-sm);
   }
 
   .feedback--error {
@@ -140,8 +154,8 @@
     .row {
       display: grid;
       grid-template-columns: auto minmax(0, 1fr) auto;
-      gap: 4px 9px;
-      padding-block: 8px;
+      gap: var(--space-1) var(--space-2);
+      padding-block: var(--space-2);
     }
 
     .row > span {
@@ -156,6 +170,12 @@
     .row form {
       grid-column: 3;
       grid-row: 1 / span 2;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .row {
+      transition: none;
     }
   }
 </style>
