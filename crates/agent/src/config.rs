@@ -281,7 +281,7 @@ fn decode_stored_config(stored: &[u8]) -> Result<(Vec<u8>, bool)> {
         return Ok((stored.to_vec(), true));
     }
     let protected = STANDARD
-        .decode(&stored[PREFIX.len()..])
+        .decode(stored[PREFIX.len()..].trim_ascii_end())
         .context("DPAPI config encoding is invalid")?;
     Ok((dpapi_unprotect(&protected)?, false))
 }

@@ -57,3 +57,31 @@ fn keychain_config_redacts_inline_credentials() {
     assert!(!serialized.contains(&hex::encode([3; 32])));
     assert_eq!(stored.nonce_prefix_hex, hex::encode([2; 4]));
 }
+
+#[cfg(windows)]
+#[test]
+fn protected_config_reloads_with_lf_crlf_or_no_final_newline() {
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let path = directory.path().join("agent.toml");
+    let mut original = config();
+    original.transport_sequence_checkpoint = 1_024;
+    original.save(&path).expect("protect config");
+    let stored = std::fs::read(&path).expect("read protected config");
+    assert!(stored.starts_with(b"ALPHAPING-DPAPI-1\n"));
+    assert!(stored.ends_with(b"\n"));
+
+    for ending in [b"\n".as_slice(), b"\r\n", b""] {
+        let mut encoded = stored.trim_ascii_end().to_vec();
+        encoded.extend_from_slice(ending);
+        std::fs::write(&path, &encoded).expect("write newline variant");
+        let recovered = AgentConfig::load(&path).expect("reload protected config");
+        assert_eq!(recovered.transport_sequence_checkpoint, 1_024);
+        assert_eq!(recovered.data_key().expect("data key"), [1; 32]);
+        assert_eq!(recovered.identity_private_key().expect("identity"), [3; 32]);
+    }
+
+    let mut corrupt = stored;
+    corrupt[b"ALPHAPING-DPAPI-1\n".len()] = b'!';
+    std::fs::write(&path, corrupt).expect("write corrupt config");
+    assert!(AgentConfig::load(&path).is_err());
+}
