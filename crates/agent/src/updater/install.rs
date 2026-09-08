@@ -1,13 +1,31 @@
-use std::{fs, io::Write, path::Path};
+use std::{fs, io::Write, path::Path, process::Stdio};
 
 use anyhow::{Context, Result, bail};
 use tokio::{
-    process::Command,
+    process::{Child, Command},
     time::{Duration, timeout},
 };
 use uuid::Uuid;
 
 const CANDIDATE_CHECK_TIMEOUT: Duration = Duration::from_secs(30);
+
+async fn spawn_candidate(command: &mut Command) -> std::io::Result<Child> {
+    // A concurrent fork can briefly retain an inherited writer even after the
+    // parent closes the candidate file. Only retry the OS executable-busy error;
+    // callers also keep the existing deadline around spawning and health checks.
+    let mut retries = 0;
+    loop {
+        match command.spawn() {
+            Err(error)
+                if error.kind() == std::io::ErrorKind::ExecutableFileBusy && retries < 10 =>
+            {
+                retries += 1;
+                tokio::time::sleep(Duration::from_millis(25)).await;
+            }
+            result => return result,
+        }
+    }
+}
 
 pub async fn install_verified_binary(
     bytes: &[u8],
@@ -210,10 +228,12 @@ async fn self_test_with_timeout(
         .env_clear()
         .env("PATH", std::env::var_os("PATH").unwrap_or_default())
         .kill_on_drop(true);
-    let status = timeout(duration, command.status())
-        .await
-        .context("candidate Agent health check timed out")?
-        .context("cannot run the candidate Agent health check")?;
+    let status = timeout(duration, async {
+        spawn_candidate(&mut command).await?.wait().await
+    })
+    .await
+    .context("candidate Agent health check timed out")?
+    .context("cannot run the candidate Agent health check")?;
     if !status.success() {
         bail!("candidate Agent health check returned {status}");
     }
@@ -226,11 +246,19 @@ async fn verify_binary_version(binary: &Path, expected_version: &str) -> Result<
         .arg("--version")
         .env_clear()
         .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .kill_on_drop(true);
-    let output = timeout(CANDIDATE_CHECK_TIMEOUT, command.output())
-        .await
-        .context("candidate Agent version check timed out")?
-        .context("cannot read the candidate Agent version")?;
+    let output = timeout(CANDIDATE_CHECK_TIMEOUT, async {
+        spawn_candidate(&mut command)
+            .await?
+            .wait_with_output()
+            .await
+    })
+    .await
+    .context("candidate Agent version check timed out")?
+    .context("cannot read the candidate Agent version")?;
     let expected = format!("alphaping-agent {expected_version}\n");
     if !output.status.success() || output.stdout != expected.as_bytes() || !output.stderr.is_empty()
     {
@@ -301,7 +329,7 @@ mod tests {
             .await
             .expect_err("post-install health must fail");
 
-        assert!(error.to_string().contains("rolled back"));
+        assert!(error.to_string().contains("rolled back"), "{error:#}");
         assert_eq!(fs::read(&current).expect("restored Agent"), previous);
         assert!(!directory.path().join("alphaping-agent.previous").exists());
     }
@@ -319,5 +347,41 @@ mod tests {
             .expect_err("candidate health check must time out");
 
         assert!(error.to_string().contains("timed out"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn candidate_checks_wait_for_a_transient_executable_writer() {
+        let directory = tempdir().expect("temporary directory");
+        let candidate = directory.path().join("alphaping-agent");
+        write_script(&candidate, "#!/bin/sh\necho 'alphaping-agent 0.2.0'\n");
+        let writer = fs::OpenOptions::new()
+            .write(true)
+            .open(&candidate)
+            .expect("hold candidate writer");
+        let release = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(75)).await;
+            drop(writer);
+        });
+        verify_binary_version(&candidate, "0.2.0")
+            .await
+            .expect("retry the transient executable-busy error");
+        release.await.expect("release writer");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn executable_busy_retries_respect_the_health_check_deadline() {
+        let directory = tempdir().expect("temporary directory");
+        let candidate = directory.path().join("alphaping-agent");
+        write_script(&candidate, "#!/bin/sh\nexit 0\n");
+        let _writer = fs::OpenOptions::new()
+            .write(true)
+            .open(&candidate)
+            .expect("hold candidate writer");
+        let error = self_test_with_timeout(&candidate, &candidate, Duration::from_millis(50))
+            .await
+            .expect_err("busy candidate must honor the deadline");
+        assert!(error.to_string().contains("timed out"), "{error:#}");
     }
 }
