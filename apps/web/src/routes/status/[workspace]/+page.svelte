@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ProductAttribution from "$components/layout/product-attribution.svelte";
   import { TriangleAlert } from "@lucide/svelte";
 
   import PublicSurface from "$components/status/public-surface.svelte";
@@ -60,7 +61,7 @@
           : new Date((data.stale ? data.snapshotAt : data.updatedAt) as number).toLocaleString()}
         >{data.stale ? "Snapshot captured" : "Updated"}
         {formatRelativeTime(data.stale ? data.snapshotAt : data.updatedAt)}</span
-      ><span>Powered by AlphaPing</span>
+      ><ProductAttribution />
     </footer>
   </main>
 </PublicSurface>
@@ -74,6 +75,7 @@
 
   footer {
     display: flex;
+    align-items: center;
     flex-wrap: wrap;
     justify-content: space-between;
     gap: var(--space-1) var(--space-3);

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SiteLogo from "$components/layout/site-logo.svelte";
   import { page } from "$app/state";
   import {
     Activity,
@@ -28,7 +29,7 @@
 
 <aside id="workspace-navigation" class:open class="sidebar">
   <div class="brand">
-    <span><Activity size={20} /></span><strong>AlphaPing</strong>
+    <SiteLogo size={36} /><strong>AlphaPing</strong>
     <button
       id="workspace-navigation-close"
       class="close"
@@ -101,19 +102,6 @@
     align-items: center;
     gap: var(--space-2);
     padding: 0 var(--space-2);
-  }
-
-  .brand > span {
-    display: grid;
-    width: 34px;
-    height: 34px;
-    place-items: center;
-    border-radius: var(--radius-control);
-    color: var(--accent-ink);
-    background: var(--accent);
-    font-family: var(--font-mono);
-    font-size: var(--text-sm);
-    font-weight: 750;
   }
 
   .brand strong {

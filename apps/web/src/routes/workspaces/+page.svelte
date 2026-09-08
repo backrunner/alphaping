@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SiteLogo from "$components/layout/site-logo.svelte";
   import {
     ArrowRight,
     Building2,
@@ -30,7 +31,7 @@
 
 <main>
   <header class="page-header">
-    <div class="brand"><span>A</span><strong>AlphaPing</strong></div>
+    <div class="brand"><SiteLogo size={36} /><strong>AlphaPing</strong></div>
     <form method="POST" action="?/logout">
       <Button type="submit" variant="secondary"><LogOut size={13} />Sign out</Button>
     </form>
@@ -170,19 +171,6 @@
 
   .brand {
     gap: var(--space-2);
-  }
-
-  .brand > span {
-    display: grid;
-    width: 26px;
-    height: 26px;
-    place-items: center;
-    border-radius: var(--radius-button);
-    color: var(--accent-ink);
-    background: var(--accent);
-    font-family: var(--font-mono);
-    font-size: var(--text-sm);
-    font-weight: 750;
   }
 
   .brand strong {

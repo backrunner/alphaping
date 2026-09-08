@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ProductAttribution from "$components/layout/product-attribution.svelte";
   import { tick } from "svelte";
   import PublicSurface from "$components/status/public-surface.svelte";
   import PublicNavigation from "$components/status/public-navigation.svelte";
@@ -214,7 +215,7 @@
     <footer>
       <span title={data.updatedAt === null ? undefined : new Date(data.updatedAt).toLocaleString()}
         >Updated {formatRelativeTime(data.updatedAt)}</span
-      ><span>Powered by AlphaPing</span>
+      ><ProductAttribution />
     </footer>
   </main>
 </PublicSurface>
@@ -445,6 +446,7 @@
 
   footer {
     display: flex;
+    align-items: center;
     flex-wrap: wrap;
     justify-content: space-between;
     gap: var(--space-1) var(--space-3);

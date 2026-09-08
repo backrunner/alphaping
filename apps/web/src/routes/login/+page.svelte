@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Activity } from "@lucide/svelte";
+  import SiteLogo from "$components/layout/site-logo.svelte";
 
   import Button from "$components/ui/button/button.svelte";
 
@@ -10,7 +10,7 @@
 
 <main class="login">
   <section class="login__card">
-    <div class="login__brand"><Activity size={18} /><strong>AlphaPing</strong></div>
+    <div class="login__brand"><SiteLogo /><strong>AlphaPing</strong></div>
     <h1>Sign in</h1>
     <form method="POST">
       <input type="hidden" name="returnTo" value={data.returnTo} />
@@ -60,7 +60,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    color: var(--accent);
+    color: var(--text);
   }
 
   .login__brand strong {

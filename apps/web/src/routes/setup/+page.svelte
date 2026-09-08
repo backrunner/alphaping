@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SiteLogo from "$components/layout/site-logo.svelte";
   import {
     Building2,
     CheckCircle2,
@@ -68,7 +69,7 @@
 
 <main class="setup">
   <header class="setup__brand">
-    <span class="setup__mark">A</span>
+    <SiteLogo size={32} />
     <div><strong>AlphaPing</strong><span>System initialization</span></div>
   </header>
 

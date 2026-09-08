@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SiteLogo from "$components/layout/site-logo.svelte";
   import { page } from "$app/state";
   import { ArrowLeft, FileQuestion, RefreshCw, TriangleAlert } from "@lucide/svelte";
 
@@ -11,7 +12,7 @@
 <svelte:head><title>{page.status} · AlphaPing</title></svelte:head>
 
 <main>
-  <a class="brand" href="/"><span aria-hidden="true">A</span>AlphaPing</a>
+  <a class="brand" href="/"><SiteLogo size={32} />AlphaPing</a>
   <section aria-labelledby="error-title">
     <div class="error-code">
       {#if unavailable}<FileQuestion size={18} />{:else}<TriangleAlert size={18} />{/if}
@@ -46,17 +47,6 @@
     color: var(--text);
     font-weight: 650;
     text-decoration: none;
-  }
-
-  .brand > span {
-    display: grid;
-    width: 24px;
-    height: 24px;
-    place-items: center;
-    border-radius: var(--radius-button);
-    color: var(--accent-ink);
-    background: var(--accent);
-    font-size: var(--text-xs);
   }
 
   section {

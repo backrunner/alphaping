@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SiteLogo from "$components/layout/site-logo.svelte";
   import { ArrowRight, Check, KeyRound, LogIn, UserPlus } from "@lucide/svelte";
 
   import Button from "$components/ui/button/button.svelte";
@@ -11,7 +12,7 @@
 
 <main class="invite">
   <section class="invite__card" aria-labelledby="invite-title">
-    <div class="invite__brand"><span>A</span><strong>AlphaPing</strong></div>
+    <div class="invite__brand"><SiteLogo size={36} /><strong>AlphaPing</strong></div>
     <div class="invite__heading">
       <UserPlus size={20} />
       <div>
@@ -110,19 +111,6 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-  }
-
-  .invite__brand span {
-    display: grid;
-    width: 24px;
-    height: 24px;
-    place-items: center;
-    border-radius: var(--radius-button);
-    color: var(--accent-ink);
-    background: var(--accent);
-    font-family: var(--font-mono);
-    font-size: var(--text-xs);
-    font-weight: 750;
   }
 
   .invite__brand strong {

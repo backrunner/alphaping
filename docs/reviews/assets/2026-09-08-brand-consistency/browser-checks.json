@@ -1,0 +1,163 @@
+{
+  "records": [
+    {
+      "name": "login desktop light",
+      "viewport": 1440,
+      "document": 1440,
+      "logos": 1,
+      "violations": []
+    },
+    {
+      "name": "login mobile dark",
+      "viewport": 320,
+      "document": 320,
+      "logos": 1,
+      "violations": []
+    },
+    {
+      "name": "workspaces desktop light",
+      "viewport": 1440,
+      "document": 1440,
+      "logos": 1,
+      "violations": []
+    },
+    {
+      "name": "workspaces mobile dark",
+      "viewport": 320,
+      "document": 320,
+      "logos": 1,
+      "violations": []
+    },
+    {
+      "name": "dashboard desktop light",
+      "viewport": 1440,
+      "document": 1440,
+      "logos": 1,
+      "violations": []
+    },
+    {
+      "name": "dashboard mobile dark",
+      "viewport": 320,
+      "document": 320,
+      "logos": 1,
+      "violations": []
+    },
+    {
+      "name": "admin desktop light",
+      "viewport": 1440,
+      "document": 1440,
+      "logos": 1,
+      "violations": []
+    },
+    {
+      "name": "admin mobile dark",
+      "viewport": 320,
+      "document": 320,
+      "logos": 1,
+      "violations": []
+    },
+    {
+      "name": "setup desktop light",
+      "viewport": 1440,
+      "document": 1440,
+      "logos": 1,
+      "violations": []
+    },
+    {
+      "name": "setup mobile dark",
+      "viewport": 320,
+      "document": 320,
+      "logos": 1,
+      "violations": []
+    },
+    {
+      "name": "error desktop light",
+      "viewport": 1440,
+      "document": 1440,
+      "logos": 1,
+      "violations": []
+    },
+    {
+      "name": "error mobile dark",
+      "viewport": 320,
+      "document": 320,
+      "logos": 1,
+      "violations": []
+    },
+    {
+      "name": "invite desktop light",
+      "viewport": 1440,
+      "document": 1440,
+      "logos": 1,
+      "violations": []
+    },
+    {
+      "name": "invite mobile dark",
+      "viewport": 320,
+      "document": 320,
+      "logos": 1,
+      "violations": []
+    },
+    {
+      "name": "public overview desktop light",
+      "viewport": 1440,
+      "document": 1440,
+      "logos": 2,
+      "violations": []
+    },
+    {
+      "name": "public overview mobile dark",
+      "viewport": 320,
+      "document": 320,
+      "logos": 2,
+      "violations": []
+    },
+    {
+      "name": "public machines desktop light",
+      "viewport": 1440,
+      "document": 1440,
+      "logos": 2,
+      "violations": []
+    },
+    {
+      "name": "public machines mobile dark",
+      "viewport": 320,
+      "document": 320,
+      "logos": 2,
+      "violations": []
+    },
+    {
+      "name": "public machine desktop light",
+      "viewport": 1440,
+      "document": 1440,
+      "logos": 2,
+      "violations": []
+    },
+    {
+      "name": "public machine mobile dark",
+      "viewport": 320,
+      "document": 320,
+      "logos": 2,
+      "violations": []
+    },
+    {
+      "name": "public service desktop light",
+      "viewport": 1440,
+      "document": 1440,
+      "logos": 2,
+      "violations": []
+    },
+    {
+      "name": "public service mobile dark",
+      "viewport": 320,
+      "document": 320,
+      "logos": 2,
+      "violations": []
+    },
+    {
+      "name": "custom logo preview and broken-image fallback",
+      "passed": true
+    }
+  ],
+  "errors": []
+}
