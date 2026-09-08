@@ -167,8 +167,10 @@ function notificationLedger(machines, checks) {
     runs: NOTIFICATION_RUNS,
     events,
     deliveries,
-    readRows: NOTIFICATION_RUNS * 2 + events * 3,
-    writes: NOTIFICATION_RUNS + deliveries * 3,
+    // Include event receipt lookup, current delivery policy checks, queue/sequence
+    // maintenance, outbox indexes and terminal retention (before retry overhead).
+    readRows: NOTIFICATION_RUNS * 2 + events * 4 + deliveries * 8,
+    writes: NOTIFICATION_RUNS + events * 5 + deliveries * 20,
     workerRequests: NOTIFICATION_RUNS,
   };
 }
@@ -317,12 +319,12 @@ if (baseline.workersRequests !== 5_703_394 || baseline.durableObjectRequests !==
   );
 }
 if (
-  baseline.controlPlaneReads !== 72_771_200 ||
+  baseline.controlPlaneReads !== 72_811_200 ||
   baseline.publicStatusRouteCacheKeys !== 8 ||
   baseline.publicStatusRowsPerRefreshWindow !== 74_288 ||
   baseline.publicStatusLiveProjections !== 691_200 ||
   baseline.publicStatusReadRows !== 6_418_483_200 ||
-  baseline.modeledReads !== 6_491_254_400
+  baseline.modeledReads !== 6_491_294_400
 ) {
   throw new Error(`D1 read ledger drifted: ${baseline.modeledReads}`);
 }
@@ -330,8 +332,8 @@ if (
   baseline.notificationRuns !== 43_200 ||
   baseline.notificationEvents !== 1_600 ||
   baseline.notificationDeliveries !== 4_800 ||
-  baseline.notificationReadRows !== 91_200 ||
-  baseline.notificationWrites !== 57_600 ||
+  baseline.notificationReadRows !== 131_200 ||
+  baseline.notificationWrites !== 147_200 ||
   baseline.notificationWorkerRequests !== 43_200
 ) {
   throw new Error("notification delivery ledger drifted");
@@ -353,7 +355,7 @@ const publicStatusRefreshBurst = estimateScale(100, 100, {
 if (
   publicStatusRefreshBurst.publicStatusReadRows !== 12_836_966_400 ||
   publicStatusRefreshBurst.publicStatusWorkerRequests !== 1_382_400 ||
-  publicStatusRefreshBurst.modeledReads !== 12_909_737_600
+  publicStatusRefreshBurst.modeledReads !== 12_909_777_600
 ) {
   throw new Error("public status refresh burst ledger drifted");
 }

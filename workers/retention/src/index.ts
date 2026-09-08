@@ -3,6 +3,7 @@ import {
   cleanAgentCommands,
   cleanAuditLogs,
   cleanExpiredAnnouncements,
+  cleanNotificationDeliveries,
   cleanOrphanCheckSecrets,
 } from "./control-retention";
 import { acquireWorkspaceRetentionLease, releaseWorkspaceRetentionLease } from "./cursor";
@@ -156,6 +157,12 @@ async function cleanWorkspace(
     policy.audit_log_days,
   );
   const softDeletes = await finalizeSoftDeletedResources(env, policy, now);
+  const notifications = await cleanNotificationDeliveries(
+    env.CONTROL_DB,
+    policy.workspace_id,
+    now,
+    policy.audit_log_days,
+  );
   const orphanSecrets = await cleanOrphanCheckSecrets(env.CONTROL_DB, policy.workspace_id, now);
   await releaseWorkspaceRetentionLease(env.TELEMETRY_DB, lease, events.timeCursor, Date.now());
   const workspace = await finalizeDeletedWorkspace(env, policy, now);
@@ -165,6 +172,7 @@ async function cleanWorkspace(
       events.deleted +
       announcements +
       auditLogs +
+      notifications +
       softDeletes +
       orphanSecrets +
       workspace,

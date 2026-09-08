@@ -482,6 +482,7 @@ export const notificationRules = sqliteTable(
 
 export const notificationEventCursors = sqliteTable("notification_event_cursors", {
   singleton: integer("singleton").primaryKey().default(1),
+  lastSequence: integer("last_sequence").notNull().default(0),
   lastOccurredAt: integer("last_occurred_at").notNull().default(0),
   lastEventId: blob("last_event_id", { mode: "buffer" }).notNull(),
   lastResourceType: integer("last_resource_type").notNull().default(0),
@@ -534,5 +535,11 @@ export const notificationDeliveries = sqliteTable(
       table.id,
     ),
     index("notification_deliveries_workspace_idx").on(table.workspaceId, table.createdAt, table.id),
+    index("notification_deliveries_retention_idx").on(
+      table.workspaceId,
+      table.state,
+      table.updatedAt,
+      table.id,
+    ),
   ],
 );

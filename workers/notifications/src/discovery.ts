@@ -1,5 +1,3 @@
-import { d1BlobToArrayBuffer } from "@alphaping/contracts";
-
 import type { NotificationDimension, NotificationPayload, ResourceType } from "./types.js";
 
 const EVENT_LIMIT = 100;
@@ -7,14 +5,12 @@ const INSERT_BATCH = 50;
 const MAX_MATCHED_RULES = 2_000;
 
 interface CursorRow {
-  last_occurred_at: number;
-  last_event_id: unknown;
-  last_resource_type: number;
-  last_resource_pk: number;
+  last_sequence: number;
   updated_at: number;
 }
 
 interface StateEventRow {
+  sequence: number;
   workspace_pk: number;
   resource_type: 1 | 2;
   resource_pk: number;
@@ -94,7 +90,7 @@ async function digestId(value: string): Promise<string> {
 async function loadCursor(db: D1Database): Promise<CursorRow> {
   const cursor = await db
     .prepare(
-      `SELECT last_occurred_at, last_event_id, last_resource_type, last_resource_pk, updated_at
+      `SELECT last_sequence, updated_at
        FROM notification_event_cursors WHERE singleton = 1`,
     )
     .first<CursorRow>();
@@ -102,67 +98,50 @@ async function loadCursor(db: D1Database): Promise<CursorRow> {
   return cursor;
 }
 
-async function newestEvent(db: D1Database): Promise<StateEventRow | null> {
-  return db
-    .prepare(
-      `SELECT workspace_pk, resource_type, resource_pk, occurred_at, event_id,
-              hex(event_id) AS event_id_hex, previous_state, current_state, reason_code
-       FROM state_events
-       ORDER BY occurred_at DESC, event_id DESC, resource_type DESC, resource_pk DESC
-       LIMIT 1`,
-    )
-    .first<StateEventRow>();
+async function newestSequence(db: D1Database): Promise<number> {
+  return (
+    (await db
+      .prepare("SELECT sequence FROM notification_event_queue ORDER BY sequence DESC LIMIT 1")
+      .first<number>("sequence")) ?? 0
+  );
 }
 
-async function updateCursor(
-  db: D1Database,
-  event: StateEventRow | null,
-  now: number,
-): Promise<void> {
+async function updateCursor(db: D1Database, sequence: number, now: number): Promise<void> {
   await db
     .prepare(
-      `UPDATE notification_event_cursors
-       SET last_occurred_at = ?, last_event_id = ?, last_resource_type = ?,
-           last_resource_pk = ?, updated_at = ?
-       WHERE singleton = 1`,
+      `UPDATE notification_event_cursors SET last_sequence = ?, updated_at = ?
+     WHERE singleton = 1 AND last_sequence <= ?`,
     )
-    .bind(
-      event?.occurred_at ?? 0,
-      event ? d1BlobToArrayBuffer(event.event_id) : new Uint8Array().buffer,
-      event?.resource_type ?? 0,
-      event?.resource_pk ?? 0,
-      now,
+    .bind(sequence, now, sequence)
+    .run();
+}
+
+async function cleanConsumedEvents(db: D1Database, sequence: number): Promise<void> {
+  await db
+    .prepare(
+      `DELETE FROM notification_event_queue WHERE sequence IN (
+       SELECT sequence FROM notification_event_queue
+       WHERE sequence <= ? ORDER BY sequence LIMIT ?
+     )`,
     )
+    .bind(sequence, EVENT_LIMIT)
     .run();
 }
 
 async function loadEvents(db: D1Database, cursor: CursorRow): Promise<StateEventRow[]> {
-  const eventId = d1BlobToArrayBuffer(cursor.last_event_id);
   const result = await db
     .prepare(
-      `SELECT workspace_pk, resource_type, resource_pk, occurred_at, event_id,
-              hex(event_id) AS event_id_hex, previous_state, current_state, reason_code
-       FROM state_events
-       WHERE occurred_at > ?
-          OR (occurred_at = ? AND event_id > ?)
-          OR (occurred_at = ? AND event_id = ? AND resource_type > ?)
-          OR (occurred_at = ? AND event_id = ? AND resource_type = ? AND resource_pk > ?)
-       ORDER BY occurred_at, event_id, resource_type, resource_pk
-       LIMIT ?`,
+      `SELECT queued.sequence, event.workspace_pk, event.resource_type, event.resource_pk,
+            event.occurred_at, event.event_id, hex(event.event_id) AS event_id_hex,
+            event.previous_state, event.current_state, event.reason_code
+     FROM notification_event_queue queued
+     JOIN state_events event
+       ON event.resource_type = queued.resource_type AND event.resource_pk = queued.resource_pk
+         AND event.occurred_at = queued.occurred_at AND event.event_id = queued.event_id
+         AND event.workspace_pk = queued.workspace_pk
+     WHERE queued.sequence > ? ORDER BY queued.sequence LIMIT ?`,
     )
-    .bind(
-      cursor.last_occurred_at,
-      cursor.last_occurred_at,
-      eventId,
-      cursor.last_occurred_at,
-      eventId,
-      cursor.last_resource_type,
-      cursor.last_occurred_at,
-      eventId,
-      cursor.last_resource_type,
-      cursor.last_resource_pk,
-      EVENT_LIMIT,
-    )
+    .bind(cursor.last_sequence, EVENT_LIMIT)
     .all<StateEventRow>();
   return result.results;
 }
@@ -228,34 +207,54 @@ async function resolveResources(
 async function loadRules(
   db: D1Database,
   resources: ReadonlyMap<string, ResolvedResource>,
+  events: readonly StateEventRow[],
 ): Promise<Map<string, RuleRow[]>> {
-  const ids = [...new Set([...resources.values()].map((resource) => resource.id))];
-  const workspaceIds = [
-    ...new Set([...resources.values()].map((resource) => resource.workspaceId)),
-  ];
-  if (ids.length === 0) return new Map();
-  const result = await db
-    .prepare(
-      `SELECT rule.workspace_id, rule.resource_type, rule.resource_id,
+  const requested = new Map<string, readonly string[]>();
+  for (const event of events) {
+    const type = resourceType(event.resource_type);
+    const resource = resources.get(resourceKey(type, event.workspace_pk, event.resource_pk));
+    if (!resource) continue;
+    const dimension = dimensionForEvent(event);
+    requested.set(ruleKey(resource.workspaceId, type, resource.id, dimension), [
+      resource.workspaceId,
+      type,
+      resource.id,
+      dimension,
+    ]);
+  }
+  const keys = [...requested.values()];
+  const rules = new Map<string, RuleRow[]>();
+  let matched = 0;
+  // Four parameters per key plus LIMIT: stay below D1's 100-parameter limit.
+  for (let offset = 0; offset < keys.length; offset += 24) {
+    const batch = keys.slice(offset, offset + 24);
+    const result = await db
+      .prepare(
+        `WITH requested(workspace_id, resource_type, resource_id, dimension) AS (
+         VALUES ${batch.map(() => "(?, ?, ?, ?)").join(", ")}
+       )
+       SELECT rule.workspace_id, rule.resource_type, rule.resource_id,
               rule.dimension, rule.channel_id
-       FROM notification_rules rule
+       FROM requested JOIN notification_rules rule
+         ON rule.workspace_id = requested.workspace_id
+           AND rule.resource_type = requested.resource_type
+           AND rule.resource_id = requested.resource_id AND rule.dimension = requested.dimension
        JOIN notification_channels channel
          ON channel.id = rule.channel_id AND channel.workspace_id = rule.workspace_id
-       WHERE rule.workspace_id IN (${workspaceIds.map(() => "?").join(", ")})
-         AND rule.resource_id IN (${ids.map(() => "?").join(", ")})
-         AND rule.enabled = 1 AND channel.enabled = 1
+       WHERE rule.enabled = 1 AND channel.enabled = 1
        ORDER BY rule.resource_type, rule.resource_id, rule.dimension, rule.channel_id
        LIMIT ?`,
-    )
-    .bind(...workspaceIds, ...ids, MAX_MATCHED_RULES + 1)
-    .all<RuleRow>();
-  if (result.results.length > MAX_MATCHED_RULES) {
-    throw new Error("notification_rule_batch_exceeded");
-  }
-  const rules = new Map<string, RuleRow[]>();
-  for (const row of result.results) {
-    const key = ruleKey(row.workspace_id, row.resource_type, row.resource_id, row.dimension);
-    rules.set(key, [...(rules.get(key) ?? []), row]);
+      )
+      .bind(...batch.flat(), MAX_MATCHED_RULES - matched + 1)
+      .all<RuleRow>();
+    matched += result.results.length;
+    if (matched > MAX_MATCHED_RULES) throw new Error("notification_rule_batch_exceeded");
+    for (const row of result.results) {
+      const key = ruleKey(row.workspace_id, row.resource_type, row.resource_id, row.dimension);
+      const group = rules.get(key) ?? [];
+      group.push(row);
+      rules.set(key, group);
+    }
   }
   return rules;
 }
@@ -352,17 +351,34 @@ export async function discoverNotificationEvents(
   telemetryDb: D1Database,
   now = Date.now(),
 ): Promise<DiscoveryResult> {
-  const cursor = await loadCursor(controlDb);
+  let cursor = await loadCursor(controlDb);
   if (cursor.updated_at === 0) {
-    await updateCursor(controlDb, await newestEvent(telemetryDb), now);
-    return { scanned: 0, enqueued: 0, bootstrapped: true };
+    const sequence = await newestSequence(telemetryDb);
+    const initialized = await controlDb
+      .prepare(
+        `UPDATE notification_event_cursors SET last_sequence = ?, updated_at = ?
+         WHERE singleton = 1 AND updated_at = 0 RETURNING last_sequence, updated_at`,
+      )
+      .bind(sequence, now)
+      .first<CursorRow>();
+    if (initialized) {
+      await cleanConsumedEvents(telemetryDb, initialized.last_sequence);
+      return { scanned: 0, enqueued: 0, bootstrapped: true };
+    }
+    // A concurrent first run already initialized the cursor. Its boundary wins.
+    cursor = await loadCursor(controlDb);
   }
   const events = await loadEvents(telemetryDb, cursor);
-  if (events.length === 0) return { scanned: 0, enqueued: 0, bootstrapped: false };
+  if (events.length === 0) {
+    await cleanConsumedEvents(telemetryDb, cursor.last_sequence);
+    return { scanned: 0, enqueued: 0, bootstrapped: false };
+  }
   const resources = await resolveResources(controlDb, events);
-  const rules = await loadRules(controlDb, resources);
+  const rules = await loadRules(controlDb, resources, events);
   const deliveries = await prepareDeliveries(events, resources, rules);
   await persistDeliveries(controlDb, deliveries, now);
-  await updateCursor(controlDb, events.at(-1) ?? null, now);
+  const sequence = events.at(-1)?.sequence ?? cursor.last_sequence;
+  await updateCursor(controlDb, sequence, now);
+  await cleanConsumedEvents(telemetryDb, sequence);
   return { scanned: events.length, enqueued: deliveries.length, bootstrapped: false };
 }

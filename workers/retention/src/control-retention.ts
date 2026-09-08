@@ -101,6 +101,33 @@ export async function cleanAuditLogs(
   return result.meta.changes ?? 0;
 }
 
+export async function cleanNotificationDeliveries(
+  db: D1Database,
+  workspaceId: string,
+  now: number,
+  retentionDays: number,
+  rowBatch = 200,
+): Promise<number> {
+  if (!Number.isInteger(rowBatch) || rowBatch < 1 || rowBatch > 200) {
+    throw new Error("notification retention batch must be between 1 and 200");
+  }
+  let deleted = 0;
+  for (const state of ["sent", "dead"]) {
+    const result = await db
+      .prepare(
+        `DELETE FROM notification_deliveries WHERE id IN (
+         SELECT id FROM notification_deliveries
+         WHERE workspace_id = ? AND state = ? AND updated_at < ?
+         ORDER BY updated_at, id LIMIT ?
+       )`,
+      )
+      .bind(workspaceId, state, now - retentionDays * DAY_MS, rowBatch)
+      .run();
+    deleted += result.meta.changes ?? 0;
+  }
+  return deleted;
+}
+
 export async function cleanOrphanCheckSecrets(
   db: D1Database,
   workspaceId: string,

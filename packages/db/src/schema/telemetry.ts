@@ -1,4 +1,60 @@
-import { blob, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import {
+  blob,
+  foreignKey,
+  integer,
+  primaryKey,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from "drizzle-orm/sqlite-core";
+
+export const stateEvents = sqliteTable(
+  "state_events",
+  {
+    workspacePk: integer("workspace_pk").notNull(),
+    resourceType: integer("resource_type").notNull(),
+    resourcePk: integer("resource_pk").notNull(),
+    occurredAt: integer("occurred_at").notNull(),
+    eventId: blob("event_id", { mode: "buffer" }).notNull(),
+    previousState: text("previous_state").notNull(),
+    currentState: text("current_state").notNull(),
+    reasonCode: text("reason_code").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.resourceType, table.resourcePk, table.occurredAt, table.eventId],
+    }),
+  ],
+);
+
+export const notificationEventQueue = sqliteTable(
+  "notification_event_queue",
+  {
+    sequence: integer("sequence").primaryKey({ autoIncrement: true }),
+    workspacePk: integer("workspace_pk").notNull(),
+    resourceType: integer("resource_type").notNull(),
+    resourcePk: integer("resource_pk").notNull(),
+    occurredAt: integer("occurred_at").notNull(),
+    eventId: blob("event_id", { mode: "buffer" }).notNull(),
+  },
+  (table) => [
+    uniqueIndex("notification_event_queue_source_uq").on(
+      table.resourceType,
+      table.resourcePk,
+      table.occurredAt,
+      table.eventId,
+    ),
+    foreignKey({
+      columns: [table.resourceType, table.resourcePk, table.occurredAt, table.eventId],
+      foreignColumns: [
+        stateEvents.resourceType,
+        stateEvents.resourcePk,
+        stateEvents.occurredAt,
+        stateEvents.eventId,
+      ],
+    }).onDelete("cascade"),
+  ],
+);
 
 export const machineLatest = sqliteTable("machine_latest", {
   machinePk: integer("machine_pk").primaryKey(),

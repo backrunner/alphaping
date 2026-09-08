@@ -98,6 +98,10 @@
         {
           "file": "0024_dashboard_appearance.sql",
           "sha256": "ddb7d3a74c8b58147370b4155db7acff49e488c8f79f213d789a0889b3d7195e"
+        },
+        {
+          "file": "0025_notification_delivery_progress.sql",
+          "sha256": "11b0fd78a5d785fcd4f69057a65ecfc6fe070279629f72def653c843062f4ac0"
         }
       ],
       "objects": [
@@ -244,6 +248,12 @@
           "name": "notification_deliveries_claim_idx",
           "table": "notification_deliveries",
           "sql": "CREATE INDEX notification_deliveries_claim_idx\n  ON notification_deliveries (state, next_attempt_at, claim_until, created_at, id)"
+        },
+        {
+          "type": "index",
+          "name": "notification_deliveries_retention_idx",
+          "table": "notification_deliveries",
+          "sql": "CREATE INDEX notification_deliveries_retention_idx\n  ON notification_deliveries (workspace_id, state, updated_at, id)"
         },
         {
           "type": "index",
@@ -453,7 +463,7 @@
           "type": "table",
           "name": "notification_event_cursors",
           "table": "notification_event_cursors",
-          "sql": "CREATE TABLE notification_event_cursors (\n  singleton INTEGER PRIMARY KEY NOT NULL DEFAULT 1 CHECK (singleton = 1),\n  last_occurred_at INTEGER NOT NULL DEFAULT 0,\n  last_event_id BLOB NOT NULL DEFAULT X'',\n  last_resource_type INTEGER NOT NULL DEFAULT 0,\n  last_resource_pk INTEGER NOT NULL DEFAULT 0,\n  updated_at INTEGER NOT NULL DEFAULT 0\n) STRICT"
+          "sql": "CREATE TABLE notification_event_cursors (\n  singleton INTEGER PRIMARY KEY NOT NULL DEFAULT 1 CHECK (singleton = 1),\n  last_occurred_at INTEGER NOT NULL DEFAULT 0,\n  last_event_id BLOB NOT NULL DEFAULT X'',\n  last_resource_type INTEGER NOT NULL DEFAULT 0,\n  last_resource_pk INTEGER NOT NULL DEFAULT 0,\n  updated_at INTEGER NOT NULL DEFAULT 0\n, last_sequence INTEGER NOT NULL DEFAULT 0 CHECK (last_sequence >= 0)) STRICT"
         },
         {
           "type": "table",
@@ -598,6 +608,10 @@
         {
           "file": "0011_central_check_revision.sql",
           "sha256": "70f26fe04f740c1bd5c43dcdd6a9eb33cea1d92bb768800db60dead37fd22400"
+        },
+        {
+          "file": "0012_notification_event_queue.sql",
+          "sha256": "9f1ed2ff8bb35a35ec085d348fd009ebde271484dbfe5e68cec9f87379eda7a7"
         }
       ],
       "objects": [
@@ -744,6 +758,12 @@
           "name": "notification_deliveries_claim_idx",
           "table": "notification_deliveries",
           "sql": "CREATE INDEX notification_deliveries_claim_idx\n  ON notification_deliveries (state, next_attempt_at, claim_until, created_at, id)"
+        },
+        {
+          "type": "index",
+          "name": "notification_deliveries_retention_idx",
+          "table": "notification_deliveries",
+          "sql": "CREATE INDEX notification_deliveries_retention_idx\n  ON notification_deliveries (workspace_id, state, updated_at, id)"
         },
         {
           "type": "index",
@@ -1013,7 +1033,13 @@
           "type": "table",
           "name": "notification_event_cursors",
           "table": "notification_event_cursors",
-          "sql": "CREATE TABLE notification_event_cursors (\n  singleton INTEGER PRIMARY KEY NOT NULL DEFAULT 1 CHECK (singleton = 1),\n  last_occurred_at INTEGER NOT NULL DEFAULT 0,\n  last_event_id BLOB NOT NULL DEFAULT X'',\n  last_resource_type INTEGER NOT NULL DEFAULT 0,\n  last_resource_pk INTEGER NOT NULL DEFAULT 0,\n  updated_at INTEGER NOT NULL DEFAULT 0\n) STRICT"
+          "sql": "CREATE TABLE notification_event_cursors (\n  singleton INTEGER PRIMARY KEY NOT NULL DEFAULT 1 CHECK (singleton = 1),\n  last_occurred_at INTEGER NOT NULL DEFAULT 0,\n  last_event_id BLOB NOT NULL DEFAULT X'',\n  last_resource_type INTEGER NOT NULL DEFAULT 0,\n  last_resource_pk INTEGER NOT NULL DEFAULT 0,\n  updated_at INTEGER NOT NULL DEFAULT 0\n, last_sequence INTEGER NOT NULL DEFAULT 0 CHECK (last_sequence >= 0)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "notification_event_queue",
+          "table": "notification_event_queue",
+          "sql": "CREATE TABLE notification_event_queue (\n  sequence INTEGER PRIMARY KEY AUTOINCREMENT,\n  workspace_pk INTEGER NOT NULL,\n  resource_type INTEGER NOT NULL CHECK (resource_type IN (1, 2)),\n  resource_pk INTEGER NOT NULL,\n  occurred_at INTEGER NOT NULL,\n  event_id BLOB NOT NULL,\n  UNIQUE (resource_type, resource_pk, occurred_at, event_id),\n  FOREIGN KEY (resource_type, resource_pk, occurred_at, event_id)\n    REFERENCES state_events (resource_type, resource_pk, occurred_at, event_id)\n    ON DELETE CASCADE\n) STRICT"
         },
         {
           "type": "table",
@@ -1152,6 +1178,12 @@
           "name": "memberships_keep_active_admin_on_update",
           "table": "memberships",
           "sql": "CREATE TRIGGER memberships_keep_active_admin_on_update\nBEFORE UPDATE OF role, status ON memberships\nWHEN OLD.role = 'admin'\n  AND OLD.status = 'active'\n  AND (NEW.role != 'admin' OR NEW.status != 'active')\n  AND NOT EXISTS (\n    SELECT 1 FROM memberships\n    WHERE workspace_id = OLD.workspace_id\n      AND user_id != OLD.user_id\n      AND role = 'admin'\n      AND status = 'active'\n  )\nBEGIN\n  SELECT RAISE(ABORT, 'workspace requires an active administrator');\nEND"
+        },
+        {
+          "type": "trigger",
+          "name": "state_events_notification_queue",
+          "table": "state_events",
+          "sql": "CREATE TRIGGER state_events_notification_queue\nAFTER INSERT ON state_events\nWHEN NEW.resource_type IN (1, 2)\nBEGIN\n  INSERT INTO notification_event_queue\n    (workspace_pk, resource_type, resource_pk, occurred_at, event_id)\n  VALUES\n    (NEW.workspace_pk, NEW.resource_type, NEW.resource_pk, NEW.occurred_at, NEW.event_id);\nEND"
         }
       ]
     }

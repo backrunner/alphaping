@@ -23,6 +23,7 @@ interface ClaimedDelivery {
   config_nonce: unknown;
   wrapping_key_id: string | null;
   channel_enabled: number | null;
+  rule_available: number;
 }
 
 export function retryDelayMs(attempt: number): number {
@@ -38,8 +39,12 @@ async function claimDelivery(
   const result = await db
     .prepare(
       `UPDATE notification_deliveries
-       SET state = 'delivering', claim_token = ?, claim_until = ?,
-           attempt_count = attempt_count + 1, updated_at = ?
+       SET state = CASE WHEN attempt_count >= ${MAX_ATTEMPTS} THEN 'dead' ELSE 'delivering' END,
+           claim_token = CASE WHEN attempt_count >= ${MAX_ATTEMPTS} THEN NULL ELSE ? END,
+           claim_until = CASE WHEN attempt_count >= ${MAX_ATTEMPTS} THEN NULL ELSE ? END,
+           last_error = CASE WHEN attempt_count >= ${MAX_ATTEMPTS}
+             THEN 'notification_attempts_exhausted' ELSE last_error END,
+           attempt_count = MIN(attempt_count + 1, ${MAX_ATTEMPTS}), updated_at = ?
        WHERE id = ? AND (
          (state = 'pending' AND next_attempt_at <= ?)
          OR (state = 'delivering' AND claim_until <= ?)
@@ -53,9 +58,29 @@ async function claimDelivery(
       `SELECT delivery.id, delivery.workspace_id, delivery.channel_id,
               delivery.payload_json, delivery.attempt_count,
               channel.provider, channel.config_ciphertext, channel.config_nonce,
-              channel.wrapping_key_id, channel.enabled AS channel_enabled
+              channel.wrapping_key_id, channel.enabled AS channel_enabled,
+              EXISTS (
+                SELECT 1 FROM notification_rules rule
+                JOIN workspaces workspace ON workspace.id = rule.workspace_id
+                WHERE rule.workspace_id = delivery.workspace_id
+                  AND workspace.telemetry_pk = delivery.source_workspace_pk
+                  AND workspace.deleted_at IS NULL
+                  AND rule.channel_id = delivery.channel_id
+                  AND rule.dimension = delivery.dimension AND rule.enabled = 1
+                  AND rule.resource_type = CASE delivery.source_resource_type
+                    WHEN 1 THEN 'machine' ELSE 'service' END
+                  AND rule.resource_id = CASE delivery.source_resource_type
+                    WHEN 1 THEN machine.id ELSE service.id END
+              ) AS rule_available
        FROM notification_deliveries delivery
        LEFT JOIN notification_channels channel ON channel.id = delivery.channel_id
+         AND channel.workspace_id = delivery.workspace_id
+       LEFT JOIN machines machine ON delivery.source_resource_type = 1
+         AND machine.telemetry_pk = delivery.source_resource_pk
+         AND machine.workspace_id = delivery.workspace_id AND machine.deleted_at IS NULL
+       LEFT JOIN services service ON delivery.source_resource_type = 2
+         AND service.telemetry_pk = delivery.source_resource_pk
+         AND service.workspace_id = delivery.workspace_id AND service.deleted_at IS NULL
        WHERE delivery.id = ? AND delivery.claim_token = ?`,
     )
     .bind(id, token)
@@ -112,6 +137,8 @@ async function deliverOne(
     claimed.row.wrapping_key_id !== "v1"
   ) {
     result = unavailableResult("notification_channel_unavailable");
+  } else if (claimed.row.rule_available !== 1) {
+    result = unavailableResult("notification_rule_unavailable");
   } else {
     try {
       const config = await unwrapNotificationConfig(
@@ -160,7 +187,7 @@ export async function deliverNotificationOutbox(
     const outcomes = await Promise.all(
       candidates.results
         .slice(offset, offset + CONCURRENCY)
-        .map((candidate) => deliverOne(db, candidate.id, wrappingKey, now)),
+        .map((candidate) => deliverOne(db, candidate.id, wrappingKey, Date.now())),
     );
     sent += outcomes.filter((outcome) => outcome === "sent").length;
     failed += outcomes.filter((outcome) => outcome === "failed").length;

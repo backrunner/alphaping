@@ -5,6 +5,7 @@ import {
   cleanAgentCommands,
   cleanAuditLogs,
   cleanExpiredAnnouncements,
+  cleanNotificationDeliveries,
   cleanOrphanCheckSecrets,
 } from "./control-retention";
 
@@ -58,6 +59,48 @@ beforeEach(async () => {
 });
 
 describe("workspace control retention", () => {
+  it("prunes only expired terminal notification deliveries in bounded workspace batches", async () => {
+    const db = env.CONTROL_DB;
+    await db
+      .prepare(
+        `CREATE TABLE notification_deliveries (
+      id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, state TEXT NOT NULL,
+      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+    )`,
+      )
+      .run();
+    await db
+      .prepare(
+        `CREATE INDEX notification_deliveries_retention_idx
+      ON notification_deliveries (workspace_id, state, updated_at, id)`,
+      )
+      .run();
+    const now = 100 * DAY_MS;
+    const insert = db.prepare("INSERT INTO notification_deliveries VALUES (?, ?, ?, ?, ?)");
+    await db.batch([
+      insert.bind("old-sent-1", "workspace-1", "sent", 0, DAY_MS),
+      insert.bind("old-sent-2", "workspace-1", "sent", 0, 2 * DAY_MS),
+      insert.bind("old-dead", "workspace-1", "dead", 0, DAY_MS),
+      insert.bind("pending", "workspace-1", "pending", 0, DAY_MS),
+      insert.bind("delivering", "workspace-1", "delivering", 0, DAY_MS),
+      insert.bind("recently-sent", "workspace-1", "sent", 0, now),
+      insert.bind("boundary", "workspace-1", "dead", 0, now - 30 * DAY_MS),
+      insert.bind("other-workspace", "workspace-2", "sent", 0, DAY_MS),
+    ]);
+    await expect(cleanNotificationDeliveries(db, "workspace-1", now, 30, 1)).resolves.toBe(2);
+    await expect(cleanNotificationDeliveries(db, "workspace-1", now, 30, 1)).resolves.toBe(1);
+    await expect(cleanNotificationDeliveries(db, "workspace-1", now, 30, 1)).resolves.toBe(0);
+    expect(
+      (await db.prepare("SELECT id FROM notification_deliveries ORDER BY id").all()).results,
+    ).toEqual(
+      ["boundary", "delivering", "other-workspace", "pending", "recently-sent"].map((id) => ({
+        id,
+      })),
+    );
+    await expect(cleanNotificationDeliveries(db, "workspace-1", now, 30, 201)).rejects.toThrow(
+      "batch",
+    );
+  });
   it("uses configured announcement and audit windows in bounded batches", async () => {
     const now = 100 * DAY_MS;
     const announcement = env.CONTROL_DB.prepare(
