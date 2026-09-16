@@ -63,6 +63,15 @@ describe("machine configuration validation", () => {
       validationMessage(() =>
         normalizeMachineConfiguration({
           ...validConfiguration,
+          samplingIntervalSeconds: 0,
+          reportIntervalSeconds: 60,
+        }),
+      ),
+    ).toContain("between 1 and 300");
+    expect(
+      validationMessage(() =>
+        normalizeMachineConfiguration({
+          ...validConfiguration,
           reportIntervalSeconds: 600,
           offlineAfterSeconds: 300,
         }),

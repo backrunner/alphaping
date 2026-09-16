@@ -16,6 +16,10 @@ mod commands;
 mod probes;
 pub use commands::PendingCommand;
 
+const QUARANTINE_REDRIVE_MS: i64 = 3_600_000;
+const MAX_DELIVERY_ATTEMPTS: i64 = 8;
+const REDRIVE_BATCH: u32 = 64;
+
 #[derive(Debug, Clone)]
 pub struct PendingDelivery {
     pub report_id: Vec<u8>,
@@ -258,12 +262,11 @@ impl Spool {
     }
 
     pub fn append_sample(&mut self, sample: &MetricSample, now_ms: i64) -> Result<bool> {
-        let bucket = sample.observed_at_ms.div_euclid(10_000) * 10_000;
         let inserted = self.connection.execute(
             "INSERT OR IGNORE INTO samples (sample_bucket, observed_at, payload, created_at)
              VALUES (?, ?, ?, ?)",
             params![
-                bucket,
+                sample.observed_at_ms,
                 sample.observed_at_ms,
                 encode_message(sample),
                 now_ms
@@ -301,40 +304,66 @@ impl Spool {
         workspace_pk: u64,
         now_ms: i64,
     ) -> Result<Option<Vec<u8>>> {
-        let nominal_minute = self
-            .connection
-            .query_row(
-                "SELECT (s.observed_at / 60000) * 60000
-                 FROM samples s LEFT JOIN delivery_samples ds ON ds.sample_id = s.id
-                 WHERE ds.sample_id IS NULL AND s.observed_at < ?
-                 ORDER BY s.observed_at LIMIT 1",
-                [now_ms.div_euclid(60_000) * 60_000],
-                |row| row.get::<_, i64>(0),
-            )
-            .optional()?;
-        let Some(nominal_minute) = nominal_minute else {
-            return Ok(None);
+        let current_minute = now_ms.div_euclid(60_000) * 60_000;
+        let mut stale_minutes = 0_u32;
+        let nominal_minute = loop {
+            let Some(minute) = self
+                .connection
+                .query_row(
+                    "SELECT (s.observed_at / 60000) * 60000
+                     FROM samples s LEFT JOIN delivery_samples ds ON ds.sample_id = s.id
+                     WHERE ds.sample_id IS NULL AND s.observed_at < ?
+                     ORDER BY s.observed_at LIMIT 1",
+                    [current_minute],
+                    |row| row.get::<_, i64>(0),
+                )
+                .optional()?
+            else {
+                return Ok(None);
+            };
+            // A minute that already has a delivery can never accept another one;
+            // park leftover samples on that delivery so they resolve with it
+            // instead of permanently blocking newer minutes.
+            let existing = self
+                .connection
+                .query_row(
+                    "SELECT report_id FROM deliveries WHERE nominal_minute = ?",
+                    [minute],
+                    |row| row.get::<_, Vec<u8>>(0),
+                )
+                .optional()?;
+            let Some(report_id) = existing else {
+                break minute;
+            };
+            self.connection.execute(
+                "INSERT OR IGNORE INTO delivery_samples (report_id, sample_id)
+                 SELECT ?, s.id FROM samples s
+                 LEFT JOIN delivery_samples ds ON ds.sample_id = s.id
+                 WHERE ds.sample_id IS NULL AND s.observed_at >= ? AND s.observed_at < ?",
+                params![report_id, minute, minute + 60_000],
+            )?;
+            stale_minutes += 1;
+            if stale_minutes >= 256 {
+                return Ok(None);
+            }
         };
-        if self.connection.query_row(
-            "SELECT EXISTS(SELECT 1 FROM deliveries WHERE nominal_minute = ?)",
-            [nominal_minute],
-            |row| row.get::<_, bool>(0),
-        )? {
-            bail!("a stable delivery already exists for nominal minute {nominal_minute}");
-        }
 
         let mut statement = self.connection.prepare(
             "SELECT s.id, s.payload FROM samples s
              LEFT JOIN delivery_samples ds ON ds.sample_id = s.id
              WHERE ds.sample_id IS NULL AND s.observed_at >= ? AND s.observed_at < ?
-             ORDER BY s.observed_at LIMIT 6",
+             ORDER BY s.observed_at LIMIT ?",
         )?;
-        let rows = statement
-            .query_map(params![nominal_minute, nominal_minute + 60_000], |row| {
-                Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?))
-            })?;
-        let mut sample_ids = Vec::with_capacity(6);
-        let mut samples = Vec::with_capacity(6);
+        let rows = statement.query_map(
+            params![
+                nominal_minute,
+                nominal_minute + 60_000,
+                i64::try_from(alphaping_protocol::MAX_REPORT_SAMPLES)?
+            ],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?)),
+        )?;
+        let mut sample_ids = Vec::with_capacity(alphaping_protocol::MAX_REPORT_SAMPLES);
+        let mut samples = Vec::with_capacity(alphaping_protocol::MAX_REPORT_SAMPLES);
         for row in rows {
             let (sample_id, bytes) = row?;
             sample_ids.push(sample_id);
@@ -613,16 +642,39 @@ impl Spool {
         Ok(())
     }
 
-    pub fn quarantine_delivery(&self, report_id: &[u8], error_code: &str) -> Result<()> {
+    pub fn quarantine_delivery(
+        &self,
+        report_id: &[u8],
+        error_code: &str,
+        now_ms: i64,
+    ) -> Result<()> {
         let changed = self.connection.execute(
-            "UPDATE deliveries SET state = 'quarantined', last_error_code = ?
+            "UPDATE deliveries SET state = 'quarantined', last_error_code = ?,
+             next_attempt_at = ?
              WHERE report_id = ? AND state = 'pending'",
-            params![error_code, report_id],
+            params![
+                error_code,
+                now_ms.saturating_add(QUARANTINE_REDRIVE_MS),
+                report_id
+            ],
         )?;
         if changed != 1 {
             bail!("Agent delivery is no longer pending");
         }
         Ok(())
+    }
+
+    pub fn redrive_quarantined(&self, now_ms: i64) -> Result<usize> {
+        self.connection
+            .execute(
+                "UPDATE deliveries SET state = 'pending' WHERE report_id IN (
+                   SELECT report_id FROM deliveries
+                   WHERE state = 'quarantined' AND next_attempt_at <= ?
+                     AND attempt_count < ? AND last_error_code IS NOT 'payload_too_large'
+                   ORDER BY nominal_minute LIMIT ?)",
+                params![now_ms, MAX_DELIVERY_ATTEMPTS, i64::from(REDRIVE_BATCH)],
+            )
+            .context("failed to redrive quarantined deliveries")
     }
 
     pub fn wake_backlog(&self, retry_at: i64, limit: u32) -> Result<usize> {

@@ -73,7 +73,7 @@
           type="number"
           name="samplingIntervalSeconds"
           value={machine.samplingIntervalSeconds}
-          min="5"
+          min="1"
           max="300"
           required
         /><small>seconds</small></label

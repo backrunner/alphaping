@@ -170,7 +170,7 @@ export function normalizeMachineConfiguration(
   const samplingIntervalSeconds = boundedInteger(
     input.samplingIntervalSeconds,
     "Sampling interval",
-    5,
+    1,
     300,
   );
   const reportIntervalSeconds = boundedInteger(

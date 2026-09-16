@@ -67,7 +67,7 @@ pub fn validate_enrollment_response(
     if enrollment.agent_id.is_empty()
         || enrollment.data_key.len() != 32
         || enrollment.nonce_prefix.len() != 4
-        || enrollment.sample_interval_seconds < 5
+        || enrollment.sample_interval_seconds < 1
         || enrollment.report_interval_seconds < 60
         || enrollment.machine_claim_id != machine_claim_id
         || enrollment.initial_client_sequence == 0

@@ -149,7 +149,7 @@ CREATE TABLE machines (
   expected_host TEXT,
   labels_json TEXT NOT NULL DEFAULT '{}',
   sampling_interval_seconds INTEGER NOT NULL DEFAULT 10
-    CHECK (sampling_interval_seconds BETWEEN 5 AND 300),
+    CHECK (sampling_interval_seconds BETWEEN 1 AND 300),
   report_interval_seconds INTEGER NOT NULL DEFAULT 60
     CHECK (report_interval_seconds BETWEEN 60 AND 900),
   offline_after_seconds INTEGER NOT NULL DEFAULT 150

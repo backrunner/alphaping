@@ -213,7 +213,7 @@ fn quarantined_delivery_is_preserved_without_blocking_newer_reports() {
         .expect("create first delivery")
         .expect("first delivery");
     spool
-        .quarantine_delivery(&first_id, "server_rejected_payload")
+        .quarantine_delivery(&first_id, "server_rejected_payload", 180_000)
         .expect("quarantine delivery");
     spool
         .append_sample(&sample(120_000), 180_000)
@@ -237,6 +237,169 @@ fn quarantined_delivery_is_preserved_without_blocking_newer_reports() {
             .expect("read pending deliveries")
             .is_none()
     );
+}
+
+#[test]
+fn samples_deduplicate_only_on_identical_observed_at() {
+    let directory = tempdir().expect("temp directory");
+    let mut spool = Spool::open(directory.path().join("spool.db")).expect("open spool");
+    assert!(
+        spool
+            .append_sample(&sample(60_000), 120_000)
+            .expect("first append")
+    );
+    assert!(
+        !spool
+            .append_sample(&sample(60_000), 121_000)
+            .expect("duplicate observed_at is ignored")
+    );
+    for index in 1..12_i64 {
+        assert!(
+            spool
+                .append_sample(&sample(60_000 + index * 1_000), 120_000)
+                .expect("one-second samples are all retained")
+        );
+    }
+    assert_eq!(sample_count(&spool), 12);
+}
+
+#[test]
+fn late_samples_attach_to_the_minutes_existing_delivery() {
+    let directory = tempdir().expect("temp directory");
+    let mut spool = Spool::open(directory.path().join("spool.db")).expect("open spool");
+    spool
+        .append_sample(&sample(60_000), 120_000)
+        .expect("append sample");
+    let first = spool
+        .create_next_delivery(7, 2, 120_000)
+        .expect("create first delivery")
+        .expect("first delivery exists");
+    spool
+        .append_sample(&sample(61_000), 120_000)
+        .expect("append late sample into the same minute");
+    spool
+        .append_sample(&sample(120_000), 180_000)
+        .expect("append next minute sample");
+    let second = spool
+        .create_next_delivery(7, 2, 180_000)
+        .expect("create second delivery")
+        .expect("second delivery exists");
+    assert_ne!(second, first);
+    let second_minute = spool
+        .connection
+        .query_row(
+            "SELECT nominal_minute FROM deliveries WHERE report_id = ?",
+            [&second],
+            |row| row.get::<_, i64>(0),
+        )
+        .expect("second delivery minute");
+    assert_eq!(second_minute, 120_000);
+    assert!(
+        spool
+            .create_next_delivery(7, 2, 180_000)
+            .expect("no unassigned samples remain")
+            .is_none()
+    );
+    assert!(spool.acknowledge(&first).expect("ack first delivery"));
+    assert_eq!(sample_count(&spool), 1);
+}
+
+#[test]
+fn quarantined_deliveries_redrive_after_the_cooldown_until_the_attempt_cap() {
+    let directory = tempdir().expect("temp directory");
+    let mut spool = Spool::open(directory.path().join("spool.db")).expect("open spool");
+    spool
+        .append_sample(&sample(60_000), 120_000)
+        .expect("append sample");
+    let first = spool
+        .create_next_delivery(7, 2, 120_000)
+        .expect("create delivery")
+        .expect("delivery exists");
+    spool
+        .begin_delivery_attempt(&first, 120_000)
+        .expect("first attempt");
+    spool
+        .quarantine_delivery(&first, "server_rejected_payload", 120_000)
+        .expect("quarantine delivery");
+    assert!(
+        spool
+            .due_delivery(i64::MAX)
+            .expect("quarantined is never due")
+            .is_none()
+    );
+    assert_eq!(
+        spool
+            .redrive_quarantined(120_000 + 3_599_999)
+            .expect("cooldown not reached"),
+        0
+    );
+    assert_eq!(
+        spool
+            .redrive_quarantined(120_000 + 3_600_000)
+            .expect("cooldown elapsed"),
+        1
+    );
+    assert_eq!(
+        spool
+            .due_delivery(120_000 + 3_600_000)
+            .expect("read due delivery")
+            .expect("redriven delivery is pending")
+            .report_id,
+        first
+    );
+    spool
+        .quarantine_delivery(&first, "server_rejected_payload", 120_000 + 3_600_000)
+        .expect("re-quarantine");
+    spool
+        .connection
+        .execute(
+            "UPDATE deliveries SET attempt_count = 8 WHERE report_id = ?",
+            [&first],
+        )
+        .expect("force attempt cap");
+    spool
+        .append_sample(&sample(120_000), 180_000)
+        .expect("append second sample");
+    let oversized = spool
+        .create_next_delivery(7, 2, 180_000)
+        .expect("create oversized delivery")
+        .expect("second delivery exists");
+    spool
+        .quarantine_delivery(&oversized, "payload_too_large", 120_000)
+        .expect("quarantine oversized delivery");
+    assert_eq!(
+        spool
+            .redrive_quarantined(i64::MAX)
+            .expect("redrive past cap"),
+        0
+    );
+}
+
+#[test]
+fn late_sample_for_an_acknowledged_minute_creates_a_conflicting_delivery() {
+    let directory = tempdir().expect("temp directory");
+    let mut spool = Spool::open(directory.path().join("spool.db")).expect("open spool");
+    spool
+        .append_sample(&sample(60_000), 120_000)
+        .expect("append sample");
+    let first = spool
+        .create_next_delivery(7, 2, 120_000)
+        .expect("create first delivery")
+        .expect("first delivery exists");
+    assert!(spool.acknowledge(&first).expect("ack first delivery"));
+    spool
+        .append_sample(&sample(70_000), 180_000)
+        .expect("append late sample");
+    let second = spool
+        .create_next_delivery(7, 2, 180_000)
+        .expect("create second delivery")
+        .expect("second delivery exists");
+    assert_ne!(second, first);
+    let due = spool
+        .due_delivery(180_000)
+        .expect("read pending delivery")
+        .expect("second delivery pending");
+    assert_eq!(due.nominal_minute_ms, 60_000);
 }
 
 #[test]

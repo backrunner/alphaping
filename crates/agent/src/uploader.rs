@@ -25,6 +25,8 @@ pub enum UploadError {
     ServerStatus,
     #[error("server permanently rejected the report with status {0}")]
     PermanentStatus(u16),
+    #[error("report exceeded the envelope limit")]
+    Oversized,
     #[error("response exceeded the protocol limit")]
     ResponseTooLarge,
     #[error("response protocol was invalid")]
@@ -126,7 +128,7 @@ fn response_status_error(status: reqwest::StatusCode) -> Option<UploadError> {
     match status.as_u16() {
         200..=299 => None,
         401 | 403 => Some(UploadError::Revoked),
-        400 | 413 | 415 | 422 => Some(UploadError::PermanentStatus(status.as_u16())),
+        400 | 409 | 413 | 415 | 422 => Some(UploadError::PermanentStatus(status.as_u16())),
         _ => Some(UploadError::ServerStatus),
     }
 }
@@ -201,7 +203,7 @@ impl EnvelopeCodec {
             ciphertext,
         });
         if envelope.len() > MAX_ENVELOPE_BYTES {
-            return Err(UploadError::Protocol);
+            return Err(UploadError::Oversized);
         }
         Ok(envelope)
     }
@@ -365,14 +367,24 @@ mod tests {
     }
 
     #[test]
+    fn reports_over_the_envelope_limit_are_rejected_before_upload() {
+        let codec = EnvelopeCodec::new(b"agent".to_vec(), 1, [7; 32], [1, 2, 3, 4])
+            .expect("codec should initialize");
+        assert!(matches!(
+            codec.encode_report(4, 100, &[9; 16], &vec![0; MAX_ENVELOPE_BYTES]),
+            Err(UploadError::Oversized)
+        ));
+    }
+
+    #[test]
     fn only_stable_payload_statuses_are_permanent() {
-        for status in [400, 413, 415, 422] {
+        for status in [400, 409, 413, 415, 422] {
             assert!(matches!(
                 response_status_error(reqwest::StatusCode::from_u16(status).expect("status")),
                 Some(UploadError::PermanentStatus(value)) if value == status
             ));
         }
-        for status in [408, 409, 425, 429, 500, 502, 503, 504] {
+        for status in [408, 425, 429, 500, 502, 503, 504] {
             assert!(matches!(
                 response_status_error(reqwest::StatusCode::from_u16(status).expect("status")),
                 Some(UploadError::ServerStatus)

@@ -13,6 +13,7 @@ const COMPACTION_SCAN_BATCH: u32 = 6_000;
 pub struct CapacityOutcome {
     pub compacted_samples: usize,
     pub dropped_samples: usize,
+    pub evicted_deliveries: usize,
 }
 
 struct StorageUsage {
@@ -127,9 +128,18 @@ impl Spool {
             .transpose()?
             .unwrap_or(u64::MAX);
         let mut dropped = 0;
+        let mut evicted = 0;
         if after_compaction.live_bytes >= budget
             || (free_after < reserve && after_compaction.free_pages == 0)
         {
+            // Dead report payloads leave before fresh undelivered samples.
+            evicted = self.connection.execute(
+                "DELETE FROM deliveries WHERE report_id IN (
+                   SELECT report_id FROM deliveries WHERE state = 'quarantined'
+                   ORDER BY nominal_minute LIMIT 64
+                 )",
+                [],
+            )?;
             dropped = self.connection.execute(
                 "DELETE FROM samples WHERE id IN (
                    SELECT s.id FROM samples s LEFT JOIN delivery_samples ds ON ds.sample_id = s.id
@@ -152,6 +162,7 @@ impl Spool {
         Ok(CapacityOutcome {
             compacted_samples: compacted,
             dropped_samples: dropped,
+            evicted_deliveries: evicted,
         })
     }
 

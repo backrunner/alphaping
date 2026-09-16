@@ -276,12 +276,12 @@ V1 目标：
 ### 11.2 运行要求
 
 - 空闲内存目标小于 30 MiB，稳定态 CPU 平均目标小于单核 0.5%。
-- 默认 10 秒采样、60 秒 durable report，可由后台在允许范围内调整。
+- 默认 10 秒采样、60 秒 durable report，可由后台按机器调整：采样 1–300 秒、回报 60–900 秒且必须为采样间隔的整数倍；改动通过 durable ACK 中的版本化 AgentConfigSnapshot 动态下发。
 - 机器 dashboard 有可见 viewer 时，Agent 通过 live channel 每 10 秒发当前 snapshot；正常情况下界面数据年龄不高于一个采样周期加 2 秒网络/渲染余量。
 - Live snapshot 是非持久加速层，不代替 durable report、本地 spool 或权威告警。Live 中断时 UI 标记降级并回退 D1 latest，不得误判机器离线。
 - 本地缓冲固定使用 SQLite WAL，不使用仅存在内存的环形队列，也不实现自定义 append-only 文件格式。
 - 每个 sample/check event 先持久化到 SQLite，只有收到服务端加密且通过认证的 durable acknowledgement 后才删除对应 delivery。
-- DNS、连接、TLS、timeout、HTTP 408/429/5xx 等临时失败的重试次数不设上限，不因 attempt count 或离线时长删除 delivery。
+- DNS、连接、TLS、timeout、HTTP 408/429/5xx 等临时失败的重试次数不设上限，不因 attempt count 或离线时长删除 delivery。服务端明确拒绝（400/409/413/415/422）或超过 envelope 上限的 delivery 进入本地 quarantine，每小时补发一次、累计 8 次尝试后仅保留到 spool 容量驱逐为止；spool（补发缓存）上限由本地 `max_spool_bytes` 调控，默认 512 MiB。
 - 退避使用 equal-jitter exponential backoff：从 1 秒开始，单次等待绝对上限 300 秒。服务长时间不可达时仍至少每 5 分钟尝试一次。
 - 网络恢复事件可以触发 0-5 秒随机延迟后的立即尝试，任何成功都会重置退避。
 - SQLite 默认上限 512 MiB，并保留至少 256 MiB 或磁盘 5% 的空闲空间。容量压力下先聚合未投递的低优先级原始样本，再在物理空间不足时按明确策略淘汰并上报数据缺口。

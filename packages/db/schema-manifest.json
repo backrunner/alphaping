@@ -5,7 +5,7 @@
       "migrations": [
         {
           "file": "0001_control.sql",
-          "sha256": "5e3611931cb5e2c47f040f6eb02428c6c789fa12bc3b10a806870ba0c4192d81"
+          "sha256": "3208198e05e4b9b79de825f79b66436ee983db533d589ba02e115d1efa7821ed"
         },
         {
           "file": "0002_resource_sequences.sql",
@@ -53,7 +53,7 @@
         },
         {
           "file": "0013_workspace_defaults.sql",
-          "sha256": "42e9a7548a47b55695cca9208388f3bf11607c4d86e6068b54197b3065200345"
+          "sha256": "9e14a2154971db6db19be37ed1268bac6ceb8b457d75701507df85e08aaf9ed0"
         },
         {
           "file": "0014_agent_auth_cooldown.sql",
@@ -439,7 +439,7 @@
           "type": "table",
           "name": "machines",
           "table": "machines",
-          "sql": "CREATE TABLE machines (\n  id TEXT PRIMARY KEY NOT NULL,\n  telemetry_pk INTEGER NOT NULL UNIQUE,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  name TEXT NOT NULL,\n  description TEXT NOT NULL DEFAULT '',\n  expected_host TEXT,\n  labels_json TEXT NOT NULL DEFAULT '{}',\n  sampling_interval_seconds INTEGER NOT NULL DEFAULT 10\n    CHECK (sampling_interval_seconds BETWEEN 5 AND 300),\n  report_interval_seconds INTEGER NOT NULL DEFAULT 60\n    CHECK (report_interval_seconds BETWEEN 60 AND 900),\n  offline_after_seconds INTEGER NOT NULL DEFAULT 150\n    CHECK (offline_after_seconds BETWEEN 60 AND 86400),\n  container_monitoring_enabled INTEGER NOT NULL DEFAULT 0 CHECK (container_monitoring_enabled IN (0, 1)),\n  maintenance_until INTEGER,\n  desired_config_revision INTEGER NOT NULL DEFAULT 1,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  deleted_at INTEGER\n, container_catalog_digest BLOB, purge_started_at INTEGER, purge_agent_cursor TEXT NOT NULL DEFAULT '', public_slug TEXT) STRICT"
+          "sql": "CREATE TABLE machines (\n  id TEXT PRIMARY KEY NOT NULL,\n  telemetry_pk INTEGER NOT NULL UNIQUE,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  name TEXT NOT NULL,\n  description TEXT NOT NULL DEFAULT '',\n  expected_host TEXT,\n  labels_json TEXT NOT NULL DEFAULT '{}',\n  sampling_interval_seconds INTEGER NOT NULL DEFAULT 10\n    CHECK (sampling_interval_seconds BETWEEN 1 AND 300),\n  report_interval_seconds INTEGER NOT NULL DEFAULT 60\n    CHECK (report_interval_seconds BETWEEN 60 AND 900),\n  offline_after_seconds INTEGER NOT NULL DEFAULT 150\n    CHECK (offline_after_seconds BETWEEN 60 AND 86400),\n  container_monitoring_enabled INTEGER NOT NULL DEFAULT 0 CHECK (container_monitoring_enabled IN (0, 1)),\n  maintenance_until INTEGER,\n  desired_config_revision INTEGER NOT NULL DEFAULT 1,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  deleted_at INTEGER\n, container_catalog_digest BLOB, purge_started_at INTEGER, purge_agent_cursor TEXT NOT NULL DEFAULT '', public_slug TEXT) STRICT"
         },
         {
           "type": "table",
@@ -535,7 +535,7 @@
           "type": "table",
           "name": "workspaces",
           "table": "workspaces",
-          "sql": "CREATE TABLE workspaces (\n  id TEXT PRIMARY KEY NOT NULL,\n  telemetry_pk INTEGER NOT NULL UNIQUE,\n  slug TEXT NOT NULL UNIQUE,\n  name TEXT NOT NULL,\n  default_dashboard_id TEXT,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  deleted_at INTEGER\n, default_sampling_interval_seconds INTEGER NOT NULL DEFAULT 10\n  CHECK (default_sampling_interval_seconds BETWEEN 5 AND 300), purge_started_at INTEGER) STRICT"
+          "sql": "CREATE TABLE workspaces (\n  id TEXT PRIMARY KEY NOT NULL,\n  telemetry_pk INTEGER NOT NULL UNIQUE,\n  slug TEXT NOT NULL UNIQUE,\n  name TEXT NOT NULL,\n  default_dashboard_id TEXT,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  deleted_at INTEGER\n, default_sampling_interval_seconds INTEGER NOT NULL DEFAULT 10\n  CHECK (default_sampling_interval_seconds BETWEEN 1 AND 300), purge_started_at INTEGER) STRICT"
         },
         {
           "type": "trigger",
@@ -1009,7 +1009,7 @@
           "type": "table",
           "name": "machines",
           "table": "machines",
-          "sql": "CREATE TABLE machines (\n  id TEXT PRIMARY KEY NOT NULL,\n  telemetry_pk INTEGER NOT NULL UNIQUE,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  name TEXT NOT NULL,\n  description TEXT NOT NULL DEFAULT '',\n  expected_host TEXT,\n  labels_json TEXT NOT NULL DEFAULT '{}',\n  sampling_interval_seconds INTEGER NOT NULL DEFAULT 10\n    CHECK (sampling_interval_seconds BETWEEN 5 AND 300),\n  report_interval_seconds INTEGER NOT NULL DEFAULT 60\n    CHECK (report_interval_seconds BETWEEN 60 AND 900),\n  offline_after_seconds INTEGER NOT NULL DEFAULT 150\n    CHECK (offline_after_seconds BETWEEN 60 AND 86400),\n  container_monitoring_enabled INTEGER NOT NULL DEFAULT 0 CHECK (container_monitoring_enabled IN (0, 1)),\n  maintenance_until INTEGER,\n  desired_config_revision INTEGER NOT NULL DEFAULT 1,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  deleted_at INTEGER\n, container_catalog_digest BLOB, purge_started_at INTEGER, purge_agent_cursor TEXT NOT NULL DEFAULT '', public_slug TEXT) STRICT"
+          "sql": "CREATE TABLE machines (\n  id TEXT PRIMARY KEY NOT NULL,\n  telemetry_pk INTEGER NOT NULL UNIQUE,\n  workspace_id TEXT NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,\n  name TEXT NOT NULL,\n  description TEXT NOT NULL DEFAULT '',\n  expected_host TEXT,\n  labels_json TEXT NOT NULL DEFAULT '{}',\n  sampling_interval_seconds INTEGER NOT NULL DEFAULT 10\n    CHECK (sampling_interval_seconds BETWEEN 1 AND 300),\n  report_interval_seconds INTEGER NOT NULL DEFAULT 60\n    CHECK (report_interval_seconds BETWEEN 60 AND 900),\n  offline_after_seconds INTEGER NOT NULL DEFAULT 150\n    CHECK (offline_after_seconds BETWEEN 60 AND 86400),\n  container_monitoring_enabled INTEGER NOT NULL DEFAULT 0 CHECK (container_monitoring_enabled IN (0, 1)),\n  maintenance_until INTEGER,\n  desired_config_revision INTEGER NOT NULL DEFAULT 1,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  deleted_at INTEGER\n, container_catalog_digest BLOB, purge_started_at INTEGER, purge_agent_cursor TEXT NOT NULL DEFAULT '', public_slug TEXT) STRICT"
         },
         {
           "type": "table",
@@ -1153,7 +1153,7 @@
           "type": "table",
           "name": "workspaces",
           "table": "workspaces",
-          "sql": "CREATE TABLE workspaces (\n  id TEXT PRIMARY KEY NOT NULL,\n  telemetry_pk INTEGER NOT NULL UNIQUE,\n  slug TEXT NOT NULL UNIQUE,\n  name TEXT NOT NULL,\n  default_dashboard_id TEXT,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  deleted_at INTEGER\n, default_sampling_interval_seconds INTEGER NOT NULL DEFAULT 10\n  CHECK (default_sampling_interval_seconds BETWEEN 5 AND 300), purge_started_at INTEGER) STRICT"
+          "sql": "CREATE TABLE workspaces (\n  id TEXT PRIMARY KEY NOT NULL,\n  telemetry_pk INTEGER NOT NULL UNIQUE,\n  slug TEXT NOT NULL UNIQUE,\n  name TEXT NOT NULL,\n  default_dashboard_id TEXT,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  deleted_at INTEGER\n, default_sampling_interval_seconds INTEGER NOT NULL DEFAULT 10\n  CHECK (default_sampling_interval_seconds BETWEEN 1 AND 300), purge_started_at INTEGER) STRICT"
         },
         {
           "type": "trigger",

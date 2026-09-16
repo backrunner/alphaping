@@ -86,7 +86,7 @@ pub fn validate_config(config: &AgentConfigSnapshot) -> Result<()> {
         config.report_interval_seconds,
     ) {
         (Some(sample), Some(report))
-            if (5..=300).contains(&sample)
+            if (1..=300).contains(&sample)
                 && (60..=900).contains(&report)
                 && report.is_multiple_of(sample) => {}
         (None, None) => {}
@@ -308,9 +308,10 @@ mod tests {
     fn configuration_intervals_are_bounded_and_backward_compatible() {
         let snapshots = [
             (None, None, true),
-            (Some(10), Some(60), true),
-            (Some(5), Some(900), true),
-            (Some(4), Some(60), false),
+            (Some(1), Some(60), true),
+            (Some(300), Some(900), true),
+            (Some(0), Some(60), false),
+            (Some(301), Some(903), false),
             (Some(10), Some(65), false),
             (Some(10), None, false),
         ];

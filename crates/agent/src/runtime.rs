@@ -38,6 +38,7 @@ struct RuntimeControl<'a> {
 
 const TRANSPORT_SEQUENCE_RESERVATION: u64 = 1_024;
 const BACKLOG_WAKE_BATCH: u32 = 4;
+const DELIVERY_CREATE_BATCH: u32 = 64;
 
 pub async fn run(
     config_path: &Path,
@@ -117,9 +118,10 @@ pub async fn run(
                     warn!(error = %error, "live snapshot was dropped");
                 }
                 match spool.enforce_capacity(config.max_spool_bytes, now) {
-                    Ok(capacity) if capacity.compacted_samples > 0 || capacity.dropped_samples > 0 => {
+                    Ok(capacity) if capacity.compacted_samples > 0 || capacity.dropped_samples > 0 || capacity.evicted_deliveries > 0 => {
                         warn!(compacted_samples = capacity.compacted_samples, dropped_samples = capacity.dropped_samples,
-                            "spool pressure reduced unassigned samples");
+                            evicted_deliveries = capacity.evicted_deliveries,
+                            "spool pressure reduced retained data");
                     }
                     Ok(_) => {}
                     Err(error) => warn!(error = %error, "spool maintenance failed; durable upload remains active"),
@@ -132,8 +134,20 @@ pub async fn run(
                 {
                     error!(error = %error, "failed to persist container inventory");
                 }
-                if let Err(error) = spool.create_next_delivery(config.machine_pk, config.workspace_pk, now) {
-                    error!(error = %error, "failed to create durable report");
+                match spool.redrive_quarantined(now) {
+                    Ok(0) => {}
+                    Ok(redriven) => info!(redriven, "quarantined durable reports rescheduled"),
+                    Err(error) => warn!(error = %error, "quarantined report redrive failed"),
+                }
+                for _ in 0..DELIVERY_CREATE_BATCH {
+                    match spool.create_next_delivery(config.machine_pk, config.workspace_pk, now) {
+                        Ok(Some(_)) => continue,
+                        Ok(None) => break,
+                        Err(error) => {
+                            error!(error = %error, "failed to create durable report");
+                            break;
+                        }
+                    }
                 }
             }
             _ = upload_tick.tick(), if uploads.is_empty() => {
@@ -313,11 +327,18 @@ fn finish_upload(
             }
         }
         Err(UploadError::PermanentStatus(status)) => {
-            spool.quarantine_delivery(&delivery.report_id, "server_rejected_payload")?;
+            spool.quarantine_delivery(&delivery.report_id, "server_rejected_payload", now_ms)?;
             error!(
                 status,
                 nominal_minute_ms = delivery.nominal_minute_ms,
                 "durable report was quarantined after a permanent rejection"
+            );
+        }
+        Err(UploadError::Oversized) => {
+            spool.quarantine_delivery(&delivery.report_id, "payload_too_large", now_ms)?;
+            error!(
+                nominal_minute_ms = delivery.nominal_minute_ms,
+                "durable report exceeded the envelope limit and was quarantined"
             );
         }
         Err(error) => {

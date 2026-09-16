@@ -91,7 +91,7 @@ impl AgentConfig {
         if !self.endpoint.starts_with("https://") {
             bail!("endpoint must use HTTPS");
         }
-        if self.sample_interval_seconds < 5 || self.report_interval_seconds < 60 {
+        if self.sample_interval_seconds < 1 || self.report_interval_seconds < 60 {
             bail!("sample/report intervals are below the supported minimum");
         }
         if !self

@@ -66,7 +66,7 @@ function normalizeSetupInput(input: SetupInput): SetupInput {
   }
   if (
     !Number.isInteger(input.defaultSamplingIntervalSeconds) ||
-    input.defaultSamplingIntervalSeconds < 5 ||
+    input.defaultSamplingIntervalSeconds < 1 ||
     input.defaultSamplingIntervalSeconds > 300 ||
     60 % input.defaultSamplingIntervalSeconds !== 0
   ) {

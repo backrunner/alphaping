@@ -4,7 +4,7 @@
 
 - `CONTROL_DB` 保存 Better Auth、RBAC、workspace、资源配置、Agent key metadata、incident 和公告。
 - `TELEMETRY_DB` 保存 replay state、完整 raw report/check batch、latest、5 分钟 rollup、状态桶/事件和 retention cursor。
-- 每个 60 秒 report 保存在 5 分钟 block row 的一个固定分钟槽中，内含全部 6 个 10 秒 sample；禁止默认拆成每 sample/磁盘/网卡/容器一行。
+- 每个 60 秒 report 保存在 5 分钟 block row 的一个固定分钟槽中，内含该分钟全部 sample（采样间隔 1–300 秒可配、默认 10 秒，单 report 最多 60 个）；禁止默认拆成每 sample/磁盘/网卡/容器一行。
 - R2 只保存用户显式生成的 export/backup artifact，不保存 dashboard 在线遥测。
 - 所有表包含 `workspace_id` 或能通过不可变外键唯一归属 workspace。
 - 外部 ID 使用 UUIDv7/ULID；遥测热表使用内部 integer resource PK 和定长 binary report ID。

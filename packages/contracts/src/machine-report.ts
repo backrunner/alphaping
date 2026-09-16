@@ -117,7 +117,7 @@ export async function decodeCompressedMachineSamples(
       const end = length.next + safeProtobufNumber(length.value);
       if (end > bytes.length) throw new Error("invalid_machine_report_field");
       samples.push(decodeMetricSample(bytes.subarray(length.next, end)));
-      if (samples.length > 6) throw new Error("machine_report_sample_limit");
+      if (samples.length > 60) throw new Error("machine_report_sample_limit");
       offset = end;
     } else {
       offset = skipProtobufField(bytes, offset, wireType);

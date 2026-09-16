@@ -73,7 +73,7 @@
             ><span>Sample every</span><input
               type="number"
               name="samplingIntervalSeconds"
-              min="5"
+              min="1"
               max="300"
               value={data.defaultSamplingIntervalSeconds}
               required

@@ -13,4 +13,4 @@ DROP TABLE telemetry_resource_sequences;
 ALTER TABLE telemetry_resource_sequences_next RENAME TO telemetry_resource_sequences;
 
 ALTER TABLE workspaces ADD COLUMN default_sampling_interval_seconds INTEGER NOT NULL DEFAULT 10
-  CHECK (default_sampling_interval_seconds BETWEEN 5 AND 300);
+  CHECK (default_sampling_interval_seconds BETWEEN 1 AND 300);

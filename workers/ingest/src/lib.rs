@@ -2,6 +2,8 @@ use alphaping_protocol::{
     PROTOCOL_VERSION, encode_message,
     v1::{EnrollmentRequest, MachineReport, MetricSample},
 };
+
+pub use alphaping_protocol::MAX_REPORT_SAMPLES;
 use ed25519_dalek::{Signature, VerifyingKey};
 use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
@@ -13,7 +15,6 @@ mod check_result_model;
 #[cfg(any(target_arch = "wasm32", test))]
 mod live_session;
 
-pub const MAX_REPORT_SAMPLES: usize = 6;
 pub const MAX_CONTAINER_COUNT: usize = 64;
 pub const MAX_CONTAINER_PORTS: usize = 8;
 pub const MAX_RUNTIME_COUNT: usize = 16;
