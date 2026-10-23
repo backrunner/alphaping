@@ -4,8 +4,6 @@ import svelte from "eslint-plugin-svelte";
 import globals from "globals";
 import ts from "typescript-eslint";
 
-import svelteConfig from "./apps/web/svelte.config.js";
-
 export default defineConfig([
   {
     ignores: [
@@ -43,7 +41,6 @@ export default defineConfig([
       parserOptions: {
         extraFileExtensions: [".svelte"],
         parser: ts.parser,
-        svelteConfig,
       },
     },
   },

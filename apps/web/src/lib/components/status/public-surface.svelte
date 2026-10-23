@@ -7,7 +7,7 @@
     normalizeSiteAppearance,
     type SiteAppearance,
   } from "@alphaping/contracts";
-  import { provideAppearance } from "$lib/appearance-context";
+  import { provideAppearance } from "#lib/appearance-context.ts";
 
   let {
     appearance,

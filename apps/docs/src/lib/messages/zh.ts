@@ -9,6 +9,7 @@ export const zhMessages = {
   "nav.mobile.open": "打开导航",
   "nav.mobile.close": "关闭导航",
   "nav.skipToContent": "跳转到正文",
+  "search.close": "关闭搜索",
   "search.trigger": "搜索文档",
   "search.dialog": "搜索文档",
   "search.query": "搜索关键词",

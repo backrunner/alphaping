@@ -1,8 +1,8 @@
 <script lang="ts">
-  import SiteLogo from "$components/layout/site-logo.svelte";
+  import SiteLogo from "#lib/components/layout/site-logo.svelte";
   import { ArrowRight, Check, KeyRound, LogIn, UserPlus } from "@lucide/svelte";
 
-  import Button from "$components/ui/button/button.svelte";
+  import Button from "#lib/components/ui/button/button.svelte";
 
   let { data, form } = $props();
   const returnTo = $derived(data.invitePath);

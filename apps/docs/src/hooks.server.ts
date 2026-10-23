@@ -1,4 +1,4 @@
-import type { Handle } from "@sveltejs/kit";
+import type { Handle } from "@sveltejs/kit/hooks";
 import { resolveLocaleCodeFromPath } from "svedocs/theme/headless";
 import config from "virtual:svedocs/config";
 

@@ -1,5 +1,5 @@
-import type { Auth } from "$lib/server/auth";
-import type { DomainRoute } from "$lib/server/domain-routing";
+import type { Auth } from "#lib/server/auth.ts";
+import type { DomainRoute } from "#lib/server/domain-routing.ts";
 
 declare global {
   namespace App {
@@ -7,12 +7,6 @@ declare global {
       auth: Auth | null;
       domainRoute: DomainRoute | null;
       session: Awaited<ReturnType<Auth["api"]["getSession"]>>;
-    }
-
-    interface Platform {
-      env: Env;
-      ctx: ExecutionContext;
-      caches: CacheStorage;
     }
   }
 }

@@ -1,3 +1,4 @@
+import { env } from "cloudflare:workers";
 import {
   loadPublicStatusPage,
   PublicStatusDataError,
@@ -10,19 +11,19 @@ import {
   publicStatusSnapshotFreshMaxAge,
   readPublicStatusSnapshot,
   writePublicStatusSnapshot,
-} from "$lib/server/public-status-snapshot";
+} from "#lib/server/public-status-snapshot.ts";
 import {
   normalizePublicStatusServicePage,
   PUBLIC_STATUS_SERVICE_PAGE_SIZE,
-} from "$lib/public-status-view";
+} from "#lib/public-status-view.ts";
 
 import type { PageServerLoad } from "./$types";
 
-export const load: PageServerLoad = async ({ params, platform, setHeaders, url }) => {
-  if (!platform) throw error(503, "Cloudflare bindings are unavailable");
+export const load: PageServerLoad = async ({ params, setHeaders, url }) => {
+  if (!env.CONTROL_DB) throw error(503, "Cloudflare bindings are unavailable");
   const now = Date.now();
   const servicePage = normalizePublicStatusServicePage(url.searchParams.get("servicePage"));
-  const cache = await platform.caches.open(PUBLIC_STATUS_SNAPSHOT_CACHE).catch(() => null);
+  const cache = await caches.open(PUBLIC_STATUS_SNAPSHOT_CACHE).catch(() => null);
   const snapshot = cache
     ? await readPublicStatusSnapshot(cache, url.origin, params.workspace, now, servicePage).catch(
         () => null,
@@ -41,8 +42,8 @@ export const load: PageServerLoad = async ({ params, platform, setHeaders, url }
   }
   try {
     const page = await loadPublicStatusPage(
-      platform.env.CONTROL_DB,
-      platform.env.TELEMETRY_DB,
+      env.CONTROL_DB,
+      env.TELEMETRY_DB,
       params.workspace,
       now,
       { servicePage, servicePageSize: PUBLIC_STATUS_SERVICE_PAGE_SIZE },

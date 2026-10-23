@@ -8,14 +8,14 @@
   import type { DashboardMachine } from "@alphaping/db";
   import { Radio } from "@lucide/svelte";
   import { onMount, untrack } from "svelte";
-  import { createRequestScope } from "$lib/state/request-scope";
+  import { createRequestScope } from "#lib/state/request-scope.ts";
 
   import {
     liveReconnectCeiling,
     parseMachineLiveFallback,
     parseMachineLiveTicket,
     type MachineLiveTicket,
-  } from "$lib/state/machine-live";
+  } from "#lib/state/machine-live.ts";
 
   type LiveState = "idle" | "connecting" | "waiting" | "healthy" | "degraded";
   type Timer = ReturnType<typeof setTimeout>;

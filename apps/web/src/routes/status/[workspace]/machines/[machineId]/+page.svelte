@@ -1,11 +1,11 @@
 <script lang="ts">
-  import ProductAttribution from "$components/layout/product-attribution.svelte";
-  import PublicSurface from "$components/status/public-surface.svelte";
-  import PublicNavigation from "$components/status/public-navigation.svelte";
+  import ProductAttribution from "#lib/components/layout/product-attribution.svelte";
+  import PublicSurface from "#lib/components/status/public-surface.svelte";
+  import PublicNavigation from "#lib/components/status/public-navigation.svelte";
   import { ArrowLeft, Box, Cpu, HardDrive, MemoryStick, Network, Radio } from "@lucide/svelte";
 
-  import StatusLabel from "$components/status/status-label.svelte";
-  import { formatBytes, formatPercent, formatRate, formatRelativeTime } from "$lib/utils/format";
+  import StatusLabel from "#lib/components/status/status-label.svelte";
+  import { formatBytes, formatPercent, formatRate, formatRelativeTime } from "#lib/utils/format.ts";
 
   let { data } = $props();
 </script>

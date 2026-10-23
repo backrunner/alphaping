@@ -1,3 +1,4 @@
+import { env } from "cloudflare:workers";
 import { signViewerLiveTicket } from "@alphaping/contracts";
 import { loadAuthorizedMachineScope, MachineNotFoundError } from "@alphaping/db";
 import { json } from "@sveltejs/kit";
@@ -25,16 +26,16 @@ function liveOrigin(value: string): string | null {
   return `${parsed.protocol}//${parsed.host}`;
 }
 
-export const GET: RequestHandler = async ({ locals, params, platform }) => {
-  if (!locals.session || !platform) return json({ message: "Not found" }, { status: 404 });
+export const GET: RequestHandler = async ({ locals, params }) => {
+  if (!locals.session || !env.CONTROL_DB) return json({ message: "Not found" }, { status: 404 });
   try {
     const scope = await loadAuthorizedMachineScope(
-      platform.env.CONTROL_DB,
+      env.CONTROL_DB,
       params.workspace,
       locals.session.user.id,
       params.machineId,
     );
-    const origin = liveOrigin(platform.env.LIVE_ORIGIN);
+    const origin = liveOrigin(env.LIVE_ORIGIN);
     if (!origin) {
       return json({ available: false }, { headers: { "cache-control": "private, no-store" } });
     }
@@ -44,7 +45,7 @@ export const GET: RequestHandler = async ({ locals, params, platform }) => {
         subjectId: locals.session.user.id,
         machinePk: scope.machinePk,
       },
-      platform.env.LIVE_TICKET_SECRET,
+      env.LIVE_TICKET_SECRET,
     );
     return json(
       {

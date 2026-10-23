@@ -1,9 +1,9 @@
 <script lang="ts">
   import type { DashboardService } from "@alphaping/db";
 
-  import StatusCapsules from "$components/status/status-capsules.svelte";
-  import StatusLabel from "$components/status/status-label.svelte";
-  import { formatRelativeTime } from "$lib/utils/format";
+  import StatusCapsules from "#lib/components/status/status-capsules.svelte";
+  import StatusLabel from "#lib/components/status/status-label.svelte";
+  import { formatRelativeTime } from "#lib/utils/format.ts";
 
   let { service, workspaceSlug }: { service: DashboardService; workspaceSlug: string } = $props();
 

@@ -5,8 +5,8 @@
   import type { SvedocsAppProps } from "svedocs/theme/types";
   import themeComponents from "virtual:svedocs/theme-components";
   import loadSearch from "virtual:svedocs/search-loader";
-  import Landing from "$lib/components/Landing.svelte";
-  import { mountTableScrollMasks } from "$lib/table-scroll-masks";
+  import Landing from "#lib/components/Landing.svelte";
+  import { mountTableScrollMasks } from "#lib/table-scroll-masks.ts";
   export let data: SvedocsAppProps;
 
   let clearTableScrollMasks = () => {};

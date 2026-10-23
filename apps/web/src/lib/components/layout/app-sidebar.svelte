@@ -1,5 +1,5 @@
 <script lang="ts">
-  import SiteLogo from "$components/layout/site-logo.svelte";
+  import SiteLogo from "#lib/components/layout/site-logo.svelte";
   import { page } from "$app/state";
   import {
     Activity,

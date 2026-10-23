@@ -1,8 +1,8 @@
 <script lang="ts">
   import { ArrowDown, ArrowUp, Box, Clock3 } from "@lucide/svelte";
   import type { PublicStatusMachine } from "@alphaping/db";
-  import StatusLabel from "$components/status/status-label.svelte";
-  import { formatBytes, formatPercent, formatRate, formatRelativeTime } from "$lib/utils/format";
+  import StatusLabel from "#lib/components/status/status-label.svelte";
+  import { formatBytes, formatPercent, formatRate, formatRelativeTime } from "#lib/utils/format.ts";
   let { machine, workspaceSlug }: { machine: PublicStatusMachine; workspaceSlug: string } =
     $props();
   const metrics = $derived([

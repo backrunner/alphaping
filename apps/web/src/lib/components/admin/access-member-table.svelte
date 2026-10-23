@@ -7,8 +7,8 @@
     WorkspaceAccessInvitation,
     WorkspaceAccessMember,
     WorkspaceAccessPagination,
-  } from "$lib/server/workspace-access";
-  import Button from "$components/ui/button/button.svelte";
+  } from "#lib/server/workspace-access.ts";
+  import Button from "#lib/components/ui/button/button.svelte";
 
   let {
     members,

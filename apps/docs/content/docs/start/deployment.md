@@ -8,7 +8,7 @@ order: 1
 
 | 工具或资源 | 要求                                                                 |
 | ---------- | -------------------------------------------------------------------- |
-| Node.js    | 22.12 或更新版本；仓库 CI 使用 Node.js 24                            |
+| Node.js    | 22.17 或更新版本；仓库 CI 使用 Node.js 24                            |
 | pnpm       | 12.3.4，与根目录 packageManager 一致                                 |
 | Rust       | 1.96，包含 wasm32-unknown-unknown target                             |
 | Cloudflare | Workers、两个 D1 数据库、WebSocket Durable Object；导出和备份使用 R2 |

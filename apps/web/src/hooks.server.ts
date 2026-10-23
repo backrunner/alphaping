@@ -1,16 +1,18 @@
-import { building } from "$app/environment";
-import { redirect, type Handle } from "@sveltejs/kit";
+import { env } from "cloudflare:workers";
+import { building } from "$app/env";
+import { redirect } from "@sveltejs/kit";
+import type { Handle } from "@sveltejs/kit/hooks";
 import { svelteKitHandler } from "better-auth/svelte-kit";
 
-import { createAuth } from "$lib/server/auth";
-import { allowCredentialAttempt, emailFromBetterAuthRequest } from "$lib/server/auth-rate-limit";
+import { createAuth } from "#lib/server/auth.ts";
+import { allowCredentialAttempt, emailFromBetterAuthRequest } from "#lib/server/auth-rate-limit.ts";
 import {
   DomainRoutingConfigError,
   domainRouteAllowsPath,
   domainRouteForRequest,
   type DomainRoute,
-} from "$lib/server/domain-routing";
-import { requestBodyLimit, withBoundedRequestBody } from "$lib/server/request-body";
+} from "#lib/server/domain-routing.ts";
+import { requestBodyLimit, withBoundedRequestBody } from "#lib/server/request-body.ts";
 
 const SECURITY_HEADERS: Readonly<Record<string, string>> = {
   "cross-origin-opener-policy": "same-origin",
@@ -46,18 +48,17 @@ function applySecurityHeaders(response: Response): void {
 
 export const handle: Handle = async ({ event, resolve }) => {
   const pathname = event.url.pathname;
-  event.request = await withBoundedRequestBody(event.request, requestBodyLimit(pathname));
+  event = {
+    ...event,
+    request: await withBoundedRequestBody(event.request, requestBodyLimit(pathname)),
+  };
   event.locals.auth = null;
   event.locals.domainRoute = null;
   event.locals.session = null;
-  const platform = event.platform;
-  if (!platform) return resolve(event);
+  if (!env.CONTROL_DB) return resolve(event);
 
   try {
-    event.locals.domainRoute = domainRouteForRequest(
-      platform.env.DOMAIN_ROUTES_JSON,
-      event.url.hostname,
-    );
+    event.locals.domainRoute = domainRouteForRequest(env.DOMAIN_ROUTES_JSON, event.url.hostname);
   } catch (cause) {
     if (!(cause instanceof DomainRoutingConfigError)) throw cause;
     const response = new Response("Domain routing is unavailable", { status: 503 });
@@ -77,8 +78,8 @@ export const handle: Handle = async ({ event, resolve }) => {
   if (pathname === "/api/auth/sign-in/email" && event.request.method === "POST") {
     const email = await emailFromBetterAuthRequest(event.request);
     const allowed = await allowCredentialAttempt(
-      platform.env.AUTH_EDGE_RATE_LIMITER,
-      platform.env.AUTH_ACCOUNT_RATE_LIMITER,
+      env.AUTH_EDGE_RATE_LIMITER,
+      env.AUTH_ACCOUNT_RATE_LIMITER,
       event.request.headers,
       email,
     );
@@ -111,7 +112,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 
   const routeNeedsInstallation = !pathname.includes(".");
   if (routeNeedsInstallation) {
-    const installation = await platform.env.CONTROL_DB.prepare(
+    const installation = await env.CONTROL_DB.prepare(
       "SELECT 1 AS installed FROM installations WHERE state = 'complete' LIMIT 1",
     )
       .first<{ installed: number }>()
@@ -124,8 +125,8 @@ export const handle: Handle = async ({ event, resolve }) => {
     }
   }
 
-  const secret = platform.env.BETTER_AUTH_SECRET;
-  const auth = createAuth(platform.env.CONTROL_DB, secret, event.url.origin);
+  const secret = env.BETTER_AUTH_SECRET;
+  const auth = createAuth(env.CONTROL_DB, secret, event.url.origin);
   event.locals.auth = auth;
   event.locals.session = await auth.api.getSession({ headers: event.request.headers });
 

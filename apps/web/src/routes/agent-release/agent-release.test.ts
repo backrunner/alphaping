@@ -1,12 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { GET } from "./[target]/+server.js";
+import { agentReleaseResponse } from "#lib/server/agent-release.ts";
 
 function requestManifest(manifest: string): Response {
-  return GET({
-    params: { target: "linux-x86_64" },
-    platform: { env: { AGENT_RELEASE_MANIFEST_JSON: manifest } },
-  } as never) as Response;
+  return agentReleaseResponse("linux-x86_64", manifest);
 }
 
 describe("Agent release manifest", () => {

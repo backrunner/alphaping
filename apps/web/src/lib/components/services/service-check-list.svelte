@@ -11,10 +11,10 @@
     Trash2,
   } from "@lucide/svelte";
 
-  import CheckConfigurationEditor from "$components/services/check-configuration-editor.svelte";
-  import CheckHistoryPanel from "$components/services/check-history-panel.svelte";
-  import StatusLabel from "$components/status/status-label.svelte";
-  import { formatRelativeTime } from "$lib/utils/format";
+  import CheckConfigurationEditor from "#lib/components/services/check-configuration-editor.svelte";
+  import CheckHistoryPanel from "#lib/components/services/check-history-panel.svelte";
+  import StatusLabel from "#lib/components/status/status-label.svelte";
+  import { formatRelativeTime } from "#lib/utils/format.ts";
 
   let {
     checks,

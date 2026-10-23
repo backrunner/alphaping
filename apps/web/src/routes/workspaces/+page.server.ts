@@ -1,30 +1,32 @@
+import { env } from "cloudflare:workers";
 import { error, fail, isHttpError, isRedirect, redirect } from "@sveltejs/kit";
 
 import {
   createWorkspace,
   listUserWorkspacePage,
   restoreWorkspace,
-} from "$lib/server/workspace-lifecycle";
+} from "#lib/server/workspace-lifecycle.ts";
 
 import type { Actions, PageServerLoad } from "./$types";
 
-export const load: PageServerLoad = async ({ locals, platform, url }) => {
+export const load: PageServerLoad = async ({ locals, url }) => {
   if (!locals.session) throw redirect(303, "/login?returnTo=%2Fworkspaces");
-  if (!platform) throw error(503, "Cloudflare bindings are unavailable");
+  if (!env.CONTROL_DB) throw error(503, "Cloudflare bindings are unavailable");
   return {
     now: Date.now(),
-    workspaces: await listUserWorkspacePage(platform.env.CONTROL_DB, locals.session.user.id, {
+    workspaces: await listUserWorkspacePage(env.CONTROL_DB, locals.session.user.id, {
       page: Number(url.searchParams.get("page") ?? "1"),
     }),
   };
 };
 
 export const actions: Actions = {
-  create: async ({ request, locals, platform }) => {
-    if (!locals.session || !platform) return fail(401, { kind: "create", message: "Unauthorized" });
+  create: async ({ request, locals }) => {
+    if (!locals.session || !env.CONTROL_DB)
+      return fail(401, { kind: "create", message: "Unauthorized" });
     const form = await request.formData();
     try {
-      const workspace = await createWorkspace(platform.env.CONTROL_DB, locals.session.user.id, {
+      const workspace = await createWorkspace(env.CONTROL_DB, locals.session.user.id, {
         name: String(form.get("name") ?? ""),
         slug: String(form.get("slug") ?? ""),
         rawDays: Number(form.get("rawDays")),
@@ -42,12 +44,12 @@ export const actions: Actions = {
       });
     }
   },
-  restore: async ({ request, locals, platform }) => {
-    if (!locals.session || !platform) return fail(401, { message: "Unauthorized" });
+  restore: async ({ request, locals }) => {
+    if (!locals.session || !env.CONTROL_DB) return fail(401, { message: "Unauthorized" });
     const form = await request.formData();
     try {
       const restored = await restoreWorkspace(
-        platform.env.CONTROL_DB,
+        env.CONTROL_DB,
         String(form.get("workspaceId") ?? ""),
         locals.session.user.id,
       );

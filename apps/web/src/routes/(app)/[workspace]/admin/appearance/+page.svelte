@@ -6,8 +6,8 @@
     validateSiteLogoUrl,
     type SiteAppearance,
   } from "@alphaping/contracts";
-  import Button from "$components/ui/button/button.svelte";
-  import SiteLogo from "$components/layout/site-logo.svelte";
+  import Button from "#lib/components/ui/button/button.svelte";
+  import SiteLogo from "#lib/components/layout/site-logo.svelte";
   let { data, form } = $props();
   // Form state intentionally starts from the saved dashboard settings.
   // svelte-ignore state_referenced_locally

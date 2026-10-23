@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Popover } from "bits-ui";
   import { Check, Moon, Palette, RotateCcw, Sun, Monitor } from "@lucide/svelte";
-  import { useAppearance } from "$lib/appearance-context";
+  import { useAppearance } from "#lib/appearance-context.ts";
   import { appearancePalettes } from "@alphaping/contracts";
 
   const appearance = useAppearance();

@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 // The anti-FOUC theme bootstrap in app.html is an inline script, which the
-// CSP (svelte.config.js, mode "auto") blocks unless its sha256 hash is listed
+// CSP (vite.config.ts, mode "auto") blocks unless its sha256 hash is listed
 // in script-src. Any edit to the script — including whitespace — changes the
 // hash. This test fails loudly when the two drift apart.
 
@@ -23,7 +23,7 @@ function inlineBootstrapHash(): string {
 
 describe("theme bootstrap CSP hash", () => {
   it("script-src allowlists the exact inline script in app.html", () => {
-    const config = readFileSync(`${webRoot}/svelte.config.js`, "utf8");
+    const config = readFileSync(`${webRoot}/vite.config.ts`, "utf8");
     expect(config).toContain(`"${inlineBootstrapHash()}"`);
   });
 });

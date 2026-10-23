@@ -1,3 +1,4 @@
+import { env } from "cloudflare:workers";
 import {
   IncidentCenterDataError,
   IncidentCenterNotFoundError,
@@ -9,7 +10,7 @@ import {
   appendIncidentUpdate,
   createAnnouncement,
   createIncident,
-} from "$lib/server/incident-management";
+} from "#lib/server/incident-management.ts";
 
 import type { Actions, PageServerLoad } from "./$types";
 
@@ -27,15 +28,11 @@ function dateValue(
   return localWallClock + timezoneOffsetMinutes * 60_000;
 }
 
-export const load: PageServerLoad = async ({ locals, params, platform }) => {
+export const load: PageServerLoad = async ({ locals, params }) => {
   if (!locals.session) throw redirect(303, "/login");
-  if (!platform) throw error(503, "Cloudflare bindings are unavailable");
+  if (!env.CONTROL_DB) throw error(503, "Cloudflare bindings are unavailable");
   try {
-    return await loadIncidentCenter(
-      platform.env.CONTROL_DB,
-      params.workspace,
-      locals.session.user.id,
-    );
+    return await loadIncidentCenter(env.CONTROL_DB, params.workspace, locals.session.user.id);
   } catch (cause) {
     if (cause instanceof IncidentCenterNotFoundError) throw error(404, "Workspace not found");
     if (cause instanceof IncidentCenterDataError) {
@@ -46,13 +43,13 @@ export const load: PageServerLoad = async ({ locals, params, platform }) => {
 };
 
 export const actions: Actions = {
-  incident: async ({ request, locals, params, platform }) => {
-    if (!locals.session || !platform)
+  incident: async ({ request, locals, params }) => {
+    if (!locals.session || !env.CONTROL_DB)
       return fail(401, { kind: "incident", message: "Unauthorized" });
     const form = await request.formData();
     const timezoneOffset = Number(form.get("timezoneOffsetMinutes"));
     try {
-      await createIncident(platform.env.CONTROL_DB, params.workspace, locals.session.user.id, {
+      await createIncident(env.CONTROL_DB, params.workspace, locals.session.user.id, {
         title: String(form.get("title") ?? ""),
         summary: String(form.get("summary") ?? ""),
         severity: String(form.get("severity")) as "minor" | "major" | "critical",
@@ -66,12 +63,13 @@ export const actions: Actions = {
       return fail(isHttpError(cause) ? cause.status : 400, { kind: "incident", message });
     }
   },
-  update: async ({ request, locals, params, platform }) => {
-    if (!locals.session || !platform) return fail(401, { kind: "update", message: "Unauthorized" });
+  update: async ({ request, locals, params }) => {
+    if (!locals.session || !env.CONTROL_DB)
+      return fail(401, { kind: "update", message: "Unauthorized" });
     const form = await request.formData();
     try {
       await appendIncidentUpdate(
-        platform.env.CONTROL_DB,
+        env.CONTROL_DB,
         params.workspace,
         locals.session.user.id,
         String(form.get("incidentId") ?? ""),
@@ -87,14 +85,14 @@ export const actions: Actions = {
       return fail(isHttpError(cause) ? cause.status : 400, { kind: "update", message });
     }
   },
-  announcement: async ({ request, locals, params, platform }) => {
-    if (!locals.session || !platform) {
+  announcement: async ({ request, locals, params }) => {
+    if (!locals.session || !env.CONTROL_DB) {
       return fail(401, { kind: "announcement", message: "Unauthorized" });
     }
     const form = await request.formData();
     const timezoneOffset = Number(form.get("timezoneOffsetMinutes"));
     try {
-      await createAnnouncement(platform.env.CONTROL_DB, params.workspace, locals.session.user.id, {
+      await createAnnouncement(env.CONTROL_DB, params.workspace, locals.session.user.id, {
         title: String(form.get("title") ?? ""),
         body: String(form.get("body") ?? ""),
         severity: String(form.get("severity")) as

@@ -1,32 +1,30 @@
+import { env } from "cloudflare:workers";
 import { error, fail, isHttpError, redirect } from "@sveltejs/kit";
 
-import { loadDeveloperPanel } from "$lib/server/monitoring-access";
-import { installerChecksums } from "$lib/server/installers";
-import { createMachine, listDeletedResources, restoreResource } from "$lib/server/resources";
-import { createServiceMonitor } from "$lib/server/service-config";
-import { parseServiceCheckForm } from "$lib/server/service-form";
+import { loadDeveloperPanel } from "#lib/server/monitoring-access.ts";
+import { installerChecksums } from "#lib/server/installers.ts";
+import { createMachine, listDeletedResources, restoreResource } from "#lib/server/resources.ts";
+import { createServiceMonitor } from "#lib/server/service-config.ts";
+import { parseServiceCheckForm } from "#lib/server/service-form.ts";
 
 import type { Actions, PageServerLoad } from "./$types";
 
-export const load: PageServerLoad = async ({ locals, params, platform, url }) => {
+export const load: PageServerLoad = async ({ locals, params, url }) => {
   if (!locals.session) throw redirect(303, "/login");
-  if (!platform) throw error(503, "Cloudflare bindings are unavailable");
-  const panel = await loadDeveloperPanel(
-    platform.env.CONTROL_DB,
-    params.workspace,
-    locals.session.user.id,
-    { agentPage: Number(url.searchParams.get("agentPage") ?? "1") },
-  );
+  if (!env.CONTROL_DB) throw error(503, "Cloudflare bindings are unavailable");
+  const panel = await loadDeveloperPanel(env.CONTROL_DB, params.workspace, locals.session.user.id, {
+    agentPage: Number(url.searchParams.get("agentPage") ?? "1"),
+  });
   return {
     workspace: params.workspace,
-    ingestOrigin: platform.env.INGEST_ORIGIN,
+    ingestOrigin: env.INGEST_ORIGIN,
     installOrigin: url.origin,
     installerChecksums: await installerChecksums(),
     agents: panel.agents,
     agentPagination: panel.agentPagination,
     defaultSamplingIntervalSeconds: panel.defaultSamplingIntervalSeconds,
     deletedResources: await listDeletedResources(
-      platform.env.CONTROL_DB,
+      env.CONTROL_DB,
       params.workspace,
       locals.session.user.id,
     ),
@@ -34,8 +32,8 @@ export const load: PageServerLoad = async ({ locals, params, platform, url }) =>
 };
 
 export const actions: Actions = {
-  restoreResource: async ({ request, locals, params, platform }) => {
-    if (!locals.session || !platform)
+  restoreResource: async ({ request, locals, params }) => {
+    if (!locals.session || !env.CONTROL_DB)
       return fail(401, { kind: "restore", message: "Unauthorized" });
     const form = await request.formData();
     try {
@@ -44,7 +42,7 @@ export const actions: Actions = {
         throw error(400, "Resource type is invalid");
       }
       await restoreResource(
-        platform.env.CONTROL_DB,
+        env.CONTROL_DB,
         params.workspace,
         locals.session.user.id,
         resourceType,
@@ -56,16 +54,16 @@ export const actions: Actions = {
       return fail(isHttpError(cause) ? cause.status : 400, { kind: "restore", message });
     }
   },
-  machine: async ({ request, locals, params, platform }) => {
-    if (!locals.session || !platform)
+  machine: async ({ request, locals, params }) => {
+    if (!locals.session || !env.CONTROL_DB)
       return fail(401, { kind: "machine", message: "Unauthorized" });
     const form = await request.formData();
     try {
       const machine = await createMachine(
-        platform.env.CONTROL_DB,
+        env.CONTROL_DB,
         params.workspace,
         locals.session.user.id,
-        platform.env.ENROLLMENT_TOKEN_PEPPER,
+        env.ENROLLMENT_TOKEN_PEPPER,
         {
           name: String(form.get("name") ?? "").trim(),
           expectedHost: String(form.get("expectedHost") ?? "").trim(),
@@ -84,16 +82,16 @@ export const actions: Actions = {
       return fail(isHttpError(cause) ? cause.status : 400, { kind: "machine", message });
     }
   },
-  service: async ({ request, locals, params, platform }) => {
-    if (!locals.session || !platform)
+  service: async ({ request, locals, params }) => {
+    if (!locals.session || !env.CONTROL_DB)
       return fail(401, { kind: "service", message: "Unauthorized" });
     const form = await request.formData();
     try {
       const result = await createServiceMonitor(
-        platform.env.CONTROL_DB,
+        env.CONTROL_DB,
         params.workspace,
         locals.session.user.id,
-        platform.env.CHECK_SECRET_WRAPPING_KEY,
+        env.CHECK_SECRET_WRAPPING_KEY,
         {
           name: String(form.get("name") ?? "").trim(),
           description: String(form.get("description") ?? "").trim(),

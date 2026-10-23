@@ -2,8 +2,8 @@
   import { ArrowDown, ArrowUp, Box, Cpu, HardDrive, MemoryStick } from "@lucide/svelte";
   import type { DashboardMachine } from "@alphaping/db";
 
-  import StatusLabel from "$components/status/status-label.svelte";
-  import { formatBytes, formatPercent, formatRate, formatRelativeTime } from "$lib/utils/format";
+  import StatusLabel from "#lib/components/status/status-label.svelte";
+  import { formatBytes, formatPercent, formatRate, formatRelativeTime } from "#lib/utils/format.ts";
 
   let { machine, workspaceSlug }: { machine: DashboardMachine; workspaceSlug: string } = $props();
   const hasTelemetry = $derived(machine.observedAt !== null);

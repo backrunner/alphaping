@@ -137,7 +137,7 @@ Agent updates verify signatures, expiry, hashes and platform compatibility.
 
 ## Development
 
-Use Node.js 22.12+, pnpm 12.3.4 and Rust 1.96 with the
+Use Node.js 22.17+, pnpm 12.3.4 and Rust 1.96 with the
 `wasm32-unknown-unknown` target. CI uses Node.js 24. TypeScript is on **6.x**.
 
 ```bash

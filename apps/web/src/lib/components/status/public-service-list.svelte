@@ -3,10 +3,10 @@
   import { ChevronLeft, ChevronRight } from "@lucide/svelte";
   import { SvelteURLSearchParams } from "svelte/reactivity";
 
-  import StatusCapsules from "$components/status/status-capsules.svelte";
-  import StatusLabel from "$components/status/status-label.svelte";
-  import type { PublicStatusView } from "$lib/public-status-view";
-  import { formatRelativeTime } from "$lib/utils/format";
+  import StatusCapsules from "#lib/components/status/status-capsules.svelte";
+  import StatusLabel from "#lib/components/status/status-label.svelte";
+  import type { PublicStatusView } from "#lib/public-status-view.ts";
+  import { formatRelativeTime } from "#lib/utils/format.ts";
 
   let {
     services,

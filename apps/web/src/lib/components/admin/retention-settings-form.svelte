@@ -1,8 +1,8 @@
 <script lang="ts">
   import { Save } from "@lucide/svelte";
 
-  import type { RetentionSettings } from "$lib/server/workspace-settings";
-  import Button from "$components/ui/button/button.svelte";
+  import type { RetentionSettings } from "#lib/server/workspace-settings.ts";
+  import Button from "#lib/components/ui/button/button.svelte";
 
   let {
     retention,

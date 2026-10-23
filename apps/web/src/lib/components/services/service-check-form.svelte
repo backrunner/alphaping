@@ -1,10 +1,10 @@
 <script lang="ts">
   import { Globe2, Plus, RadioTower, Server, ShieldCheck } from "@lucide/svelte";
 
-  import ServiceRequestFields from "$components/admin/service-request-fields.svelte";
-  import ServiceScheduleFields from "$components/admin/service-schedule-fields.svelte";
-  import ServiceTargetFields from "$components/admin/service-target-fields.svelte";
-  import Button from "$components/ui/button/button.svelte";
+  import ServiceRequestFields from "#lib/components/admin/service-request-fields.svelte";
+  import ServiceScheduleFields from "#lib/components/admin/service-schedule-fields.svelte";
+  import ServiceTargetFields from "#lib/components/admin/service-target-fields.svelte";
+  import Button from "#lib/components/ui/button/button.svelte";
 
   let {
     agents,

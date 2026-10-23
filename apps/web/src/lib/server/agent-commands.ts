@@ -6,7 +6,7 @@ import {
   loadMonitoringAccess,
   requireAdmin,
   requireResourceCapability,
-} from "$lib/server/monitoring-access";
+} from "#lib/server/monitoring-access.ts";
 
 type CommandType = "check_update" | "install_version" | "redetect_runtimes";
 

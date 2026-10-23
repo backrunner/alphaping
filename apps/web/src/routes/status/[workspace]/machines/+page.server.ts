@@ -1,14 +1,15 @@
+import { env } from "cloudflare:workers";
 import { loadPublicMachinesStatusPage, PublicStatusNotFoundError } from "@alphaping/db";
 import { error } from "@sveltejs/kit";
 
 import type { PageServerLoad } from "./$types";
 
-export const load: PageServerLoad = async ({ params, platform, setHeaders }) => {
-  if (!platform) throw error(503, "Cloudflare bindings are unavailable");
+export const load: PageServerLoad = async ({ params, setHeaders }) => {
+  if (!env.CONTROL_DB) throw error(503, "Cloudflare bindings are unavailable");
   try {
     const page = await loadPublicMachinesStatusPage(
-      platform.env.CONTROL_DB,
-      platform.env.TELEMETRY_DB,
+      env.CONTROL_DB,
+      env.TELEMETRY_DB,
       params.workspace,
     );
     setHeaders({

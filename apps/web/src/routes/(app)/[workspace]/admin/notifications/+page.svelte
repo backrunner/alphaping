@@ -1,9 +1,9 @@
 <script lang="ts">
   import { BellRing, Mail, MessageCircle, RadioTower, Send, Trash2, Webhook } from "@lucide/svelte";
 
-  import Button from "$components/ui/button/button.svelte";
-  import EmptyState from "$components/ui/empty-state/empty-state.svelte";
-  import SelectInput from "$components/ui/select/select.svelte";
+  import Button from "#lib/components/ui/button/button.svelte";
+  import EmptyState from "#lib/components/ui/empty-state/empty-state.svelte";
+  import SelectInput from "#lib/components/ui/select/select.svelte";
 
   let { data, form } = $props();
   let selectedProvider = $state("resend");

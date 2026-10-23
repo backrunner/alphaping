@@ -1,6 +1,6 @@
 <script lang="ts">
   import { validateSiteLogoUrl } from "@alphaping/contracts";
-  import alphaPingLogo from "$lib/assets/alphaping.svg";
+  import alphaPingLogo from "#lib/assets/alphaping.svg";
 
   let {
     logoUrl = "",

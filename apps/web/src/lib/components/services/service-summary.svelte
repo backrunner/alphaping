@@ -2,8 +2,8 @@
   import { Clock3, Gauge, Radio } from "@lucide/svelte";
   import type { ServiceDetail } from "@alphaping/db";
 
-  import StatusCapsules from "$components/status/status-capsules.svelte";
-  import { formatRelativeTime } from "$lib/utils/format";
+  import StatusCapsules from "#lib/components/status/status-capsules.svelte";
+  import { formatRelativeTime } from "#lib/utils/format.ts";
 
   let { service }: { service: ServiceDetail["service"] } = $props();
 

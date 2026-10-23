@@ -1,8 +1,8 @@
 <script lang="ts">
   import { Ban, ExternalLink, KeyRound, RefreshCw } from "@lucide/svelte";
 
-  import Button from "$components/ui/button/button.svelte";
-  import EnrollmentCommand from "$components/machines/enrollment-command.svelte";
+  import Button from "#lib/components/ui/button/button.svelte";
+  import EnrollmentCommand from "#lib/components/machines/enrollment-command.svelte";
 
   type Token = {
     id: string;

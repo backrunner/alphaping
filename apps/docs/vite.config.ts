@@ -1,3 +1,6 @@
+import adapter from "@sveltejs/adapter-cloudflare";
+import { vitePreprocess } from "@sveltejs/vite-plugin-svelte";
+import { svedocsPreprocess, svedocsSvelteExtensions } from "svedocs/svelte";
 import tailwindcss from "@tailwindcss/vite";
 import { readFileSync } from "node:fs";
 import { sveltekit } from "@sveltejs/kit/vite";
@@ -31,15 +34,22 @@ export default defineConfig({
       config,
       theme: {
         components: {
-          Navbar: "$lib/theme/Navbar.svelte",
-          DocsShell: "$lib/theme/DocsShell.svelte",
-          Sidebar: "$lib/theme/Sidebar.svelte",
-          Footer: "$lib/theme/Footer.svelte",
-          ThemeToggle: "$lib/theme/ThemeToggle.svelte",
+          Navbar: "#lib/theme/Navbar.svelte",
+          DocsShell: "#lib/theme/DocsShell.svelte",
+          Sidebar: "#lib/theme/Sidebar.svelte",
+          Footer: "#lib/theme/Footer.svelte",
+          ThemeToggle: "#lib/theme/ThemeToggle.svelte",
         },
       },
     }),
     tailwindcss(),
-    sveltekit(),
+    sveltekit({
+      extensions: [...svedocsSvelteExtensions],
+      preprocess: [vitePreprocess(), svedocsPreprocess()],
+      adapter: adapter({
+        config: "wrangler.docs.template.toml",
+        platformProxy: { configPath: "wrangler.docs.template.toml", persist: false },
+      }),
+    }),
   ],
 });

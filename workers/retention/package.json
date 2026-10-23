@@ -16,6 +16,6 @@
     "@cloudflare/workers-types": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:",
-    "@cloudflare/vitest-plugin": "1.1.4"
+    "@cloudflare/vitest-plugin": "1.4.6"
   }
 }

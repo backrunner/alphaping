@@ -1,7 +1,7 @@
 <script lang="ts">
   import { page } from "$app/state";
-  import SiteLogo from "$components/layout/site-logo.svelte";
-  import AppearancePicker from "$components/layout/appearance-picker.svelte";
+  import SiteLogo from "#lib/components/layout/site-logo.svelte";
+  import AppearancePicker from "#lib/components/layout/appearance-picker.svelte";
   let {
     workspace,
     title = "",

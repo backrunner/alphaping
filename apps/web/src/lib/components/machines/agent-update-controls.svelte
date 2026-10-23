@@ -2,8 +2,8 @@
   import type { MachineDetail } from "@alphaping/db";
   import { Boxes, Download, RefreshCw } from "@lucide/svelte";
 
-  import Button from "$components/ui/button/button.svelte";
-  import { formatRelativeTime } from "$lib/utils/format";
+  import Button from "#lib/components/ui/button/button.svelte";
+  import { formatRelativeTime } from "#lib/utils/format.ts";
 
   let {
     agent,

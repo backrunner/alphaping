@@ -1,3 +1,4 @@
+import { env } from "cloudflare:workers";
 import { loadServiceDetail, ServiceNotFoundError } from "@alphaping/db";
 import { error, fail, isHttpError, redirect } from "@sveltejs/kit";
 
@@ -9,19 +10,19 @@ import {
   setServiceMaintenance,
   setServicePublicAccess,
   updateServiceCheckPolicy,
-} from "$lib/server/service-config";
-import { parseServiceCheckForm } from "$lib/server/service-form";
-import { softDeleteResource } from "$lib/server/resources";
+} from "#lib/server/service-config.ts";
+import { parseServiceCheckForm } from "#lib/server/service-form.ts";
+import { softDeleteResource } from "#lib/server/resources.ts";
 
 import type { Actions, PageServerLoad } from "./$types";
 
-export const load: PageServerLoad = async ({ locals, params, platform, url }) => {
+export const load: PageServerLoad = async ({ locals, params, url }) => {
   if (!locals.session) throw redirect(303, "/login");
-  if (!platform) throw error(503, "Cloudflare bindings are unavailable");
+  if (!env.CONTROL_DB) throw error(503, "Cloudflare bindings are unavailable");
   try {
     const detail = await loadServiceDetail(
-      platform.env.CONTROL_DB,
-      platform.env.TELEMETRY_DB,
+      env.CONTROL_DB,
+      env.TELEMETRY_DB,
       params.workspace,
       locals.session.user.id,
       params.serviceId,
@@ -32,7 +33,7 @@ export const load: PageServerLoad = async ({ locals, params, platform, url }) =>
       ...detail,
       checkAgents: detail.service.canManage
         ? await listServiceCheckAgents(
-            platform.env.CONTROL_DB,
+            env.CONTROL_DB,
             params.workspace,
             locals.session.user.id,
             params.serviceId,
@@ -50,16 +51,16 @@ export const load: PageServerLoad = async ({ locals, params, platform, url }) =>
 };
 
 export const actions: Actions = {
-  addCheck: async ({ request, locals, params, platform }) => {
-    if (!locals.session || !platform)
+  addCheck: async ({ request, locals, params }) => {
+    if (!locals.session || !env.CONTROL_DB)
       return fail(401, { kind: "serviceCheck", message: "Unauthorized" });
     const form = await request.formData();
     try {
       const result = await addServiceCheck(
-        platform.env.CONTROL_DB,
+        env.CONTROL_DB,
         params.workspace,
         locals.session.user.id,
-        platform.env.CHECK_SECRET_WRAPPING_KEY,
+        env.CHECK_SECRET_WRAPPING_KEY,
         params.serviceId,
         {
           checkName: String(form.get("checkName") ?? "").trim(),
@@ -72,15 +73,15 @@ export const actions: Actions = {
       return fail(isHttpError(cause) ? cause.status : 400, { kind: "serviceCheck", message });
     }
   },
-  updateCheckPolicy: async ({ request, locals, params, platform }) => {
-    if (!locals.session || !platform)
+  updateCheckPolicy: async ({ request, locals, params }) => {
+    if (!locals.session || !env.CONTROL_DB)
       return fail(401, { kind: "checkPolicy", message: "Unauthorized" });
     const form = await request.formData();
     const checkId = String(form.get("checkId") ?? "");
     try {
       await updateServiceCheckPolicy(
-        platform.env.CONTROL_DB,
-        platform.env.TELEMETRY_DB,
+        env.CONTROL_DB,
+        env.TELEMETRY_DB,
         params.workspace,
         locals.session.user.id,
         params.serviceId,
@@ -105,18 +106,18 @@ export const actions: Actions = {
       });
     }
   },
-  replaceCheckConfiguration: async ({ request, locals, params, platform }) => {
-    if (!locals.session || !platform)
+  replaceCheckConfiguration: async ({ request, locals, params }) => {
+    if (!locals.session || !env.CONTROL_DB)
       return fail(401, { kind: "checkConfiguration", message: "Unauthorized" });
     const form = await request.formData();
     const checkId = String(form.get("checkId") ?? "");
     try {
       await replaceServiceCheckConfiguration(
-        platform.env.CONTROL_DB,
-        platform.env.TELEMETRY_DB,
+        env.CONTROL_DB,
+        env.TELEMETRY_DB,
         params.workspace,
         locals.session.user.id,
-        platform.env.CHECK_SECRET_WRAPPING_KEY,
+        env.CHECK_SECRET_WRAPPING_KEY,
         params.serviceId,
         checkId,
         {
@@ -137,15 +138,15 @@ export const actions: Actions = {
       });
     }
   },
-  deleteCheck: async ({ request, locals, params, platform }) => {
-    if (!locals.session || !platform)
+  deleteCheck: async ({ request, locals, params }) => {
+    if (!locals.session || !env.CONTROL_DB)
       return fail(401, { kind: "checkPolicy", message: "Unauthorized" });
     const form = await request.formData();
     const checkId = String(form.get("checkId") ?? "");
     try {
       await deleteServiceCheck(
-        platform.env.CONTROL_DB,
-        platform.env.TELEMETRY_DB,
+        env.CONTROL_DB,
+        env.TELEMETRY_DB,
         params.workspace,
         locals.session.user.id,
         params.serviceId,
@@ -161,11 +162,11 @@ export const actions: Actions = {
       });
     }
   },
-  delete: async ({ locals, params, platform }) => {
-    if (!locals.session || !platform) return fail(401, { message: "Unauthorized" });
+  delete: async ({ locals, params }) => {
+    if (!locals.session || !env.CONTROL_DB) return fail(401, { message: "Unauthorized" });
     try {
       await softDeleteResource(
-        platform.env.CONTROL_DB,
+        env.CONTROL_DB,
         params.workspace,
         locals.session.user.id,
         "service",
@@ -177,8 +178,8 @@ export const actions: Actions = {
     }
     throw redirect(303, `/${params.workspace}/services`);
   },
-  maintenance: async ({ request, locals, params, platform }) => {
-    if (!locals.session || !platform) return fail(401, { message: "Unauthorized" });
+  maintenance: async ({ request, locals, params }) => {
+    if (!locals.session || !env.CONTROL_DB) return fail(401, { message: "Unauthorized" });
     const form = await request.formData();
     try {
       const value = String(form.get("maintenanceUntil") ?? "");
@@ -193,8 +194,8 @@ export const actions: Actions = {
         maintenanceUntil = localWallClock + timezoneOffsetMinutes * 60_000;
       }
       await setServiceMaintenance(
-        platform.env.CONTROL_DB,
-        platform.env.TELEMETRY_DB,
+        env.CONTROL_DB,
+        env.TELEMETRY_DB,
         params.workspace,
         locals.session.user.id,
         params.serviceId,
@@ -206,12 +207,12 @@ export const actions: Actions = {
       return fail(isHttpError(cause) ? cause.status : 400, { message });
     }
   },
-  visibility: async ({ request, locals, params, platform }) => {
-    if (!locals.session || !platform) return fail(401, { message: "Unauthorized" });
+  visibility: async ({ request, locals, params }) => {
+    if (!locals.session || !env.CONTROL_DB) return fail(401, { message: "Unauthorized" });
     const form = await request.formData();
     try {
       await setServicePublicAccess(
-        platform.env.CONTROL_DB,
+        env.CONTROL_DB,
         params.workspace,
         locals.session.user.id,
         params.serviceId,

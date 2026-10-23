@@ -16,8 +16,8 @@
     "@alphaping/contracts": "workspace:*",
     "@alphaping/db": "workspace:*",
     "ipaddr.js": "2.5.0",
-    "jsonpath-plus": "10.4.0",
-    "re2js": "2.8.6"
+    "jsonpath-plus": "11.2.1",
+    "re2js": "2.9.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "catalog:",

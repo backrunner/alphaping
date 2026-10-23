@@ -2,11 +2,11 @@
   import { page } from "$app/state";
   import { ArrowLeft, Bell, Megaphone, Plus } from "@lucide/svelte";
 
-  import AnnouncementCreateForm from "$components/incidents/announcement-create-form.svelte";
-  import IncidentCreateForm from "$components/incidents/incident-create-form.svelte";
-  import IncidentItem from "$components/incidents/incident-item.svelte";
-  import Button from "$components/ui/button/button.svelte";
-  import EmptyState from "$components/ui/empty-state/empty-state.svelte";
+  import AnnouncementCreateForm from "#lib/components/incidents/announcement-create-form.svelte";
+  import IncidentCreateForm from "#lib/components/incidents/incident-create-form.svelte";
+  import IncidentItem from "#lib/components/incidents/incident-item.svelte";
+  import Button from "#lib/components/ui/button/button.svelte";
+  import EmptyState from "#lib/components/ui/empty-state/empty-state.svelte";
 
   let { data, form } = $props();
   let incidentFormOpen = $state<boolean | null>(null);

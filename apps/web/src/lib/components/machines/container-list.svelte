@@ -9,7 +9,7 @@
     XCircle,
   } from "@lucide/svelte";
 
-  import { formatBytes, formatPercent, formatRate } from "$lib/utils/format";
+  import { formatBytes, formatPercent, formatRate } from "#lib/utils/format.ts";
 
   let { containers }: { containers: MachineContainerInventory["containers"] } = $props();
 

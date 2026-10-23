@@ -4,17 +4,17 @@
   import type { LiveViewerSnapshot } from "@alphaping/contracts";
   import type { DashboardMachine } from "@alphaping/db";
 
-  import AgentUpdateControls from "$components/machines/agent-update-controls.svelte";
-  import MachineConfig from "$components/machines/machine-config.svelte";
-  import MachineContainers from "$components/machines/machine-containers.svelte";
-  import MachineEvents from "$components/machines/machine-events.svelte";
-  import MachineEnrollment from "$components/machines/machine-enrollment.svelte";
-  import MachineLive from "$components/machines/machine-live.svelte";
-  import MachineOverview from "$components/machines/machine-overview.svelte";
-  import MachineProbes from "$components/machines/machine-probes.svelte";
-  import StatusLabel from "$components/status/status-label.svelte";
-  import Button from "$components/ui/button/button.svelte";
-  import { formatRelativeTime } from "$lib/utils/format";
+  import AgentUpdateControls from "#lib/components/machines/agent-update-controls.svelte";
+  import MachineConfig from "#lib/components/machines/machine-config.svelte";
+  import MachineContainers from "#lib/components/machines/machine-containers.svelte";
+  import MachineEvents from "#lib/components/machines/machine-events.svelte";
+  import MachineEnrollment from "#lib/components/machines/machine-enrollment.svelte";
+  import MachineLive from "#lib/components/machines/machine-live.svelte";
+  import MachineOverview from "#lib/components/machines/machine-overview.svelte";
+  import MachineProbes from "#lib/components/machines/machine-probes.svelte";
+  import StatusLabel from "#lib/components/status/status-label.svelte";
+  import Button from "#lib/components/ui/button/button.svelte";
+  import { formatRelativeTime } from "#lib/utils/format.ts";
 
   let { data, form } = $props();
   function initialTab(detail: typeof data): "overview" | "config" {

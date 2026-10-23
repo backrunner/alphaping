@@ -1,10 +1,10 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import { createRequestScope } from "$lib/state/request-scope";
+  import { createRequestScope } from "#lib/state/request-scope.ts";
   import { AlertCircle, BarChart3, ChevronDown, RefreshCw } from "@lucide/svelte";
   import type { MachineHistoryPoint } from "@alphaping/db";
 
-  import MachineHistoryCharts from "$components/machines/machine-history-charts.svelte";
+  import MachineHistoryCharts from "#lib/components/machines/machine-history-charts.svelte";
 
   export type MachineMetric = "cpu" | "memory" | "storage" | "network";
 

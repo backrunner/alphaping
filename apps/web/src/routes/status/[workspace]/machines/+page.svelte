@@ -1,17 +1,17 @@
 <script lang="ts">
-  import ProductAttribution from "$components/layout/product-attribution.svelte";
+  import ProductAttribution from "#lib/components/layout/product-attribution.svelte";
   import { tick } from "svelte";
-  import PublicSurface from "$components/status/public-surface.svelte";
-  import PublicNavigation from "$components/status/public-navigation.svelte";
+  import PublicSurface from "#lib/components/status/public-surface.svelte";
+  import PublicNavigation from "#lib/components/status/public-navigation.svelte";
   import { page } from "$app/state";
   import { ArrowLeft, ChevronLeft, ChevronRight, Search, Server } from "@lucide/svelte";
   import { SvelteURLSearchParams } from "svelte/reactivity";
 
-  import PublicMachineCard from "$components/status/public-machine-card.svelte";
-  import StatusLabel from "$components/status/status-label.svelte";
-  import EmptyState from "$components/ui/empty-state/empty-state.svelte";
-  import SelectField from "$components/ui/select/select.svelte";
-  import { formatRelativeTime } from "$lib/utils/format";
+  import PublicMachineCard from "#lib/components/status/public-machine-card.svelte";
+  import StatusLabel from "#lib/components/status/status-label.svelte";
+  import EmptyState from "#lib/components/ui/empty-state/empty-state.svelte";
+  import SelectField from "#lib/components/ui/select/select.svelte";
+  import { formatRelativeTime } from "#lib/utils/format.ts";
 
   let { data } = $props();
   const pageSize = 60;

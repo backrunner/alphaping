@@ -1,12 +1,12 @@
 <script lang="ts">
-  import ProductAttribution from "$components/layout/product-attribution.svelte";
-  import PublicSurface from "$components/status/public-surface.svelte";
-  import PublicNavigation from "$components/status/public-navigation.svelte";
+  import ProductAttribution from "#lib/components/layout/product-attribution.svelte";
+  import PublicSurface from "#lib/components/status/public-surface.svelte";
+  import PublicNavigation from "#lib/components/status/public-navigation.svelte";
   import { ArrowLeft, Clock3, Gauge, History } from "@lucide/svelte";
 
-  import StatusCapsules from "$components/status/status-capsules.svelte";
-  import StatusLabel from "$components/status/status-label.svelte";
-  import { formatRelativeTime } from "$lib/utils/format";
+  import StatusCapsules from "#lib/components/status/status-capsules.svelte";
+  import StatusLabel from "#lib/components/status/status-label.svelte";
+  import { formatRelativeTime } from "#lib/utils/format.ts";
 
   let { data } = $props();
 </script>

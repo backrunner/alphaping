@@ -5,7 +5,9 @@
 - 包管理：pnpm，版本写入 root `packageManager` 并锁定 lockfile。
 - JavaScript task graph：Turbo。
 - Rust：Cargo workspace，提交 `rust-toolchain.toml` 锁定 stable toolchain。
-- Web：Svelte 5、SvelteKit、TypeScript strict、Tailwind v4。
+- Web：Svelte 5、SvelteKit 3、TypeScript 6 strict、Tailwind v4；Node.js 最低 22.17。
+- SvelteKit 配置放在 `vite.config.ts` 的 `sveltekit(...)` 中；库导入使用带扩展名的 `#lib/*`，TypeScript 继承 `$app/tsconfig`。
+- Cloudflare Web 通过 `cloudflare:workers` 的 `env` 读取 binding，Cache API 使用全局 `caches`；不再使用 `event.platform.env`。
 - Cloudflare：Wrangler v4、`@sveltejs/adapter-cloudflare`、Workers Static Assets。
 - Database：Drizzle schema + versioned D1 migrations。
 - Auth：Better Auth SvelteKit integration + Drizzle sqlite adapter。
@@ -34,7 +36,9 @@ pnpm agent:test
 pnpm verify
 ```
 
-`pnpm verify` 汇总提交前必须通过的静态检查和测试，不执行真实部署。
+`pnpm verify` 汇总提交前必须通过的静态检查、依赖安全审计、Web 和 Ingest E2E，不执行真实部署。
+
+`pnpm audit:dependencies` 拒绝未解决的 npm advisory；目前仅允许带回归验证的 `braces@3.0.3` 本地补丁覆盖 GHSA-vfj7-8cjw-p6xm，不屏蔽其他依赖或新 advisory。
 
 `pnpm db:validate` 通过 Wrangler 在临时本地 D1 上顺序应用 CONTROL_DB 与 TELEMETRY_DB 全部 migration；`pnpm db:migrate:local` 将同一 migration 链应用到 Web 本地开发状态。
 

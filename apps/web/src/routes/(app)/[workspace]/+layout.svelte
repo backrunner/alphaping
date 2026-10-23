@@ -1,5 +1,5 @@
 <script lang="ts">
-  import WorkspaceShell from "$components/layout/workspace-shell.svelte";
+  import WorkspaceShell from "#lib/components/layout/workspace-shell.svelte";
 
   let { data, children } = $props();
 </script>

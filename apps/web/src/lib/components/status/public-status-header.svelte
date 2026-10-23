@@ -1,7 +1,7 @@
 <script lang="ts">
   import { ArrowUpRight, Check, Clock3, TriangleAlert, Wrench } from "@lucide/svelte";
   import type { PublicStatusPage } from "@alphaping/db";
-  import type { PublicStatusOverallState } from "$lib/public-status-view";
+  import type { PublicStatusOverallState } from "#lib/public-status-view.ts";
 
   let {
     dashboard,

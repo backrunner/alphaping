@@ -8,7 +8,7 @@ order: 1
 
 | Tool or resource | Requirement                                                                          |
 | ---------------- | ------------------------------------------------------------------------------------ |
-| Node.js          | 22.12 or newer; repository CI uses Node.js 24                                        |
+| Node.js          | 22.17 or newer; repository CI uses Node.js 24                                        |
 | pnpm             | 12.3.4, matching the root packageManager field                                       |
 | Rust             | 1.96, including the wasm32-unknown-unknown target                                    |
 | Cloudflare       | Workers, two D1 databases and a WebSocket Durable Object; R2 for exports and backups |

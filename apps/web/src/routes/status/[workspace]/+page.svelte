@@ -1,15 +1,15 @@
 <script lang="ts">
-  import ProductAttribution from "$components/layout/product-attribution.svelte";
+  import ProductAttribution from "#lib/components/layout/product-attribution.svelte";
   import { TriangleAlert } from "@lucide/svelte";
 
-  import PublicSurface from "$components/status/public-surface.svelte";
-  import PublicNavigation from "$components/status/public-navigation.svelte";
-  import PublicAnnouncements from "$components/status/public-announcements.svelte";
-  import PublicIncidentList from "$components/status/public-incident-list.svelte";
-  import PublicMachineList from "$components/status/public-machine-list.svelte";
-  import PublicServiceList from "$components/status/public-service-list.svelte";
-  import PublicStatusHeader from "$components/status/public-status-header.svelte";
-  import { formatRelativeTime } from "$lib/utils/format";
+  import PublicSurface from "#lib/components/status/public-surface.svelte";
+  import PublicNavigation from "#lib/components/status/public-navigation.svelte";
+  import PublicAnnouncements from "#lib/components/status/public-announcements.svelte";
+  import PublicIncidentList from "#lib/components/status/public-incident-list.svelte";
+  import PublicMachineList from "#lib/components/status/public-machine-list.svelte";
+  import PublicServiceList from "#lib/components/status/public-service-list.svelte";
+  import PublicStatusHeader from "#lib/components/status/public-status-header.svelte";
+  import { formatRelativeTime } from "#lib/utils/format.ts";
 
   let { data } = $props();
 </script>

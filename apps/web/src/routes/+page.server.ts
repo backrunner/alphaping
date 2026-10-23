@@ -1,3 +1,4 @@
+import { env } from "cloudflare:workers";
 import {
   loadPublicMachineStatusPage,
   loadPublicServiceStatusPage,
@@ -10,18 +11,18 @@ import { error, redirect } from "@sveltejs/kit";
 import {
   normalizePublicStatusServicePage,
   PUBLIC_STATUS_SERVICE_PAGE_SIZE,
-} from "$lib/public-status-view";
-import { listUserWorkspaces } from "$lib/server/workspace-lifecycle";
+} from "#lib/public-status-view.ts";
+import { listUserWorkspaces } from "#lib/server/workspace-lifecycle.ts";
 
 import type { PageServerLoad } from "./$types";
 
-export const load: PageServerLoad = async ({ locals, platform, setHeaders, url }) => {
+export const load: PageServerLoad = async ({ locals, setHeaders, url }) => {
   if (locals.domainRoute?.kind === "admin") {
     if (!locals.session) throw redirect(303, "/login?returnTo=%2F");
     throw redirect(303, `/${locals.domainRoute.workspace}`);
   }
   if (locals.domainRoute) {
-    if (!platform) throw error(503, "Cloudflare bindings are unavailable");
+    if (!env.CONTROL_DB) throw error(503, "Cloudflare bindings are unavailable");
     try {
       const route = locals.domainRoute;
       setHeaders({
@@ -33,8 +34,8 @@ export const load: PageServerLoad = async ({ locals, platform, setHeaders, url }
       if (route.kind === "status") {
         const now = Date.now();
         const page = await loadPublicStatusPage(
-          platform.env.CONTROL_DB,
-          platform.env.TELEMETRY_DB,
+          env.CONTROL_DB,
+          env.TELEMETRY_DB,
           route.workspace,
           now,
           {
@@ -48,8 +49,8 @@ export const load: PageServerLoad = async ({ locals, platform, setHeaders, url }
         return {
           kind: "machine" as const,
           page: await loadPublicMachineStatusPage(
-            platform.env.CONTROL_DB,
-            platform.env.TELEMETRY_DB,
+            env.CONTROL_DB,
+            env.TELEMETRY_DB,
             route.workspace,
             route.resource,
           ),
@@ -58,8 +59,8 @@ export const load: PageServerLoad = async ({ locals, platform, setHeaders, url }
       return {
         kind: "service" as const,
         page: await loadPublicServiceStatusPage(
-          platform.env.CONTROL_DB,
-          platform.env.TELEMETRY_DB,
+          env.CONTROL_DB,
+          env.TELEMETRY_DB,
           route.workspace,
           route.resource,
         ),
@@ -71,8 +72,8 @@ export const load: PageServerLoad = async ({ locals, platform, setHeaders, url }
     }
   }
   if (!locals.session) throw redirect(303, "/login");
-  if (!platform) throw redirect(303, "/login");
-  const workspaces = await listUserWorkspaces(platform.env.CONTROL_DB, locals.session.user.id);
+  if (!env.CONTROL_DB) throw redirect(303, "/login");
+  const workspaces = await listUserWorkspaces(env.CONTROL_DB, locals.session.user.id);
   const active = workspaces.filter((workspace) => workspace.deletedAt === null);
   if (active.length === 1 && active[0]) throw redirect(303, `/${active[0].slug}`);
   throw redirect(303, "/workspaces");

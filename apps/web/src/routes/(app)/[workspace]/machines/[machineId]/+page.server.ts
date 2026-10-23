@@ -1,25 +1,26 @@
+import { env } from "cloudflare:workers";
 import { loadMachineDetail, MachineNotFoundError } from "@alphaping/db";
 import { error, fail, isHttpError, redirect } from "@sveltejs/kit";
 
-import { queueAgentCommand } from "$lib/server/agent-commands";
-import { installerChecksums } from "$lib/server/installers";
+import { queueAgentCommand } from "#lib/server/agent-commands.ts";
+import { installerChecksums } from "#lib/server/installers.ts";
 import {
   listMachineEnrollmentTokens,
   regenerateMachineEnrollmentToken,
   revokeMachineEnrollmentToken,
   softDeleteResource,
   updateMachineConfiguration,
-} from "$lib/server/resources";
+} from "#lib/server/resources.ts";
 
 import type { Actions, PageServerLoad } from "./$types";
 
-export const load: PageServerLoad = async ({ locals, params, platform, url }) => {
+export const load: PageServerLoad = async ({ locals, params, url }) => {
   if (!locals.session) throw redirect(303, "/login");
-  if (!platform) throw error(503, "Cloudflare bindings are unavailable");
+  if (!env.CONTROL_DB) throw error(503, "Cloudflare bindings are unavailable");
   try {
     const detail = await loadMachineDetail(
-      platform.env.CONTROL_DB,
-      platform.env.TELEMETRY_DB,
+      env.CONTROL_DB,
+      env.TELEMETRY_DB,
       params.workspace,
       locals.session.user.id,
       params.machineId,
@@ -28,7 +29,7 @@ export const load: PageServerLoad = async ({ locals, params, platform, url }) =>
     const [enrollmentTokens, checksums] = canAdministerAgent
       ? await Promise.all([
           listMachineEnrollmentTokens(
-            platform.env.CONTROL_DB,
+            env.CONTROL_DB,
             params.workspace,
             locals.session.user.id,
             params.machineId,
@@ -41,7 +42,7 @@ export const load: PageServerLoad = async ({ locals, params, platform, url }) =>
       canAdministerAgent,
       enrollmentTokens,
       installerChecksums: checksums,
-      ingestOrigin: platform.env.INGEST_ORIGIN,
+      ingestOrigin: env.INGEST_ORIGIN,
       installOrigin: url.origin,
       requestedTab: url.searchParams.get("tab"),
     };
@@ -55,13 +56,13 @@ async function commandAction(
   event: Parameters<Actions[string]>[0],
   type: "check_update" | "install_version" | "redetect_runtimes",
 ) {
-  if (!event.locals.session || !event.platform) {
+  if (!event.locals.session || !env.CONTROL_DB) {
     return fail(401, { command: type, message: "Unauthorized" });
   }
   const form = await event.request.formData();
   try {
     await queueAgentCommand(
-      event.platform.env.CONTROL_DB,
+      env.CONTROL_DB,
       event.params.workspace,
       event.locals.session.user.id,
       event.params.machineId,
@@ -79,13 +80,13 @@ async function commandAction(
 }
 
 export const actions: Actions = {
-  delete: async ({ locals, params, platform }) => {
-    if (!locals.session || !platform) {
+  delete: async ({ locals, params }) => {
+    if (!locals.session || !env.CONTROL_DB) {
       return fail(401, { kind: "delete", message: "Unauthorized" });
     }
     try {
       await softDeleteResource(
-        platform.env.CONTROL_DB,
+        env.CONTROL_DB,
         params.workspace,
         locals.session.user.id,
         "machine",
@@ -97,15 +98,15 @@ export const actions: Actions = {
     }
     throw redirect(303, `/${params.workspace}/machines`);
   },
-  regenerateEnrollment: async ({ locals, params, platform }) => {
-    if (!locals.session || !platform)
+  regenerateEnrollment: async ({ locals, params }) => {
+    if (!locals.session || !env.CONTROL_DB)
       return fail(401, { kind: "enrollment", message: "Unauthorized" });
     try {
       const enrollment = await regenerateMachineEnrollmentToken(
-        platform.env.CONTROL_DB,
+        env.CONTROL_DB,
         params.workspace,
         locals.session.user.id,
-        platform.env.ENROLLMENT_TOKEN_PEPPER,
+        env.ENROLLMENT_TOKEN_PEPPER,
         params.machineId,
       );
       return { kind: "enrollment", enrollment };
@@ -116,13 +117,13 @@ export const actions: Actions = {
       return fail(isHttpError(cause) ? cause.status : 400, { kind: "enrollment", message });
     }
   },
-  revokeEnrollment: async ({ request, locals, params, platform }) => {
-    if (!locals.session || !platform)
+  revokeEnrollment: async ({ request, locals, params }) => {
+    if (!locals.session || !env.CONTROL_DB)
       return fail(401, { kind: "enrollment", message: "Unauthorized" });
     const form = await request.formData();
     try {
       await revokeMachineEnrollmentToken(
-        platform.env.CONTROL_DB,
+        env.CONTROL_DB,
         params.workspace,
         locals.session.user.id,
         params.machineId,
@@ -136,8 +137,8 @@ export const actions: Actions = {
       return fail(isHttpError(cause) ? cause.status : 400, { kind: "enrollment", message });
     }
   },
-  updateConfig: async ({ request, locals, params, platform }) => {
-    if (!locals.session || !platform)
+  updateConfig: async ({ request, locals, params }) => {
+    if (!locals.session || !env.CONTROL_DB)
       return fail(401, { kind: "machineConfig", message: "Unauthorized" });
     const form = await request.formData();
     try {
@@ -153,7 +154,7 @@ export const actions: Actions = {
         maintenanceUntil = localWallClock + timezoneOffsetMinutes * 60_000;
       }
       const updated = await updateMachineConfiguration(
-        platform.env.CONTROL_DB,
+        env.CONTROL_DB,
         params.workspace,
         locals.session.user.id,
         params.machineId,

@@ -7,7 +7,7 @@
     WorkspaceAccessMember,
     WorkspaceAccessPagination,
     WorkspaceAccessResource,
-  } from "$lib/server/workspace-access";
+  } from "#lib/server/workspace-access.ts";
 
   let {
     members,

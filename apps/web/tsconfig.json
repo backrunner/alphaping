@@ -1,5 +1,5 @@
 {
-  "extends": "./.svelte-kit/tsconfig.json",
+  "extends": "$app/tsconfig",
   "compilerOptions": {
     "allowJs": true,
     "checkJs": false,
@@ -7,7 +7,10 @@
     "noImplicitOverride": true,
     "noUncheckedIndexedAccess": true,
     "skipLibCheck": true,
-    "types": ["@cloudflare/workers-types", "node"],
-    "strict": true
-  }
+    "types": ["@cloudflare/workers-types", "node", "$app/types"],
+    "strict": true,
+    "allowImportingTsExtensions": true
+  },
+  "include": ["src", "test", "*.ts", "*.js"],
+  "exclude": ["src/service-worker"]
 }

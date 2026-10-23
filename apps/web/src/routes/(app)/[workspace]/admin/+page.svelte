@@ -1,10 +1,10 @@
 <script lang="ts">
   import { Server } from "@lucide/svelte";
 
-  import DeletedResourceList from "$components/admin/deleted-resource-list.svelte";
-  import ServiceMonitorForm from "$components/admin/service-monitor-form.svelte";
-  import EnrollmentCommand from "$components/machines/enrollment-command.svelte";
-  import Button from "$components/ui/button/button.svelte";
+  import DeletedResourceList from "#lib/components/admin/deleted-resource-list.svelte";
+  import ServiceMonitorForm from "#lib/components/admin/service-monitor-form.svelte";
+  import EnrollmentCommand from "#lib/components/machines/enrollment-command.svelte";
+  import Button from "#lib/components/ui/button/button.svelte";
 
   let { data, form } = $props();
 </script>

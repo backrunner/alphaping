@@ -2,10 +2,10 @@
   import type { MachineDetail } from "@alphaping/db";
   import { Boxes, Clock3 } from "@lucide/svelte";
 
-  import ContainerList from "$components/machines/container-list.svelte";
-  import ContainerRuntimeList from "$components/machines/container-runtime-list.svelte";
-  import EmptyState from "$components/ui/empty-state/empty-state.svelte";
-  import { formatRelativeTime } from "$lib/utils/format";
+  import ContainerList from "#lib/components/machines/container-list.svelte";
+  import ContainerRuntimeList from "#lib/components/machines/container-runtime-list.svelte";
+  import EmptyState from "#lib/components/ui/empty-state/empty-state.svelte";
+  import { formatRelativeTime } from "#lib/utils/format.ts";
 
   let { inventory }: { inventory: MachineDetail["containerInventory"] } = $props();
 

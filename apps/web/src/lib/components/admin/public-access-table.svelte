@@ -3,8 +3,11 @@
   import { ChevronLeft, ChevronRight, ExternalLink, Save, ShieldCheck } from "@lucide/svelte";
   import { SvelteURLSearchParams } from "svelte/reactivity";
 
-  import type { DashboardVisibility, PublicResourceSetting } from "$lib/server/workspace-settings";
-  import Button from "$components/ui/button/button.svelte";
+  import type {
+    DashboardVisibility,
+    PublicResourceSetting,
+  } from "#lib/server/workspace-settings.ts";
+  import Button from "#lib/components/ui/button/button.svelte";
 
   let {
     workspace,

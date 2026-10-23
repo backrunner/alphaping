@@ -1,9 +1,9 @@
 <script lang="ts">
   import type { MachineHistoryPoint } from "@alphaping/db";
 
-  import { formatBytes } from "$lib/utils/format";
+  import { formatBytes } from "#lib/utils/format.ts";
 
-  import type { MachineMetric } from "$components/machines/history-panel.svelte";
+  import type { MachineMetric } from "#lib/components/machines/history-panel.svelte";
 
   let {
     points,

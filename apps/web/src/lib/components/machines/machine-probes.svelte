@@ -2,10 +2,10 @@
   import type { MachineProbeTask } from "@alphaping/db";
   import { Activity, Clock3, Globe2, Network, RadioTower } from "@lucide/svelte";
 
-  import ProbeVisuals from "$components/machines/probe-visuals.svelte";
-  import StatusLabel from "$components/status/status-label.svelte";
-  import EmptyState from "$components/ui/empty-state/empty-state.svelte";
-  import { formatRelativeTime } from "$lib/utils/format";
+  import ProbeVisuals from "#lib/components/machines/probe-visuals.svelte";
+  import StatusLabel from "#lib/components/status/status-label.svelte";
+  import EmptyState from "#lib/components/ui/empty-state/empty-state.svelte";
+  import { formatRelativeTime } from "#lib/utils/format.ts";
 
   let { tasks }: { tasks: readonly MachineProbeTask[] } = $props();
 

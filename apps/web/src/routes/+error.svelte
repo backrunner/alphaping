@@ -1,9 +1,9 @@
 <script lang="ts">
-  import SiteLogo from "$components/layout/site-logo.svelte";
+  import SiteLogo from "#lib/components/layout/site-logo.svelte";
   import { page } from "$app/state";
   import { ArrowLeft, FileQuestion, RefreshCw, TriangleAlert } from "@lucide/svelte";
 
-  import Button from "$components/ui/button/button.svelte";
+  import Button from "#lib/components/ui/button/button.svelte";
 
   const unavailable = $derived(page.status === 404 || page.status === 403);
   const title = $derived(unavailable ? "Page unavailable" : "This page couldn't load");

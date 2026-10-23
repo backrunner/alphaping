@@ -4,10 +4,10 @@
   import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Search, Server } from "@lucide/svelte";
   import { SvelteURLSearchParams } from "svelte/reactivity";
 
-  import MachineCard from "$components/machines/machine-card.svelte";
-  import Button from "$components/ui/button/button.svelte";
-  import EmptyState from "$components/ui/empty-state/empty-state.svelte";
-  import SelectField from "$components/ui/select/select.svelte";
+  import MachineCard from "#lib/components/machines/machine-card.svelte";
+  import Button from "#lib/components/ui/button/button.svelte";
+  import EmptyState from "#lib/components/ui/empty-state/empty-state.svelte";
+  import SelectField from "#lib/components/ui/select/select.svelte";
 
   let { data } = $props();
   const pageSize = 60;

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Send } from "@lucide/svelte";
 
-  import Button from "$components/ui/button/button.svelte";
+  import Button from "#lib/components/ui/button/button.svelte";
 
   type Incident = {
     id: string;

@@ -1,6 +1,6 @@
 <script lang="ts">
-  import AccessMemberTable from "$components/admin/access-member-table.svelte";
-  import ResourceAccessTable from "$components/admin/resource-access-table.svelte";
+  import AccessMemberTable from "#lib/components/admin/access-member-table.svelte";
+  import ResourceAccessTable from "#lib/components/admin/resource-access-table.svelte";
 
   let { data, form } = $props();
   const invitationUrl = $derived(form?.kind === "invite" ? (form.invitationUrl ?? null) : null);

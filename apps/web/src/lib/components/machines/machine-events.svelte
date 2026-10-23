@@ -2,7 +2,7 @@
   import { TriangleAlert } from "@lucide/svelte";
   import type { MachineDetail } from "@alphaping/db";
 
-  import EmptyState from "$components/ui/empty-state/empty-state.svelte";
+  import EmptyState from "#lib/components/ui/empty-state/empty-state.svelte";
 
   let { events }: { events: MachineDetail["events"] } = $props();
 

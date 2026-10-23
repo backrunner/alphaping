@@ -1,9 +1,9 @@
 <script lang="ts">
   import { AppWindow, Copy, ExternalLink, KeyRound, Terminal } from "@lucide/svelte";
   import { onDestroy } from "svelte";
-  import { installCommand as buildInstallCommand } from "$lib/install-command";
+  import { installCommand as buildInstallCommand } from "#lib/install-command.ts";
 
-  import Button from "$components/ui/button/button.svelte";
+  import Button from "#lib/components/ui/button/button.svelte";
 
   let {
     machineId,

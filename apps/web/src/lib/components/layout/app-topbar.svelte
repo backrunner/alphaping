@@ -2,7 +2,7 @@
   import { Menu, Search } from "@lucide/svelte";
   import type { WorkspaceShellData } from "@alphaping/db";
 
-  import ThemeToggle from "$components/layout/theme-toggle.svelte";
+  import ThemeToggle from "#lib/components/layout/theme-toggle.svelte";
 
   let {
     shell,

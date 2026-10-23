@@ -1,3 +1,4 @@
+import { env } from "cloudflare:workers";
 import { error, fail, isHttpError, redirect } from "@sveltejs/kit";
 
 import {
@@ -8,7 +9,7 @@ import {
   loadNotificationPanel,
   updateNotificationChannel,
   type NotificationProvider,
-} from "$lib/server/notifications";
+} from "#lib/server/notifications.ts";
 
 import type { Actions, PageServerLoad } from "./$types";
 
@@ -37,13 +38,13 @@ function configFromForm(form: FormData): Record<string, unknown> {
   };
 }
 
-export const load: PageServerLoad = async ({ locals, params, platform }) => {
+export const load: PageServerLoad = async ({ locals, params }) => {
   if (!locals.session) throw redirect(303, "/login");
-  if (!platform) throw error(503, "Cloudflare bindings are unavailable");
+  if (!env.CONTROL_DB) throw error(503, "Cloudflare bindings are unavailable");
   return {
     workspace: params.workspace,
     notifications: await loadNotificationPanel(
-      platform.env.CONTROL_DB,
+      env.CONTROL_DB,
       params.workspace,
       locals.session.user.id,
     ),
@@ -51,16 +52,16 @@ export const load: PageServerLoad = async ({ locals, params, platform }) => {
 };
 
 export const actions: Actions = {
-  createChannel: async ({ request, locals, params, platform }) => {
-    if (!locals.session || !platform)
+  createChannel: async ({ request, locals, params }) => {
+    if (!locals.session || !env.CONTROL_DB)
       return fail(401, { kind: "channel", message: "Unauthorized" });
     const form = await request.formData();
     try {
       await createNotificationChannel(
-        platform.env.CONTROL_DB,
+        env.CONTROL_DB,
         params.workspace,
         locals.session.user.id,
-        platform.env.NOTIFICATION_SECRET_WRAPPING_KEY,
+        env.NOTIFICATION_SECRET_WRAPPING_KEY,
         {
           name: String(form.get("name") ?? ""),
           provider: String(form.get("provider") ?? "") as NotificationProvider,
@@ -72,33 +73,28 @@ export const actions: Actions = {
       return actionFailure(cause, "channel");
     }
   },
-  updateChannel: async ({ request, locals, params, platform }) => {
-    if (!locals.session || !platform)
+  updateChannel: async ({ request, locals, params }) => {
+    if (!locals.session || !env.CONTROL_DB)
       return fail(401, { kind: "channel", message: "Unauthorized" });
     const form = await request.formData();
     try {
-      await updateNotificationChannel(
-        platform.env.CONTROL_DB,
-        params.workspace,
-        locals.session.user.id,
-        {
-          channelId: String(form.get("channelId") ?? ""),
-          name: String(form.get("name") ?? ""),
-          enabled: form.get("enabled") === "on",
-        },
-      );
+      await updateNotificationChannel(env.CONTROL_DB, params.workspace, locals.session.user.id, {
+        channelId: String(form.get("channelId") ?? ""),
+        name: String(form.get("name") ?? ""),
+        enabled: form.get("enabled") === "on",
+      });
       return { kind: "channel", saved: true };
     } catch (cause) {
       return actionFailure(cause, "channel");
     }
   },
-  deleteChannel: async ({ request, locals, params, platform }) => {
-    if (!locals.session || !platform)
+  deleteChannel: async ({ request, locals, params }) => {
+    if (!locals.session || !env.CONTROL_DB)
       return fail(401, { kind: "channel", message: "Unauthorized" });
     const form = await request.formData();
     try {
       await deleteNotificationChannel(
-        platform.env.CONTROL_DB,
+        env.CONTROL_DB,
         params.workspace,
         locals.session.user.id,
         String(form.get("channelId") ?? ""),
@@ -108,36 +104,32 @@ export const actions: Actions = {
       return actionFailure(cause, "channel");
     }
   },
-  createRule: async ({ request, locals, params, platform }) => {
-    if (!locals.session || !platform) return fail(401, { kind: "rule", message: "Unauthorized" });
+  createRule: async ({ request, locals, params }) => {
+    if (!locals.session || !env.CONTROL_DB)
+      return fail(401, { kind: "rule", message: "Unauthorized" });
     const form = await request.formData();
     try {
       const resource = String(form.get("resource") ?? "");
       const separator = resource.indexOf("|");
       if (separator <= 0) throw error(400, "A resource is required");
-      await createNotificationRule(
-        platform.env.CONTROL_DB,
-        params.workspace,
-        locals.session.user.id,
-        {
-          resourceType: resource.slice(0, separator) as "machine" | "service",
-          resourceId: resource.slice(separator + 1),
-          dimension: String(form.get("dimension") ?? "") as
-            "availability" | "resource" | "recovery",
-          channelId: String(form.get("channelId") ?? ""),
-        },
-      );
+      await createNotificationRule(env.CONTROL_DB, params.workspace, locals.session.user.id, {
+        resourceType: resource.slice(0, separator) as "machine" | "service",
+        resourceId: resource.slice(separator + 1),
+        dimension: String(form.get("dimension") ?? "") as "availability" | "resource" | "recovery",
+        channelId: String(form.get("channelId") ?? ""),
+      });
       return { kind: "rule", saved: true };
     } catch (cause) {
       return actionFailure(cause, "rule");
     }
   },
-  deleteRule: async ({ request, locals, params, platform }) => {
-    if (!locals.session || !platform) return fail(401, { kind: "rule", message: "Unauthorized" });
+  deleteRule: async ({ request, locals, params }) => {
+    if (!locals.session || !env.CONTROL_DB)
+      return fail(401, { kind: "rule", message: "Unauthorized" });
     const form = await request.formData();
     try {
       await deleteNotificationRule(
-        platform.env.CONTROL_DB,
+        env.CONTROL_DB,
         params.workspace,
         locals.session.user.id,
         String(form.get("ruleId") ?? ""),

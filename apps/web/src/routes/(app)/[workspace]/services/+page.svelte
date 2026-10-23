@@ -10,9 +10,9 @@
   } from "@lucide/svelte";
   import { SvelteURLSearchParams } from "svelte/reactivity";
 
-  import ServiceMonitorTable from "$components/services/service-monitor-table.svelte";
-  import Button from "$components/ui/button/button.svelte";
-  import EmptyState from "$components/ui/empty-state/empty-state.svelte";
+  import ServiceMonitorTable from "#lib/components/services/service-monitor-table.svelte";
+  import Button from "#lib/components/ui/button/button.svelte";
+  import EmptyState from "#lib/components/ui/empty-state/empty-state.svelte";
 
   let { data } = $props();
   const pageSize = 100;

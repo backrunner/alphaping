@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Trash2, TriangleAlert } from "@lucide/svelte";
 
-  import Button from "$components/ui/button/button.svelte";
+  import Button from "#lib/components/ui/button/button.svelte";
 
   let { name, slug }: { name: string; slug: string } = $props();
   let confirmation = $state("");

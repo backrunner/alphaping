@@ -1,7 +1,7 @@
 <script lang="ts">
-  import PublicAccessTable from "$components/admin/public-access-table.svelte";
-  import RetentionSettingsForm from "$components/admin/retention-settings-form.svelte";
-  import WorkspaceDangerZone from "$components/admin/workspace-danger-zone.svelte";
+  import PublicAccessTable from "#lib/components/admin/public-access-table.svelte";
+  import RetentionSettingsForm from "#lib/components/admin/retention-settings-form.svelte";
+  import WorkspaceDangerZone from "#lib/components/admin/workspace-danger-zone.svelte";
 
   let { data, form } = $props();
 </script>

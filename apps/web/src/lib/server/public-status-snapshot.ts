@@ -6,7 +6,7 @@ import {
   PUBLIC_STATUS_MAX_SERVICE_PAGES,
   PUBLIC_STATUS_SERVICE_PAGE_SIZE,
   type PublicStatusView,
-} from "$lib/public-status-view";
+} from "#lib/public-status-view.ts";
 
 export const PUBLIC_STATUS_SNAPSHOT_TTL_SECONDS = 5 * 60;
 export const PUBLIC_STATUS_FRESH_CACHE_TTL_SECONDS = 30;

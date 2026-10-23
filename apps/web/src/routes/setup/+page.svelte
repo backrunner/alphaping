@@ -1,5 +1,5 @@
 <script lang="ts">
-  import SiteLogo from "$components/layout/site-logo.svelte";
+  import SiteLogo from "#lib/components/layout/site-logo.svelte";
   import {
     Building2,
     CheckCircle2,
@@ -13,7 +13,7 @@
     UserRound,
   } from "@lucide/svelte";
 
-  import Button from "$components/ui/button/button.svelte";
+  import Button from "#lib/components/ui/button/button.svelte";
 
   import "./setup.css";
 

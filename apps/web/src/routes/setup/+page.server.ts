@@ -1,46 +1,47 @@
+import { env } from "cloudflare:workers";
 import { fail, isHttpError, redirect } from "@sveltejs/kit";
 
-import { initializeInstallation } from "$lib/server/setup";
+import { initializeInstallation } from "#lib/server/setup.ts";
 import {
   inspectSetupEnvironment,
   unavailableSetupEnvironment,
-} from "$lib/server/setup-environment";
+} from "#lib/server/setup-environment.ts";
 
 import type { Actions, PageServerLoad } from "./$types";
 
-export const load: PageServerLoad = async ({ platform }) => {
-  if (!platform)
+export const load: PageServerLoad = async () => {
+  if (!env.CONTROL_DB)
     return {
       installed: false,
       workspaceSlug: null,
       environment: unavailableSetupEnvironment(),
     };
-  const installation = await platform.env.CONTROL_DB.prepare(
+  const installation = await env.CONTROL_DB.prepare(
     "SELECT 1 AS installed FROM installations WHERE state = 'complete' LIMIT 1",
   )
     .first<{ installed: number }>()
     .catch(() => null);
   const installed = Boolean(installation);
   const workspace = installed
-    ? await platform.env.CONTROL_DB.prepare(
+    ? await env.CONTROL_DB.prepare(
         "SELECT slug FROM workspaces WHERE deleted_at IS NULL ORDER BY created_at ASC LIMIT 1",
       ).first<{ slug: string }>()
     : null;
   return {
     installed,
     workspaceSlug: workspace?.slug ?? null,
-    environment: installed ? null : await inspectSetupEnvironment(platform.env),
+    environment: installed ? null : await inspectSetupEnvironment(env),
   };
 };
 
 export const actions: Actions = {
-  default: async ({ request, platform }) => {
-    if (!platform)
+  default: async ({ request }) => {
+    if (!env.CONTROL_DB)
       return fail(503, {
         message: "Cloudflare bindings are unavailable",
         step: 1,
       });
-    const environment = await inspectSetupEnvironment(platform.env);
+    const environment = await inspectSetupEnvironment(env);
     if (!environment.ready) {
       return fail(503, {
         message: "Resolve the environment checks before initialization",
@@ -50,7 +51,7 @@ export const actions: Actions = {
     const form = await request.formData();
     const rawDays = Number(form.get("rawDays"));
     try {
-      await initializeInstallation(platform.env.CONTROL_DB, platform.env.SETUP_TOKEN, {
+      await initializeInstallation(env.CONTROL_DB, env.SETUP_TOKEN, {
         token: String(form.get("token") ?? ""),
         name: String(form.get("name") ?? "").trim(),
         email: String(form.get("email") ?? "").trim(),

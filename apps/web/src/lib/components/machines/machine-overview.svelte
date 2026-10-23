@@ -14,9 +14,9 @@
   } from "@lucide/svelte";
   import type { DashboardMachine, MachineDetail } from "@alphaping/db";
 
-  import HistoryPanel from "$components/machines/history-panel.svelte";
-  import type { MachineMetric } from "$components/machines/history-panel.svelte";
-  import { formatBytes, formatPercent, formatRate } from "$lib/utils/format";
+  import HistoryPanel from "#lib/components/machines/history-panel.svelte";
+  import type { MachineMetric } from "#lib/components/machines/history-panel.svelte";
+  import { formatBytes, formatPercent, formatRate } from "#lib/utils/format.ts";
 
   let { detail, latest }: { detail: MachineDetail; latest: DashboardMachine } = $props();
   const hasTelemetry = $derived(latest.observedAt !== null);

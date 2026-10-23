@@ -60,7 +60,12 @@ async function submitAction(baseUrl, path, cookie, values, label, expected = {})
     },
     body: form(values),
   });
-  assertResponse(response, expected.httpStatus ?? 200, label);
+  // SvelteKit 3 uses fail()'s status for enhanced form responses too.
+  assertResponse(
+    response,
+    expected.httpStatus ?? (expected.type === "failure" ? (expected.actionStatus ?? 400) : 200),
+    label,
+  );
   const serialized = await response.text();
   let result;
   try {

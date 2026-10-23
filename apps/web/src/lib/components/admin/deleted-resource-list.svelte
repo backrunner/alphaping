@@ -1,7 +1,7 @@
 <script lang="ts">
   import { RotateCcw, Trash2 } from "@lucide/svelte";
 
-  import Button from "$components/ui/button/button.svelte";
+  import Button from "#lib/components/ui/button/button.svelte";
 
   let {
     resources,

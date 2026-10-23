@@ -1,6 +1,6 @@
 # AlphaPing documentation
 
-A svedocs 0.2.1 site with AlphaPing's own landing page, navigation, reading layout,
+A svedocs 0.3.0 site with AlphaPing's own landing page, navigation, reading layout,
 Iris light/dark palette, Geist fonts and glass echo Logo. All 14 pages are available
 in Simplified Chinese and English. Local search, code copy, heading anchors, page navigation,
 Markdown twins and `llms.txt` use svedocs contracts.
@@ -20,6 +20,10 @@ Development runs at `http://localhost:4174`. `docs:check` runs Svelte/TypeScript
 `svedocs check --strict`. `docs:build` creates the Cloudflare build and performs a
 Wrangler deployment dry-run; it does not publish the site. The workspace's normal
 `pnpm check`, `pnpm build`, formatting and lint commands include this application.
+
+SvelteKit 3 configuration lives in `vite.config.ts`; `#lib/*` imports use native
+package subpath mappings, and TypeScript extends `$app/tsconfig`. Node.js 22.17
+or newer is required. svedocs and svedocs-cli are upgraded together.
 
 ## Content and theme
 
@@ -89,8 +93,12 @@ hosted locally. Runtime dependencies: svedocs (MIT), Geist fonts (SIL OFL-1.1) a
 (ISC); see the repository's third-party notices.
 Production builds publish bundled dependency licenses at `/third-party-licenses.txt`
 and repository notices at `/third-party-notices.txt`.
-The workspace pins `svedocs>sharp` to 0.35.4 to address the inherited libvips
-vulnerabilities in svedocs 0.2.1's image build dependency.
+The workspace enforces patched transitive versions for image, math, source-map
+and selector tooling. `patches/braces@3.0.3.patch` bounds brace and parenthesis
+nesting while upstream has no release for GHSA-vfj7-8cjw-p6xm.
+`pnpm audit:dependencies` verifies the installed patch before accepting that exact
+finding; all other advisories fail the check. Raw `pnpm audit` still reports the
+upstream version as vulnerable.
 
 ## Independent Cloudflare deployment
 

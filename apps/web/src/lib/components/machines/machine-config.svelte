@@ -3,7 +3,7 @@
   import { Save, Settings } from "@lucide/svelte";
   import type { MachineDetail } from "@alphaping/db";
 
-  import Button from "$components/ui/button/button.svelte";
+  import Button from "#lib/components/ui/button/button.svelte";
 
   let {
     machine,

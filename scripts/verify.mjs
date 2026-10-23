@@ -6,6 +6,7 @@ const steps = [
   ["lint", pnpm, ["lint"]],
   ["typecheck", pnpm, ["typecheck"]],
   ["tests", pnpm, ["test"]],
+  ["dependency audit", pnpm, ["audit:dependencies"]],
   ["D1 migrations", pnpm, ["db:validate"]],
   ["D1 schema manifest", pnpm, ["db:generate:check"]],
   ["cost model", pnpm, ["cost:check"]],
@@ -28,6 +29,7 @@ const steps = [
   ["Agent resources", "node", ["scripts/check-agent-resources.mjs"]],
   ["build", pnpm, ["build"]],
   ["web E2E", "node", ["scripts/test-web-e2e.mjs", "--skip-build"]],
+  ["ingest E2E", "node", ["scripts/test-ingest-e2e.mjs"]],
   ["Worker dry-run", pnpm, ["workers:deploy", "--all", "--env", "production", "--dry-run"]],
   ["whitespace", "git", ["diff", "--check"]],
 ];

@@ -1,12 +1,12 @@
 <script lang="ts">
   import { Boxes, Plus } from "@lucide/svelte";
 
-  import Metric from "$components/dashboard/metric.svelte";
-  import MachineCard from "$components/machines/machine-card.svelte";
-  import ServiceRow from "$components/services/service-row.svelte";
-  import Button from "$components/ui/button/button.svelte";
-  import EmptyState from "$components/ui/empty-state/empty-state.svelte";
-  import { formatBytes, formatRate } from "$lib/utils/format";
+  import Metric from "#lib/components/dashboard/metric.svelte";
+  import MachineCard from "#lib/components/machines/machine-card.svelte";
+  import ServiceRow from "#lib/components/services/service-row.svelte";
+  import Button from "#lib/components/ui/button/button.svelte";
+  import EmptyState from "#lib/components/ui/empty-state/empty-state.svelte";
+  import { formatBytes, formatRate } from "#lib/utils/format.ts";
 
   let { data } = $props();
 </script>

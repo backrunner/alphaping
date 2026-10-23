@@ -10,13 +10,13 @@
     Trash2,
   } from "@lucide/svelte";
 
-  import ServiceCheckForm from "$components/services/service-check-form.svelte";
-  import ServiceCheckList from "$components/services/service-check-list.svelte";
-  import ServiceEvents from "$components/services/service-events.svelte";
-  import ServiceHistoryPanel from "$components/services/service-history-panel.svelte";
-  import ServiceSummary from "$components/services/service-summary.svelte";
-  import StatusLabel from "$components/status/status-label.svelte";
-  import Button from "$components/ui/button/button.svelte";
+  import ServiceCheckForm from "#lib/components/services/service-check-form.svelte";
+  import ServiceCheckList from "#lib/components/services/service-check-list.svelte";
+  import ServiceEvents from "#lib/components/services/service-events.svelte";
+  import ServiceHistoryPanel from "#lib/components/services/service-history-panel.svelte";
+  import ServiceSummary from "#lib/components/services/service-summary.svelte";
+  import StatusLabel from "#lib/components/status/status-label.svelte";
+  import Button from "#lib/components/ui/button/button.svelte";
 
   let { data, form } = $props();
   let maintenanceUntil = $state("");

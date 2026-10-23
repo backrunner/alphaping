@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import { createRequestScope } from "$lib/state/request-scope";
+  import { createRequestScope } from "#lib/state/request-scope.ts";
   import type { ServiceHistoryPoint } from "@alphaping/db";
   import { AlertCircle, BarChart3, ChevronDown, RefreshCw } from "@lucide/svelte";
 
