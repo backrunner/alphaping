@@ -16,9 +16,9 @@
   let { context }: { context: SvedocsThemeContext } = $props();
   const href = (path: string) => resolveLocalizedHref(path, context);
   const guides = [
-    { key: "deploy", icon: Cloud, href: "/docs/start/deployment", number: "01" },
-    { key: "agent", icon: Server, href: "/docs/start/agent", number: "02" },
-    { key: "services", icon: Radio, href: "/docs/guides/services", number: "03" },
+    { key: "deploy", icon: Cloud, href: "/docs/start/deployment" },
+    { key: "agent", icon: Server, href: "/docs/start/agent" },
+    { key: "services", icon: Radio, href: "/docs/guides/services" },
   ];
   const details = [
     { key: "machine", icon: Container, href: "/docs/guides/machines" },
@@ -30,9 +30,7 @@
 <div class="ap-landing">
   <section class="ap-hero" aria-labelledby="hero-title">
     <div class="ap-hero-copy">
-      <p class="ap-eyebrow">
-        <span class="ap-signal-dot" aria-hidden="true"></span>{context.t("ap.hero.kicker")}
-      </p>
+      <p class="ap-eyebrow">{context.t("ap.hero.kicker")}</p>
       <h1 id="hero-title">
         {context.t("ap.hero.first")}<br /><span>{context.t("ap.hero.second")}</span>
       </h1>
@@ -67,7 +65,6 @@
   <section class="ap-preview-section" aria-labelledby="preview-title">
     <div class="ap-section-heading">
       <div>
-        <p class="ap-eyebrow">{context.t("ap.preview.label")}</p>
         <h2 id="preview-title">{context.t("ap.preview.title")}</h2>
         <p>{context.t("ap.preview.description")}</p>
       </div>
@@ -77,9 +74,8 @@
     </div>
     <figure class="ap-product-preview">
       <div class="ap-browser-bar">
-        <span class="ap-window-dots" aria-hidden="true"><i></i><i></i><i></i></span><span
-          >{context.t("ap.preview.caption")}</span
-        ><span class="ap-preview-badge">{context.t("ap.preview.note")}</span>
+        <span>{context.t("ap.preview.caption")}</span>
+        <span class="ap-preview-badge">{context.t("ap.preview.note")}</span>
       </div>
       <img
         class="ap-preview-light"
@@ -106,7 +102,6 @@
   <section class="ap-guides-section" aria-labelledby="guides-title">
     <div class="ap-section-heading">
       <div>
-        <p class="ap-eyebrow">{context.t("ap.guides.kicker")}</p>
         <h2 id="guides-title">{context.t("ap.guides.title")}</h2>
         <p>{context.t("ap.guides.description")}</p>
       </div>
@@ -116,7 +111,7 @@
       {#each guides as guide (guide.key)}
         <a class="ap-guide-card" href={href(guide.href)}>
           <div class="ap-guide-top">
-            <guide.icon size={25} strokeWidth={1.75} /><span>{guide.number}</span>
+            <guide.icon size={25} strokeWidth={1.75} />
           </div>
           <h3>{context.t(`ap.guide.${guide.key}.title`)}</h3>
           <p>{context.t(`ap.guide.${guide.key}.description`)}</p>
@@ -128,7 +123,6 @@
 
   <section class="ap-details-section" aria-labelledby="details-title">
     <div>
-      <p class="ap-eyebrow">{context.t("ap.details.kicker")}</p>
       <h2 id="details-title">{context.t("ap.details.title")}</h2>
     </div>
     <div class="ap-detail-list">

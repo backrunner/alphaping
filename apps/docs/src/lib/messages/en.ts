@@ -29,7 +29,6 @@ export const enMessages = {
     "Connect your machines and services. A lightweight Rust Agent and your own Cloudflare control plane make it easier to monitor what matters and share its status.",
   "ap.hero.platforms": "Linux, macOS, Windows",
   "ap.hero.license": "Apache-2.0 licensed",
-  "ap.preview.label": "Interface preview",
   "ap.preview.title": "A clear view. A page worth sharing.",
   "ap.preview.description":
     "Machine metrics, service availability and public status pages, all connected.",
@@ -38,7 +37,6 @@ export const enMessages = {
   "ap.preview.note": "Product preview · Sample data",
   "ap.preview.caption": "AlphaPing / Public dashboard",
   "ap.preview.link": "Explore status pages",
-  "ap.guides.kicker": "Setup guides",
   "ap.guides.title": "Bring your first machine online.",
   "ap.guides.description": "Deploy, connect and monitor. Build an AlphaPing instance of your own.",
   "ap.guide.deploy.title": "Deploy the control plane",
@@ -50,7 +48,6 @@ export const enMessages = {
   "ap.guide.services.title": "Add service checks",
   "ap.guide.services.description":
     "Check availability with HTTP, TCP or ICMP probes from an Agent.",
-  "ap.details.kicker": "Features",
   "ap.details.title": "Your data. Clear boundaries.",
   "ap.details.machine.title": "Machines and containers, together",
   "ap.details.machine.text":

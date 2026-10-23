@@ -268,9 +268,6 @@
     gap: 9px;
     flex-wrap: wrap;
   }
-  .ap-window-dots {
-    display: none;
-  }
   .ap-preview-badge {
     font-size: 11px;
   }

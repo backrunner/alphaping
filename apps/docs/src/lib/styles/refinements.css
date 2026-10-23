@@ -1,8 +1,18 @@
 /* Remove the bundled theme's pixel decorations and hover displacement. */
 .sd-prev-next::before,
 .sd-prev-next span i,
-.sd-code-lang::before {
+.sd-code-language::before,
+.sd-kicker-mark,
+.sd-error-panel::after,
+.sd-render-error::after,
+.sd-render-error-mark {
   display: none;
+}
+.sd-code .sd-code-header .sd-code-language {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 .sd-search-trigger:hover,
 .sd-floating-tool:hover {

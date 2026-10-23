@@ -35,13 +35,6 @@
   font-weight: 550;
   margin: 0 0 20px;
 }
-.ap-signal-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--sd-accent);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--sd-accent) 9%, transparent);
-}
 .ap-hero h1 {
   font-size: clamp(36px, 4.2vw, 52px);
   font-weight: 620;
@@ -192,10 +185,6 @@
   gap: 24px;
   margin: 0 4px 26px;
 }
-.ap-section-heading .ap-eyebrow,
-.ap-details-section .ap-eyebrow {
-  margin-bottom: 12px;
-}
 .ap-landing h2 {
   font-size: 28px;
   font-weight: 590;
@@ -241,16 +230,6 @@
   font-size: 10px;
   color: var(--sd-muted);
 }
-.ap-window-dots {
-  display: flex;
-  gap: 5px;
-}
-.ap-window-dots i {
-  width: 7px;
-  height: 7px;
-  background: var(--sd-line);
-  border-radius: 50%;
-}
 .ap-preview-badge {
   margin-left: auto;
   font-family: var(--font-sans);
@@ -271,11 +250,8 @@
   display: block;
 }
 .ap-development-badge {
-  padding: 6px 10px;
   font-size: 11px;
   color: var(--sd-muted);
-  background: var(--ap-subtle);
-  border-radius: 999px;
   white-space: nowrap;
 }
 .ap-guide-grid {
@@ -300,11 +276,6 @@
   align-items: center;
   margin-bottom: 27px;
   color: var(--sd-accent);
-}
-.ap-guide-top span {
-  color: var(--sd-muted);
-  font-family: var(--font-mono);
-  font-size: 11px;
 }
 .ap-landing h3 {
   font-size: 18px;

@@ -380,6 +380,6 @@ The user requested less exaggerated rounding and consistent, unclipped content a
 - Keep enough interior spacing for text and controls at corners. Apply clipping only to intentional scrolling, media, ellipsis or decorative layers. Edge-to-edge interactive summary cells need an inset focus ring.
 - Repeated cards stay in place on hover; feedback uses border/color/shadow changes. Validate first/last rows, focused controls, menus, long content and empty/error states in light/dark and at every responsive breakpoint.
 
-## Documentation copy scope (2026-10-23, current priority)
+## Documentation copy and decoration scope (2026-10-23, current priority)
 
-The user clarified that this pass should only trim redundant supporting copy. Preserve the established homepage headlines, main descriptions, brand orbit, indicators, component structure and CSS. Small section labels, secondary instructions and unnecessary internal-process notes may be shortened in both languages. Do not use a request to reduce AI-sounding copy as permission to redesign the site or replace its main messaging.
+The user clarified that copy edits should only trim redundant supporting text, then explicitly requested simpler indicator-like decoration. Preserve the established homepage headlines, main descriptions, brand orbit, layout, typography and surfaces. Remove redundant section labels, decorative dots, card numbering and pixel accents; present secondary labels as plain text instead of badges. Keep meaningful navigation selection, reading progress, loading, status and interaction feedback. Small secondary instructions and unnecessary internal-process notes may be shortened in both languages. Do not use either request as permission to redesign the site or replace its main messaging.
