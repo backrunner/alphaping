@@ -90,7 +90,11 @@ function deploy(worker, options) {
   const command = ["exec", "wrangler", "deploy", "--config", basename(config)];
   command.push(options.env === "production" ? "--env=production" : "--env=");
   if (options.dryRun) command.push("--dry-run");
-  if (existsSync(resolve(worker.directory, "svelte.config.js"))) {
+  // SvelteKit 3 keeps its configuration in Vite, so the legacy config file
+  // cannot identify applications that need a fresh build before deployment.
+  const packagePath = resolve(worker.directory, "package.json");
+  const manifest = existsSync(packagePath) ? JSON.parse(readFileSync(packagePath, "utf8")) : {};
+  if (manifest.dependencies?.["@sveltejs/kit"] || manifest.devDependencies?.["@sveltejs/kit"]) {
     const build = spawnSync(
       process.platform === "win32" ? "pnpm.cmd" : "pnpm",
       ["exec", "vite", "build"],
