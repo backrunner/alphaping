@@ -214,16 +214,16 @@
   section header nav {
     display: flex;
     gap: 2px;
-    padding: 2px;
-    border-radius: var(--radius-pill);
+    padding: 4px;
+    border-radius: var(--radius-card);
     background: var(--surface-subtle);
   }
   section header nav a {
     display: inline-flex;
-    height: 26px;
+    height: var(--control-size);
     align-items: center;
     padding: 0 var(--space-3);
-    border-radius: var(--radius-pill);
+    border-radius: var(--radius-button);
     color: var(--text-muted);
     font-size: var(--text-xs);
     text-decoration: none;
@@ -272,7 +272,7 @@
     background: var(--status-down-bg);
     font-size: var(--text-sm);
   }
-  @media (max-width: 720px) {
+  @container (max-width: 720px) {
     .page-header {
       align-items: flex-start;
       flex-direction: column;

@@ -1,13 +1,19 @@
 <script lang="ts">
+  import { goto } from "$app/navigation";
   import { page } from "$app/state";
-  import { Database, FileClock, Palette, ServerCog, ShieldCheck } from "@lucide/svelte";
+  import { Bell, Database, FileClock, Palette, ServerCog, ShieldCheck } from "@lucide/svelte";
 
   let { data, children } = $props();
   const root = $derived(`/${data.shell.workspace.slug}/admin`);
 
-  function active(path: string, exact = false): boolean {
-    return exact ? page.url.pathname === path : page.url.pathname.startsWith(path);
-  }
+  const sections = $derived([
+    { href: root, label: "Resources", icon: ServerCog },
+    { href: `${root}/access`, label: "Access", icon: ShieldCheck },
+    { href: `${root}/settings`, label: "Data & visibility", icon: Database },
+    { href: `${root}/appearance`, label: "Appearance", icon: Palette },
+    { href: `${root}/notifications`, label: "Notifications", icon: Bell },
+    { href: `${root}/audit`, label: "Audit log", icon: FileClock },
+  ]);
 </script>
 
 <div class="admin-shell">
@@ -20,20 +26,22 @@
   </header>
   <div class="admin-shell__body">
     <nav aria-label="Administration sections">
-      <a class:active={active(root, true)} href={root}><ServerCog size={15} />Resources</a>
-      <a class:active={active(`${root}/access`)} href={`${root}/access`}
-        ><ShieldCheck size={15} />Access</a
-      >
-      <a class:active={active(`${root}/settings`)} href={`${root}/settings`}
-        ><Database size={15} />Data & visibility</a
-      >
-      <a class:active={active(`${root}/appearance`)} href={`${root}/appearance`}
-        ><Palette size={15} />Appearance</a
-      >
-      <a class:active={active(`${root}/audit`)} href={`${root}/audit`}
-        ><FileClock size={15} />Audit log</a
-      >
+      {#each sections as section (section.href)}
+        <a
+          class:active={page.url.pathname === section.href}
+          aria-current={page.url.pathname === section.href ? "page" : undefined}
+          href={section.href}><section.icon size={15} />{section.label}</a
+        >
+      {/each}
     </nav>
+    <label class="section-picker">
+      <span>Administration section</span>
+      <select value={page.url.pathname} onchange={(event) => void goto(event.currentTarget.value)}>
+        {#each sections as section (section.href)}<option value={section.href}
+            >{section.label}</option
+          >{/each}
+      </select>
+    </label>
     <div class="admin-shell__content">{@render children()}</div>
   </div>
 </div>
@@ -128,10 +136,11 @@
   }
 
   .admin-shell__content {
+    container-type: inline-size;
     min-width: 0;
   }
 
-  @media (max-width: 780px) {
+  @container (max-width: 1060px) {
     .admin-shell {
       width: min(100% - 24px, var(--content-admin));
       padding-top: var(--space-4);
@@ -162,15 +171,38 @@
     }
   }
 
-  @media (max-width: 480px) {
-    nav {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      overflow-x: visible;
-    }
+  .section-picker {
+    display: none;
+  }
 
-    nav a {
+  @container (max-width: 640px) {
+    nav {
+      display: none;
+    }
+    header > strong {
+      display: none;
+    }
+    .section-picker {
+      display: grid;
+      gap: var(--space-1);
+    }
+    .section-picker span {
+      color: var(--text-muted);
+      font-size: var(--text-xs);
+    }
+    .section-picker select {
+      width: 100%;
       min-width: 0;
+      height: var(--control-size);
+      padding: 0 var(--space-3);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-control);
+      color: var(--text);
+      background: var(--surface);
+    }
+    .admin-shell__body {
+      gap: var(--space-5);
+      padding-top: var(--space-4);
     }
   }
 

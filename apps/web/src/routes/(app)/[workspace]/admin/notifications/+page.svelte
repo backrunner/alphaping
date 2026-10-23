@@ -321,8 +321,8 @@
             <span class={`dimension dimension--${rule.dimension}`} role="cell"
               >{rule.dimension}</span
             >
-            <span role="cell">{rule.channelName}</span>
-            <div class="rule-action">
+            <span class="rule-channel" role="cell">{rule.channelName}</span>
+            <div class="rule-action" role="cell">
               <form method="POST" action="?/deleteRule">
                 <input type="hidden" name="ruleId" value={rule.id} />
                 <Button
@@ -344,6 +344,8 @@
 
 <style>
   .notifications-page {
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr);
     display: grid;
     gap: var(--space-8);
     padding-bottom: var(--space-8);
@@ -421,6 +423,8 @@
 
   .channel-section,
   .routing-section {
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr);
     display: grid;
     gap: var(--space-4);
   }
@@ -432,6 +436,7 @@
   }
 
   .channel-layout {
+    min-width: 0;
     display: grid;
     grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
     align-items: start;
@@ -495,25 +500,26 @@
   }
 
   .channel-list {
+    min-width: 0;
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--space-3);
   }
 
   .channel-card {
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr);
     display: grid;
     gap: var(--space-4);
     padding: var(--space-4);
     transition:
       border-color 120ms ease,
-      box-shadow 120ms ease,
-      transform 120ms ease;
+      box-shadow 120ms ease;
   }
 
   .channel-card:hover {
     border-color: var(--border-strong);
     box-shadow: var(--shadow-card-hover);
-    transform: translateY(-1px);
   }
 
   .channel-card.disabled {
@@ -541,7 +547,8 @@
     font-size: var(--text-base);
     font-weight: 620;
     text-overflow: ellipsis;
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   .channel-card__identity div span {
@@ -550,6 +557,7 @@
   }
 
   .state-dot {
+    flex: none;
     margin-left: auto;
     padding: 3px var(--space-2);
     border-radius: var(--radius-pill);
@@ -582,13 +590,16 @@
   }
 
   dd {
+    min-width: 0;
+    overflow-wrap: anywhere;
     overflow: hidden;
     margin: 0;
     color: var(--text-muted);
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
     text-overflow: ellipsis;
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   .channel-card__actions {
@@ -702,9 +713,10 @@
     background: var(--status-degraded-bg);
   }
 
-  @media (max-width: 1080px) {
+  @container (max-width: 1080px) {
     .channel-layout {
-      grid-template-columns: 1fr;
+      min-width: 0;
+      grid-template-columns: minmax(0, 1fr);
     }
 
     .create-channel {
@@ -717,27 +729,41 @@
     }
   }
 
-  @media (max-width: 780px) {
+  @container (max-width: 780px) {
     .channel-list,
     .create-channel {
-      grid-template-columns: 1fr;
+      grid-template-columns: minmax(0, 1fr);
     }
 
     .rule-builder {
-      grid-template-columns: 1fr;
+      grid-template-columns: minmax(0, 1fr);
     }
 
-    .rules-table {
-      overflow-x: auto;
+    .rules-table__head {
+      display: none;
     }
-
-    .rules-table__head,
     .rule-row {
-      min-width: 660px;
+      grid-template-columns: minmax(0, 1fr) var(--control-size);
+      gap: var(--space-2);
+      padding: var(--space-4);
+    }
+    .rule-row > :not(.rule-action) {
+      grid-column: 1;
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+    .rule-channel::before {
+      content: "Channel · ";
+      color: var(--text-muted);
+    }
+    .rule-action {
+      grid-column: 2;
+      grid-row: 1 / 4;
+      align-self: center;
     }
   }
 
-  @media (max-width: 520px) {
+  @container (max-width: 520px) {
     .channel-card__actions,
     .channel-settings {
       align-items: stretch;

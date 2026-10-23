@@ -169,7 +169,7 @@
     gap: var(--space-2);
     padding: 0 var(--space-2);
     border: 1px solid var(--border);
-    border-radius: var(--radius-pill);
+    border-radius: var(--radius-control);
     background: var(--surface);
     font-size: var(--text-sm);
     cursor: pointer;
@@ -192,7 +192,7 @@
     background: var(--status-down-bg);
     font-size: var(--text-sm);
   }
-  @media (max-width: 720px) {
+  @container (max-width: 720px) {
     form {
       grid-template-columns: 1fr;
     }

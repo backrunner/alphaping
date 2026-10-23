@@ -64,7 +64,7 @@
   <nav class="sidebar__bottom" aria-label="Administration">
     {#if shell.navigation.developer}
       <a
-        class:active={isActive(`${rootPath}/admin`, true)}
+        class:active={isActive(`${rootPath}/admin`) && !isActive(`${rootPath}/admin/notifications`)}
         href={`${rootPath}/admin`}
         onclick={onclose}><MonitorCog size={16} />Admin</a
       >
@@ -87,11 +87,13 @@
     z-index: var(--z-sticky);
     display: flex;
     height: calc(100dvh - 24px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
     flex-direction: column;
     padding: 6px 10px 12px;
     margin: 12px 0 12px 12px;
     border: 1px solid var(--border);
-    border-radius: 22px;
+    border-radius: var(--radius-panel);
     box-shadow: var(--shadow-card);
     background: var(--surface);
   }
@@ -188,11 +190,12 @@
       left: 0;
       margin: 0;
       height: 100dvh;
-      border-radius: 0 22px 22px 0;
+      border-radius: 0 var(--radius-panel) var(--radius-panel) 0;
       z-index: var(--z-dialog);
       visibility: hidden;
       translate: -100% 0;
-      width: 260px;
+      width: min(300px, calc(100vw - 48px));
+      padding-bottom: max(var(--space-3), env(safe-area-inset-bottom));
       box-shadow: var(--navigation-shadow);
       transition:
         translate 140ms ease,

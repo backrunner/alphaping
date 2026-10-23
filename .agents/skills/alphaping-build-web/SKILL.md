@@ -33,7 +33,7 @@ Read [Cloudflare cost](../../06-cloudflare-storage-cost.md) for polling, history
 ## Product UI Rules
 
 - Follow the latest `.agents/07-ui-design-system.md` design baseline: modern consumer-facing public pages, with a denser console using the same visual language.
-- Use broad Hero panels, generous corner radii, soft layered shadows, clear type hierarchy and direct copy. Follow the latest user preference baseline; allow static theme gradients and real status illustrations, and avoid repeated icon tiles or promotional filler.
+- Use broad Hero panels, the current shared radius scale, soft layered shadows, clear type hierarchy and direct copy. Follow the latest user preference baseline; allow static theme gradients and real status illustrations, and avoid repeated icon tiles or promotional filler.
 - Use Geist Sans/Mono, tabular numerals, stable dimensions, and no viewport-scaled fonts.
 - Keep history requests on demand; decorative graphics must not imply fictional telemetry.
 - Use status text/icon/shape in addition to color.

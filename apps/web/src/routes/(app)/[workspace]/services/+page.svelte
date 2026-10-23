@@ -36,7 +36,7 @@
   type StatusFilter = (typeof statusOptions)[number];
 
   function filterHref(name: string, value: string): string {
-    const params = new SvelteURLSearchParams(page.url.searchParams);
+    const params = new SvelteURLSearchParams(page.url.searchParams.toString());
     if (value === "" || value === "all") params.delete(name);
     else params.set(name, value);
     params.delete("page");
@@ -45,7 +45,7 @@
   }
 
   function paginationHref(value: number): string {
-    const params = new SvelteURLSearchParams(page.url.searchParams);
+    const params = new SvelteURLSearchParams(page.url.searchParams.toString());
     if (value <= 1) params.delete("page");
     else params.set("page", String(value));
     const query = params.toString();
@@ -211,7 +211,7 @@
   .search {
     display: flex;
     width: min(260px, 100%);
-    height: 32px;
+    height: var(--control-size);
     align-items: center;
     gap: var(--space-2);
     padding: 0 var(--space-2);
@@ -268,17 +268,17 @@
   .segments {
     display: flex;
     gap: 2px;
-    padding: 2px;
-    border-radius: var(--radius-pill);
+    padding: 4px;
+    border-radius: var(--radius-card);
     background: var(--surface-subtle);
   }
 
   .segments a {
     display: inline-flex;
-    height: 26px;
+    height: var(--control-size);
     align-items: center;
     padding: 0 var(--space-3);
-    border-radius: var(--radius-pill);
+    border-radius: var(--radius-button);
     color: var(--text-muted);
     font-size: var(--text-xs);
     text-decoration: none;
@@ -309,7 +309,8 @@
   .pagination a,
   .pagination span {
     display: inline-flex;
-    height: 32px;
+    justify-self: start;
+    height: var(--control-size);
     align-items: center;
     gap: var(--space-1);
     padding: 0 var(--space-3);
@@ -347,7 +348,7 @@
     font-variant-numeric: tabular-nums;
   }
 
-  @media (max-width: 680px) {
+  @container (max-width: 680px) {
     .toolbar {
       align-items: stretch;
     }
@@ -357,7 +358,21 @@
     }
 
     .segments {
-      overflow-x: auto;
+      max-width: 100%;
+      flex-wrap: wrap;
+    }
+  }
+
+  @container (max-width: 480px) {
+    .segments {
+      display: grid;
+      width: 100%;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .segments a {
+      min-width: 0;
+      justify-content: center;
+      padding-inline: var(--space-2);
     }
   }
 

@@ -109,15 +109,15 @@
   }
   form {
     display: grid;
-    grid-template-columns: 140px 1fr 32px;
+    grid-template-columns: 140px minmax(0, 1fr) var(--control-size);
     gap: var(--space-2);
     margin-top: var(--space-3);
   }
   form input,
   form select {
     width: 100%;
-    height: 32px;
-    min-height: 32px;
+    height: var(--control-size);
+    min-height: var(--control-size);
     padding: 0 var(--space-2);
     border: 1px solid var(--border);
     border-radius: var(--radius-control);
@@ -133,8 +133,8 @@
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
   }
   form :global(.icon-submit) {
-    width: 32px;
-    height: 32px;
+    width: var(--control-size);
+    height: var(--control-size);
     padding: 0;
   }
   ol {
@@ -197,13 +197,13 @@
   li time {
     font-variant-numeric: tabular-nums;
   }
-  @media (max-width: 720px) {
+  @container (max-width: 720px) {
     .heading {
       flex-direction: column;
       gap: var(--space-1);
     }
     form {
-      grid-template-columns: 1fr 32px;
+      grid-template-columns: minmax(0, 1fr) var(--control-size);
     }
     form select {
       grid-column: 1 / -1;

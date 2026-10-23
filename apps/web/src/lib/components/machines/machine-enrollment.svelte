@@ -253,7 +253,7 @@
     padding: var(--space-4) 0;
   }
 
-  @media (max-width: 700px) {
+  @container (max-width: 700px) {
     .token-list__heading {
       display: none;
     }
@@ -275,7 +275,7 @@
     }
   }
 
-  @media (max-width: 440px) {
+  @container (max-width: 440px) {
     header {
       align-items: stretch;
       flex-direction: column;

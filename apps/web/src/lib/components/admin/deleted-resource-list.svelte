@@ -150,7 +150,7 @@
     color: var(--status-down);
   }
 
-  @media (max-width: 620px) {
+  @container (max-width: 620px) {
     .row {
       display: grid;
       grid-template-columns: auto minmax(0, 1fr) auto;

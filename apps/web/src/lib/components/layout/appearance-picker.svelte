@@ -166,7 +166,7 @@
     gap: 4px;
     padding: 4px;
     background: var(--surface-subtle);
-    border-radius: 12px;
+    border-radius: var(--radius-card);
   }
   button {
     cursor: pointer;
@@ -182,7 +182,7 @@
     color: var(--text-muted);
     background: transparent;
     border: 1px solid transparent;
-    border-radius: 9px;
+    border-radius: var(--radius-button);
     font-size: 11px;
   }
   .modes button.active {
@@ -236,7 +236,7 @@
     gap: 8px;
     color: var(--text-muted);
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: var(--radius-button);
     background: var(--surface);
     font-size: 12px;
   }

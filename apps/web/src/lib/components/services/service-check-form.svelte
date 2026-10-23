@@ -125,19 +125,19 @@
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 2px;
-    padding: 2px;
-    border-radius: var(--radius-pill);
+    padding: 4px;
+    border-radius: var(--radius-card);
     background: var(--surface-subtle);
   }
 
   .segments button {
     display: inline-flex;
-    height: 28px;
+    height: var(--control-size);
     align-items: center;
     justify-content: center;
     gap: var(--space-2);
     border: 0;
-    border-radius: var(--radius-pill);
+    border-radius: var(--radius-button);
     color: var(--text-muted);
     background: transparent;
     font: inherit;

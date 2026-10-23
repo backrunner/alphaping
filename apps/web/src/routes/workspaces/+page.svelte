@@ -313,7 +313,7 @@
   article {
     min-height: 60px;
     gap: var(--space-3);
-    margin: 0 calc(-1 * var(--space-3));
+    margin: 0;
     padding: var(--space-3);
     border-bottom: 1px solid var(--border);
     border-radius: var(--radius-card);
@@ -359,6 +359,7 @@
   }
 
   article > a {
+    min-height: var(--control-size);
     flex: none;
     gap: var(--space-1);
     color: var(--accent);
@@ -443,8 +444,9 @@
     }
 
     .create-workspace form {
-      right: auto;
-      left: 0;
+      position: static;
+      width: 100%;
+      margin-top: var(--space-2);
     }
 
     .create-fields {

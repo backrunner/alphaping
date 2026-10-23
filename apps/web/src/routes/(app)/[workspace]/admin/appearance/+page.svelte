@@ -522,7 +522,7 @@
     color: var(--status-healthy);
     background: var(--status-healthy-bg);
   }
-  @media (max-width: 1100px) {
+  @container (max-width: 800px) {
     .appearance-editor {
       grid-template-columns: 1fr;
     }
@@ -534,7 +534,7 @@
       align-items: flex-start;
     }
   }
-  @media (max-width: 480px) {
+  @container (max-width: 480px) {
     h2 {
       font-size: 20px;
     }

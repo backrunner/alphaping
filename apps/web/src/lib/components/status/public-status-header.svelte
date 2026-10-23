@@ -72,7 +72,7 @@
     padding: 48px;
     margin: 12px 0 40px;
     border: 1px solid var(--border);
-    border-radius: 36px;
+    border-radius: var(--radius-hero);
     background: linear-gradient(
       120deg,
       var(--surface) 35%,
@@ -135,7 +135,7 @@
     width: 136px;
     height: 136px;
     border: 1px solid color-mix(in srgb, var(--signal) 12%, var(--surface));
-    border-radius: 44px;
+    border-radius: var(--radius-hero);
     color: var(--signal);
     background: linear-gradient(
       145deg,
@@ -227,7 +227,7 @@
     .status-emblem {
       width: 112px;
       height: 112px;
-      border-radius: 36px;
+      border-radius: var(--radius-hero);
     }
     h1 {
       font-size: 36px;
@@ -242,7 +242,6 @@
       min-height: 0;
       padding: 32px 24px;
       margin: 8px 0 32px;
-      border-radius: 28px;
     }
     .status-illustration {
       display: none;

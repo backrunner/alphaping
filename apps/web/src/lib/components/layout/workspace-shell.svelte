@@ -18,6 +18,15 @@
     return () => desktop.removeEventListener("change", resize);
   });
 
+  $effect(() => {
+    if (!mobileNavOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  });
+
   function openMobileNavigation(): void {
     mobileNavOpen = true;
     requestAnimationFrame(() => document.getElementById("workspace-navigation-close")?.focus());
@@ -79,6 +88,7 @@
 
   .workspace,
   .workspace-content {
+    container-type: inline-size;
     min-width: 0;
   }
 

@@ -18,7 +18,7 @@
   } = $props();
 
   function agentPageHref(value: number): string {
-    const params = new SvelteURLSearchParams(page.url.searchParams);
+    const params = new SvelteURLSearchParams(page.url.searchParams.toString());
     if (value <= 1) params.delete("agentPage");
     else params.set("agentPage", String(value));
     const query = params.toString();
@@ -151,11 +151,15 @@
     ><input type="checkbox" name="useTls" checked /><span>Use TLS</span></label
   >
   <div class="fields two">
+    <div class="secret-field">
+      <label
+        ><span>Send payload</span><textarea name="tcpPayload" rows="2" maxlength="4096"
+        ></textarea></label
+      ><label class="inline-check"
+        ><input type="checkbox" name="tcpPayloadIsSecret" /> Store as secret</label
+      >
+    </div>
     <label
-      ><span>Send payload</span><textarea name="tcpPayload" rows="2" maxlength="4096"
-      ></textarea><small><input type="checkbox" name="tcpPayloadIsSecret" /> Store as secret</small
-      ></label
-    ><label
       ><span>Expected response prefix</span><textarea
         name="tcpResponsePrefix"
         rows="2"
@@ -195,7 +199,7 @@
   select,
   textarea {
     width: 100%;
-    min-height: 32px;
+    min-height: var(--control-size);
     padding: 0 var(--space-2);
     border: 1px solid var(--border);
     border-radius: var(--radius-control);
@@ -249,7 +253,6 @@
     font-weight: 500;
     font-variant-numeric: tabular-nums;
   }
-  label small input,
   .inline-check input {
     width: 14px;
     min-height: 14px;
@@ -264,11 +267,16 @@
   .inline-check span {
     margin: 0;
   }
-  @media (max-width: 680px) {
+  @container (max-width: 680px) {
     .fields.two,
     .fields.three,
     .fields.url-row {
       grid-template-columns: 1fr;
     }
+  }
+  .secret-field {
+    display: grid;
+    min-width: 0;
+    gap: var(--space-1);
   }
 </style>

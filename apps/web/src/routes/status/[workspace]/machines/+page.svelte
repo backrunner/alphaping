@@ -49,7 +49,7 @@
   }
 
   function filterHref(name: string, value: string): string {
-    const params = new SvelteURLSearchParams(page.url.searchParams);
+    const params = new SvelteURLSearchParams(page.url.searchParams.toString());
     if (value === "" || value === "all" || value === "priority") params.delete(name);
     else params.set(name, value);
     params.delete("page");
@@ -58,7 +58,7 @@
   }
 
   function paginationHref(value: number): string {
-    const params = new SvelteURLSearchParams(page.url.searchParams);
+    const params = new SvelteURLSearchParams(page.url.searchParams.toString());
     if (value <= 1) params.delete("page");
     else params.set("page", String(value));
     const query = params.toString();
@@ -289,6 +289,7 @@
   }
 
   .summary a {
+    position: relative;
     display: grid;
     min-width: 0;
     gap: var(--space-1);
@@ -298,6 +299,19 @@
     transition:
       background-color 120ms ease,
       color 120ms ease;
+  }
+
+  .summary a:focus-visible {
+    outline: none;
+  }
+
+  .summary a:focus-visible::after {
+    position: absolute;
+    inset: 4px;
+    border: 2px solid var(--focus-ring);
+    border-radius: var(--radius-control);
+    content: "";
+    pointer-events: none;
   }
 
   .summary a + a {
@@ -348,7 +362,7 @@
     display: flex;
     width: min(360px, 52vw);
     min-width: 0;
-    height: 40px;
+    height: max(40px, var(--control-size));
     align-items: center;
     gap: var(--space-2);
     padding: 0 var(--space-2) 0 var(--space-3);

@@ -1,6 +1,6 @@
 # AlphaPing UI 设计系统
 
-文档站 `apps/docs` 沿用本文件当前优先的 Iris 明暗配色、Geist 字体、回波 Logo、大圆角与柔和阴影。产品 landing 使用宽幅 Hero、静态品牌轨道和明确标注的示例截图；阅读区采用分组侧栏、白色圆角文章表面和页内目录。顶部导航采用居中悬浮圆角栏，与视口顶部和两侧保留间距，使用轻微半透明表面、背景模糊与柔和阴影；导航选中态使用 Iris 胶囊。移动端菜单在导航下方独立展开，不推移正文。搜索、明暗切换、代码复制与键盘焦点保持可用。主题定制通过 svedocs 公共组件接口接入，不复制内容发现、路由或搜索逻辑。
+文档站 `apps/docs` 沿用本文件当前优先的 Iris 明暗配色、Geist 字体、回波 Logo、克制的分级圆角与柔和阴影。产品 landing 使用宽幅 Hero、静态品牌轨道和明确标注的示例截图；阅读区采用分组侧栏、白色圆角文章表面和页内目录。顶部导航采用居中悬浮圆角栏，与视口顶部和两侧保留间距，使用轻微半透明表面、背景模糊与柔和阴影；导航选中态使用 Iris 胶囊。移动端菜单在导航下方独立展开，不推移正文。搜索、明暗切换、代码复制与键盘焦点保持可用。主题定制通过 svedocs 公共组件接口接入，不复制内容发现、路由或搜索逻辑。
 
 文档站主题按钮点击后直接在浅色与深色之间切换，不使用下拉菜单。首次访问跟随系统，手动切换后在浏览器保存选择；按钮图标与可访问名称表示下一次切换的目标模式。
 
@@ -119,11 +119,11 @@ shadcn-svelte 和 Bits UI 是同一套组件体系的 source/primitives 层，�
 
 ## 7. Shape、border 和 elevation
 
-- Card radius：24 px；重复资源 hover 使用边框和阴影反馈，不移动卡片。
-- Input/menu radius：14 px，dialog/panel radius：32 px；公开 Hero 为 36 px，手机端为 28 px。
-- Tooltip radius：12 px。
-- Button radius：12 px。
-- Status capsule、tag、segmented control item 可以使用 full pill。
+- Card radius：12 px；重复资源 hover 使用边框和阴影反馈，不移动卡片。
+- Input radius：8 px，menu radius：12 px，dialog/panel radius：16 px；公开 Hero 为 24 px，手机端为 20 px。
+- Tooltip radius：8 px。
+- Button radius：8 px。
+- Status capsule 和 tag 可以使用 full pill；分段控件沿用共享控件圆角。
 - 控制台与公开页使用同一形状语言，通过间距与字号区分密度。
 - 默认使用 1 px border 表达分组。
 - Popover、menu、dialog 使用明确 elevation；资源卡、公开 Hero 和摘要面板使用接触阴影与扩散阴影形成柔和层次，深色模式采用独立阴影 token。
@@ -347,7 +347,7 @@ Toast 只用于短暂结果。表单错误留在字段附近，后台处理状�
 - 品牌、状态、资源标题和指标采用明确的字号层级；辅助文字保持可读。主题设置使用直接的字段名称，不使用星光图标、编号步骤或宣传标题。
 - 保留五套配色、明暗模式、舒适/紧凑选择以及现有权限、缓存和查询行为；没有新 schema 或部署资源。
 
-## 2026-09-08 用户视觉偏好校准（当前优先）
+## 2026-09-08 用户视觉偏好校准（历史基准）
 
 用户明确喜欢此前的大块 Hero，并希望尽量使用大圆角和阴影。这一偏好优先于上一轮收紧圆角、阴影与 Hero 的规则。保留直接文案、清晰排版和真实数据表达。
 
@@ -360,3 +360,22 @@ Toast 只用于短暂结果。表单错误留在字段附近，后台处理状�
 - 公开详情标题区、主题预览和服务列表容器沿用圆角表面；服务内部继续用对齐的连续行组织数据。
 - 不恢复宣传口号、重复图标底座、持续动画或虚构遥测。五套配色及游客偏好继续有效。
 - 本轮为 UI 样式与状态图标调整，不改变数据、权限、缓存或部署要求。
+
+## Responsive review baseline (2026-10-23)
+
+- Console components switch layout against their available content width, including both navigation rails. Public pages provide the same container boundary for shared components.
+- At mobile widths or with a coarse pointer, primary controls have at least 44px touch targets and native form fields use 16px text. Dense timeline buckets retain their chart geometry and keyboard inspection.
+- Narrow administrative tables become labelled records; permission controls, audit metadata, and service metrics remain available. Long identifiers and account names wrap within their record.
+- Administration uses a compact section selector on phones. Machine filters expand on demand with visible field labels and an explicit apply action.
+- Mobile navigation locks background scrolling, contains focus, supports Escape, and scrolls within the viewport, including landscape and safe areas.
+- Validate light/dark at 320, 390, 768, 1024, 1280, and 1440px; include open navigation, filters, menus, forms, history and empty/error states.
+
+## Shape and clipping review (2026-10-23, current priority)
+
+The user requested less exaggerated rounding and consistent, unclipped content across every page. This supersedes the earlier large-radius preference while retaining the Iris palette, brand artwork and soft surfaces.
+
+- Use shared shape tokens: controls/buttons/tooltips 8px, cards/tables 12px, panels/dialogs/navigation shells 16px, hero 24px (20px on phones). Status marks, tags, orbit graphics and the brand logo retain their intentional geometry.
+- Web and documentation use the same hierarchy. Do not introduce route-specific rounding for ordinary surfaces or make compact controls pill-shaped.
+- Match inset surfaces to the outer radius minus their inset. Table header and final-row backgrounds must follow the surface corners without clipping timelines, tooltips or focus rings.
+- Keep enough interior spacing for text and controls at corners. Apply clipping only to intentional scrolling, media, ellipsis or decorative layers. Edge-to-edge interactive summary cells need an inset focus ring.
+- Repeated cards stay in place on hover; feedback uses border/color/shadow changes. Validate first/last rows, focused controls, menus, long content and empty/error states in light/dark and at every responsive breakpoint.

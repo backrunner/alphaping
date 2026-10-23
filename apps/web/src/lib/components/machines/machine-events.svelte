@@ -119,7 +119,7 @@
     font-size: var(--text-xs);
   }
 
-  @media (max-width: 520px) {
+  @container (max-width: 520px) {
     li {
       grid-template-columns: 24px minmax(0, 1fr);
       padding-block: var(--space-2);

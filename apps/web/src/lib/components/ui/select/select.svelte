@@ -41,7 +41,7 @@
 <Select.Root
   type="single"
   {...name === undefined ? {} : { name }}
-  {value}
+  bind:value
   items={options.map((option) => ({ ...option }))}
   {required}
   {disabled}
@@ -53,7 +53,9 @@
     aria-label={label}
     aria-controls={`${selectId}-options`}
   >
-    <Select.Value {placeholder} />
+    <Select.Value
+      placeholder={options.find((option) => option.value === value)?.label ?? placeholder}
+    />
     <ChevronDown class="select-chevron" size={15} aria-hidden="true" />
   </Select.Trigger>
   <Select.Portal disabled={!portal}>
@@ -86,7 +88,7 @@
     display: inline-flex;
     width: 100%;
     min-width: 0;
-    height: 32px;
+    height: var(--control-size);
     align-items: center;
     justify-content: space-between;
     gap: var(--space-2);
@@ -138,6 +140,7 @@
     z-index: var(--z-dropdown);
     width: var(--bits-select-anchor-width);
     min-width: 150px;
+    max-width: calc(100vw - 24px);
     max-height: min(320px, var(--bits-select-content-available-height));
     overflow: hidden;
     border: 1px solid var(--border);
@@ -147,12 +150,15 @@
   }
 
   :global(.select-viewport) {
+    max-height: min(320px, var(--bits-select-content-available-height));
+    overflow-y: auto;
+    overscroll-behavior: contain;
     padding: var(--space-1);
   }
 
   :global(.select-item) {
     display: flex;
-    min-height: 30px;
+    min-height: var(--control-size);
     align-items: center;
     justify-content: space-between;
     gap: var(--space-3);

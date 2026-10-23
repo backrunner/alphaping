@@ -283,7 +283,7 @@
     color: var(--text-faint);
   }
 
-  @media (max-width: 420px) {
+  @container (max-width: 420px) {
     .machine__footer {
       align-items: flex-start;
       flex-direction: column;

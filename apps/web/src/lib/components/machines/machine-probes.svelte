@@ -207,7 +207,7 @@
     color: var(--status-down);
   }
 
-  @media (max-width: 680px) {
+  @container (max-width: 680px) {
     .summary {
       grid-template-columns: repeat(3, 1fr);
       gap: var(--space-3);

@@ -245,13 +245,13 @@
     align-items: center;
   }
 
-  @media (max-width: 1000px) {
+  @container (max-width: 1000px) {
     .fields {
       grid-template-columns: repeat(2, minmax(130px, 1fr));
     }
   }
 
-  @media (max-width: 520px) {
+  @container (max-width: 520px) {
     .fields {
       grid-template-columns: 1fr;
     }

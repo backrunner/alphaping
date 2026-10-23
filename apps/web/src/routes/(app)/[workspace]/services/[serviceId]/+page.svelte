@@ -267,7 +267,7 @@
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
   }
 
-  @media (max-width: 640px) {
+  @container (max-width: 640px) {
     .page-header {
       align-items: flex-start;
       flex-direction: column;
@@ -292,7 +292,7 @@
     }
   }
 
-  @media (max-width: 420px) {
+  @container (max-width: 420px) {
     .header-actions {
       align-items: stretch;
       flex-direction: column;
@@ -313,7 +313,7 @@
     }
   }
 
-  @media (max-width: 340px) {
+  @container (max-width: 340px) {
     .title-row {
       align-items: flex-start;
       flex-direction: column;

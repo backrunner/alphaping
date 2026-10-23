@@ -233,7 +233,7 @@
     white-space: nowrap;
   }
 
-  @media (max-width: 820px) {
+  @container (max-width: 820px) {
     article {
       grid-template-columns: minmax(0, 1fr) auto;
     }
@@ -251,7 +251,7 @@
     }
   }
 
-  @media (max-width: 520px) {
+  @container (max-width: 520px) {
     .metrics {
       grid-template-columns: repeat(2, minmax(0, 1fr));
       row-gap: var(--space-3);

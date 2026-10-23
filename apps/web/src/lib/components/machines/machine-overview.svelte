@@ -260,6 +260,7 @@
   }
 
   .metric-strip strong {
+    display: block;
     margin-top: var(--space-1);
     overflow: hidden;
     font-family: var(--font-mono);
@@ -339,6 +340,7 @@
   }
 
   .detail-grid dd {
+    overflow-wrap: anywhere;
     margin: var(--space-1) 0 0;
     overflow: hidden;
     font-family: var(--font-mono);
@@ -377,7 +379,23 @@
     color: var(--status-healthy);
   }
 
-  @media (max-width: 820px) {
+  @container (min-width: 821px) and (max-width: 1100px) {
+    .metric-strip {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      row-gap: var(--space-5);
+    }
+    .metric-strip > div:nth-child(4n + 1) {
+      padding-left: 0;
+    }
+    .metric-strip > div:nth-child(4n) {
+      border-right: 0;
+    }
+    .detail-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @container (max-width: 820px) {
     .metric-strip,
     .detail-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -396,7 +414,7 @@
     }
   }
 
-  @media (max-width: 520px) {
+  @container (max-width: 520px) {
     .metric-strip > div {
       padding: 0 var(--space-3);
     }
@@ -406,7 +424,13 @@
     }
 
     .detail-grid {
-      grid-template-columns: 1fr;
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .detail-grid dd {
+      white-space: normal;
+    }
+    .metric-strip span {
+      min-height: 44px;
     }
 
     .detail-grid .last-error {

@@ -158,7 +158,7 @@
     background: var(--status-down-bg);
     font-size: var(--text-sm);
   }
-  @media (max-width: 720px) {
+  @container (max-width: 720px) {
     form {
       grid-template-columns: 1fr;
     }

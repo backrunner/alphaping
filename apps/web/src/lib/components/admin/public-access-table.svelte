@@ -25,7 +25,7 @@
   } = $props();
 
   function resourcePageParams(): SvelteURLSearchParams {
-    const params = new SvelteURLSearchParams(page.url.searchParams);
+    const params = new SvelteURLSearchParams(page.url.searchParams.toString());
     for (const key of [...params.keys()]) {
       if (key !== "resourceCursor" && key !== "resourceDirection") params.delete(key);
     }
@@ -100,34 +100,34 @@
   {:else}
     <div class="table-wrap">
       <table>
-        <thead
-          ><tr
-            ><th>Resource</th><th>Type</th><th>Guest access</th><th>Projection</th><th
-              ><span class="sr-only">Action</span></th
-            ></tr
-          ></thead
-        >
+        <thead><tr><th>Resource</th><th>Type</th><th>Public access</th></tr></thead>
         <tbody>
           {#each resources as resource (`${resource.type}:${resource.id}`)}
             <tr>
               <td><strong>{resource.name}</strong></td>
               <td><span class="type">{resource.type}</span></td>
-              <td colspan="3">
+              <td>
                 <form method="POST" action={actionHref("publicResource")}>
                   <input type="hidden" name="resourceId" value={resource.id} />
                   <input type="hidden" name="resourceType" value={resource.type} />
-                  <select name="effect" aria-label={`Guest access for ${resource.name}`}>
-                    <option value="deny" selected={resource.effect === "deny"}>Hidden</option>
-                    <option value="allow" selected={resource.effect === "allow"}>Visible</option>
-                  </select>
-                  <select name="projectionProfile" aria-label={`Projection for ${resource.name}`}>
-                    <option value="summary" selected={resource.projectionProfile === "summary"}
-                      >Summary</option
-                    >
-                    <option value="detailed" selected={resource.projectionProfile === "detailed"}
-                      >Detailed</option
-                    >
-                  </select>
+                  <label
+                    ><span>Guest access</span>
+                    <select name="effect" aria-label={`Guest access for ${resource.name}`}>
+                      <option value="deny" selected={resource.effect === "deny"}>Hidden</option>
+                      <option value="allow" selected={resource.effect === "allow"}>Visible</option>
+                    </select>
+                  </label>
+                  <label
+                    ><span>Projection</span>
+                    <select name="projectionProfile" aria-label={`Projection for ${resource.name}`}>
+                      <option value="summary" selected={resource.projectionProfile === "summary"}
+                        >Summary</option
+                      >
+                      <option value="detailed" selected={resource.projectionProfile === "detailed"}
+                        >Detailed</option
+                      >
+                    </select>
+                  </label>
                   <button aria-label={`Save public access for ${resource.name}`} type="submit"
                     ><Save size={14} /></button
                   >
@@ -304,7 +304,8 @@
   .pagination a,
   .pagination span {
     display: inline-flex;
-    height: 32px;
+    justify-self: start;
+    height: var(--control-size);
     align-items: center;
     gap: var(--space-1);
     padding: 0 var(--space-3);
@@ -345,6 +346,10 @@
   table {
     width: 100%;
     border-collapse: collapse;
+  }
+
+  th:last-child {
+    width: calc(220px + var(--control-size) + 32px);
   }
 
   th,
@@ -394,14 +399,15 @@
 
   td form {
     display: grid;
-    grid-template-columns: 110px 110px 32px;
+    grid-template-columns: 110px 110px var(--control-size);
+    align-items: end;
     justify-content: end;
     gap: var(--space-2);
   }
 
   td select,
   td button {
-    height: 32px;
+    height: var(--control-size);
     border: 1px solid var(--border);
     border-radius: var(--radius-control);
     color: var(--text);
@@ -416,7 +422,7 @@
 
   td button {
     display: grid;
-    width: 32px;
+    width: var(--control-size);
     border-radius: var(--radius-button);
     place-items: center;
     color: var(--text-muted);
@@ -440,15 +446,26 @@
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
   }
 
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
+  td {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  td label > span {
+    display: block;
+    margin-bottom: var(--space-1);
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+  }
+  td select {
+    width: 100%;
+    min-width: 0;
+  }
+  header,
+  .resource-heading {
+    flex-wrap: wrap;
   }
 
-  @media (max-width: 900px) {
+  @container (max-width: 900px) {
     .visibility-form {
       grid-template-columns: 1fr;
     }
@@ -458,7 +475,7 @@
     }
   }
 
-  @media (max-width: 480px) {
+  @container (max-width: 700px) {
     .table-wrap {
       overflow-x: visible;
     }
@@ -496,7 +513,7 @@
     }
 
     td form {
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 32px;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) var(--control-size);
       justify-content: stretch;
     }
 
@@ -512,6 +529,21 @@
     td button,
     .pagination a {
       transition: none;
+    }
+  }
+  @container (max-width: 480px) {
+    .pagination {
+      grid-template-columns: 1fr 1fr;
+      gap: var(--space-2);
+    }
+    .pagination strong {
+      grid-column: 1 / -1;
+      grid-row: 1;
+      text-align: center;
+    }
+    .pagination a,
+    .pagination span {
+      width: fit-content;
     }
   }
 </style>

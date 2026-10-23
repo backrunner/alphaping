@@ -35,17 +35,17 @@
     </div>
     {#each data.audit.entries as entry (entry.id)}
       <div class="table__row" role="row">
-        <div role="cell">
+        <div role="cell" data-label="Time">
           <time title={timestamp(entry.createdAt)}>{timestamp(entry.createdAt)}</time>
         </div>
-        <div role="cell"><strong>{entry.action}</strong></div>
-        <div class="resource" role="cell">
+        <div role="cell" data-label="Action"><strong>{entry.action}</strong></div>
+        <div class="resource" role="cell" data-label="Resource">
           <span>{entry.resourceType}</span><code>{entry.resourceId}</code>
         </div>
-        <div class="actor" role="cell">
+        <div class="actor" role="cell" data-label="Actor">
           <span>{entry.actorName}</span>{#if entry.actorEmail}<small>{entry.actorEmail}</small>{/if}
         </div>
-        <div role="cell">
+        <div role="cell" data-label="Digests">
           <code class="digests">{digest(entry.beforeDigest)} -> {digest(entry.afterDigest)}</code>
         </div>
       </div>
@@ -122,7 +122,10 @@
   .table__heading,
   .table__row {
     display: grid;
-    grid-template-columns: 150px minmax(150px, 1fr) minmax(170px, 1.2fr) minmax(140px, 1fr) 180px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1fr) minmax(
+        0,
+        1.2fr
+      );
     gap: var(--space-3);
     align-items: center;
     padding: 0 var(--space-3);
@@ -155,7 +158,8 @@
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   .table__row time,
@@ -235,49 +239,38 @@
     font-variant-numeric: tabular-nums;
   }
 
-  @media (max-width: 980px) {
-    .table__heading,
-    .table__row {
-      grid-template-columns: 135px minmax(130px, 1fr) minmax(160px, 1fr) minmax(120px, 1fr);
-    }
-
-    .table__heading > :last-child,
-    .table__row > :last-child {
-      display: none;
-    }
+  .table__row > div {
+    min-width: 0;
+  }
+  .heading {
+    flex-wrap: wrap;
+  }
+  .heading > span {
+    flex: none;
   }
 
-  @media (max-width: 640px) {
+  @container (max-width: 900px) {
     .table__heading {
       display: none;
     }
-
     .table__row {
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: var(--space-1) var(--space-2);
-      padding: var(--space-2) var(--space-3);
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: var(--space-3);
+      align-items: start;
+      padding: var(--space-4);
     }
-
-    .table__row:first-of-type {
+    .table__row:nth-child(2) {
       border-top: 0;
     }
-
-    .table__row > :first-child {
-      grid-column: 2;
-      grid-row: 1;
-      max-width: 130px;
+    .table__row > div::before {
+      content: attr(data-label);
+      display: block;
+      margin-bottom: var(--space-1);
+      color: var(--text-faint);
+      font-size: var(--text-xs);
+      font-weight: 500;
     }
-
-    .table__row > :nth-child(2) {
-      grid-column: 1;
-      grid-row: 1;
-    }
-
-    .resource {
-      grid-column: 1 / -1;
-    }
-
-    .actor {
+    .table__row > :last-child {
       grid-column: 1 / -1;
     }
   }

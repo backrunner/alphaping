@@ -99,7 +99,7 @@
     background: var(--surface-strong);
   }
 
-  @media (max-width: 680px) {
+  @container (max-width: 680px) {
     .visuals {
       grid-template-columns: 1fr;
       gap: var(--space-2);

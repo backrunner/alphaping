@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   type State = "healthy" | "degraded" | "down" | "maintenance" | "unknown";
   type Bucket = {
     bucketStart: number;
@@ -17,6 +18,16 @@
   let inspected = $state<number | null>(null);
   const inspectedBucket = $derived(inspected === null ? undefined : buckets[inspected]);
   let activeIndex = $state(0);
+  let touchTimeline = $state(false);
+  onMount(() => {
+    const query = matchMedia("(max-width: 780px), (pointer: coarse)");
+    const update = () => {
+      touchTimeline = query.matches;
+    };
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  });
   let capsuleButtons: HTMLButtonElement[] = [];
 
   const stateLabel: Readonly<Record<State, string>> = {
@@ -78,6 +89,7 @@
 >
   <div
     class:compact
+    class:touch-timeline={touchTimeline}
     class="capsules"
     style:--capsule-count={Math.max(1, buckets.length)}
     role="group"
@@ -88,12 +100,14 @@
         bind:this={capsuleButtons[index]}
         type="button"
         class={`capsule capsule--${bucket.state}`}
+        aria-hidden={touchTimeline}
         aria-label={details(bucket)}
+        class:inspected={inspected === index}
         aria-describedby={inspected === index ? `${id}-tooltip` : undefined}
         onpointerenter={() => (inspected = index)}
         onclick={() => (inspected = index)}
         onblur={() => (inspected = null)}
-        tabindex={index === activeIndex ? 0 : -1}
+        tabindex={!touchTimeline && index === activeIndex ? 0 : -1}
         onfocus={() => {
           activeIndex = index;
           inspected = index;
@@ -102,6 +116,24 @@
       ></button>
     {/each}
   </div>
+  {#if touchTimeline && buckets.length > 0}
+    <input
+      class="timeline-range"
+      type="range"
+      min="0"
+      max={buckets.length - 1}
+      step="1"
+      value={activeIndex}
+      aria-label={label}
+      aria-valuetext={details(buckets[activeIndex] ?? buckets[0]!)}
+      oninput={(event) => {
+        activeIndex = Number(event.currentTarget.value);
+        inspected = activeIndex;
+      }}
+      onfocus={() => (inspected = activeIndex)}
+      onblur={() => (inspected = null)}
+    />
+  {/if}
   {#if inspectedBucket}<div class="bucket-tooltip" id={`${id}-tooltip`} role="tooltip">
       {details(inspectedBucket)}
     </div>{/if}
@@ -121,7 +153,7 @@
     width: min(260px, 100%);
     padding: 12px 14px;
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: var(--radius-control);
     color: var(--text);
     background: var(--surface);
     box-shadow: var(--shadow-popover);
@@ -157,6 +189,7 @@
     height: 20px;
   }
 
+  .capsule.inspected,
   .capsule:hover {
     outline: 2px solid var(--border-strong);
     outline-offset: 1px;
@@ -187,5 +220,23 @@
       var(--border-strong) 2px,
       var(--border-strong) 3px
     );
+  }
+  .touch-timeline {
+    min-height: 44px;
+    align-items: center;
+  }
+  .timeline-range {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 44px;
+    margin: 0;
+    opacity: 0;
+    cursor: ew-resize;
+  }
+  .timeline-wrap:has(.timeline-range:focus-visible) {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 3px;
+    border-radius: 5px;
   }
 </style>

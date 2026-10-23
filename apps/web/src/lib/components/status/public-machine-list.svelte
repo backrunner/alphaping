@@ -84,7 +84,7 @@
     padding: 0 7px;
     background: transparent;
     color: var(--text-faint);
-    border-radius: 8px;
+    border-radius: var(--radius-control);
     font-size: 12px;
     font-weight: 600;
   }
@@ -142,7 +142,7 @@
     gap: 10px;
     padding: 40px 20px;
     border: 1px dashed var(--border-strong);
-    border-radius: 18px;
+    border-radius: var(--radius-panel);
     color: var(--text-muted);
     font-size: 13px;
   }
@@ -154,7 +154,7 @@
     margin-top: 6px;
     padding: 8px 14px;
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: var(--radius-button);
     background: var(--surface);
     color: var(--accent);
     cursor: pointer;

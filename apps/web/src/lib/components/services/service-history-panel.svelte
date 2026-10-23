@@ -144,7 +144,12 @@
       loadState = "loaded";
     } catch (cause) {
       if (request !== pending) return;
-      errorMessage = cause instanceof Error ? cause.message : "History is unavailable";
+      errorMessage =
+        cause instanceof TypeError
+          ? "Could not load history. Check your connection and try again."
+          : cause instanceof Error
+            ? cause.message
+            : "History is unavailable";
       loadState = "error";
     } finally {
       pending.dispose();
@@ -246,7 +251,7 @@
   summary {
     display: grid;
     height: 44px;
-    grid-template-columns: auto 1fr auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
     gap: var(--space-2);
     list-style: none;
@@ -314,6 +319,9 @@
   }
   .state {
     display: flex;
+    flex-wrap: wrap;
+    text-align: center;
+    padding: var(--space-4);
     min-height: 116px;
     align-items: center;
     justify-content: center;
@@ -404,7 +412,7 @@
       rotate: 360deg;
     }
   }
-  @media (max-width: 640px) {
+  @container (max-width: 640px) {
     .charts {
       grid-template-columns: 1fr;
     }

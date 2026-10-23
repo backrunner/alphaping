@@ -129,7 +129,7 @@
     margin-bottom: var(--space-3);
   }
 
-  @media (max-width: 820px) {
+  @container (max-width: 820px) {
     .summary {
       grid-template-columns: repeat(3, 1fr);
     }

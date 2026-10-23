@@ -219,7 +219,7 @@
     clip-path: inset(50%);
   }
 
-  @media (max-width: 760px) {
+  @container (max-width: 760px) {
     .charts {
       grid-template-columns: 1fr;
     }

@@ -128,15 +128,17 @@
               >{/if}</label
           >
         </div>
-        <label class="wide"
-          ><span>Request body</span><textarea name="requestBody" rows="3" maxlength="16384"
-            >{config.requestBody}</textarea
-          ><small
+        <div class="secret-field">
+          <label
+            ><span>Request body</span><textarea name="requestBody" rows="3" maxlength="16384"
+              >{config.requestBody}</textarea
+            ></label
+          ><label class="inline-check"
             ><input type="checkbox" name="requestBodyIsSecret" />Store replacement as secret{config.hasSecretBody
               ? "; stored secret preserved"
-              : ""}</small
-          ></label
-        >
+              : ""}</label
+          >
+        </div>
         <div class="fields three">
           <label
             ><span>Redirect limit</span><input
@@ -193,15 +195,17 @@
             /></label
           >
           <div class="fields two">
-            <label
-              ><span>Send payload</span><textarea name="tcpPayload" rows="2" maxlength="4096"
-                >{config.tcpPayload}</textarea
-              ><small
+            <div class="secret-field">
+              <label
+                ><span>Send payload</span><textarea name="tcpPayload" rows="2" maxlength="4096"
+                  >{config.tcpPayload}</textarea
+                ></label
+              ><label class="inline-check"
                 ><input type="checkbox" name="tcpPayloadIsSecret" />Store replacement as secret{config.hasSecretTcpPayload
                   ? "; stored secret preserved"
-                  : ""}</small
-              ></label
-            >
+                  : ""}</label
+              >
+            </div>
             <label
               ><span>Expected response prefix</span><textarea
                 name="tcpResponsePrefix"
@@ -400,7 +404,6 @@
     color: var(--text-faint);
     font-size: var(--text-xs);
   }
-  small input,
   .inline-check input {
     width: 14px;
     min-height: 14px;
@@ -480,14 +483,14 @@
   .replace-secrets {
     margin-right: auto;
   }
-  @media (max-width: 680px) {
+  @container (max-width: 680px) {
     .fields.two,
     .fields.three,
     .fields.target-row {
       grid-template-columns: 1fr;
     }
   }
-  @media (max-width: 420px) {
+  @container (max-width: 420px) {
     footer {
       align-items: stretch;
       flex-direction: column;
@@ -496,5 +499,10 @@
       width: 100%;
       justify-content: center;
     }
+  }
+  .secret-field {
+    display: grid;
+    min-width: 0;
+    gap: var(--space-1);
   }
 </style>

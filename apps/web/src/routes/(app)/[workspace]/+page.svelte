@@ -177,7 +177,7 @@
     min-width: 0;
     padding: 16px 18px;
     border: 1px solid var(--border);
-    border-radius: 16px;
+    border-radius: var(--radius-card);
     background: var(--surface);
     box-shadow: var(--shadow-card);
   }
@@ -221,12 +221,12 @@
     gap: var(--space-4);
   }
 
-  @media (max-width: 768px) {
+  @container (max-width: 768px) {
     .content {
       width: min(100% - 32px, var(--content-wide));
     }
   }
-  @media (max-width: 560px) {
+  @container (max-width: 560px) {
     .content {
       width: min(100% - 32px, var(--content-wide));
       padding-top: 16px;

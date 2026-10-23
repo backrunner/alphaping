@@ -222,7 +222,7 @@
     padding: var(--space-3) 0;
   }
 
-  @media (max-width: 620px) {
+  @container (max-width: 620px) {
     header,
     .install {
       align-items: stretch;

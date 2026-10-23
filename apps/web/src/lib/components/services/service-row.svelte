@@ -129,7 +129,7 @@
     --capsule-count: 30;
   }
 
-  @media (max-width: 760px) {
+  @container (max-width: 760px) {
     .service {
       grid-template-columns: 1fr auto;
       gap: var(--space-2);

@@ -26,9 +26,10 @@
     invitationExpiresAt: number | null;
   } = $props();
   let copied = $state(false);
+  let copyError = $state(false);
 
   function paginationHref(name: "memberPage" | "invitationPage", value: number): string {
-    const params = new SvelteURLSearchParams(page.url.searchParams);
+    const params = new SvelteURLSearchParams(page.url.searchParams.toString());
     if (value <= 1) params.delete(name);
     else params.set(name, String(value));
     if (name === "memberPage") params.delete("member");
@@ -38,9 +39,14 @@
 
   async function copyInvitation(): Promise<void> {
     if (!invitationUrl) return;
-    await navigator.clipboard.writeText(invitationUrl);
-    copied = true;
-    setTimeout(() => (copied = false), 1_500);
+    copyError = false;
+    try {
+      await navigator.clipboard.writeText(invitationUrl);
+      copied = true;
+      setTimeout(() => (copied = false), 1_500);
+    } catch {
+      copyError = true;
+    }
   }
 </script>
 
@@ -79,21 +85,25 @@
           >Expires {new Date(invitationExpiresAt ?? 0).toLocaleString()}</span
         >
       </div>
-      <code>{invitationUrl}</code>
+      <input
+        class="invitation-link"
+        aria-label="Invitation link"
+        readonly
+        value={invitationUrl}
+        onclick={(event) => event.currentTarget.select()}
+      />
       <Button variant="secondary" onclick={copyInvitation}
         ><Copy size={14} />{copied ? "Copied" : "Copy"}</Button
       >
+      {#if copyError}<p class="copy-error" role="status">
+          Copy is unavailable. Select the invitation link to copy it manually.
+        </p>{/if}
     </div>
   {/if}
 
   <div class="table-wrap">
     <table>
-      <thead
-        ><tr
-          ><th>Account</th><th>Role</th><th>Status</th><th><span class="sr-only">Action</span></th
-          ></tr
-        ></thead
-      >
+      <thead><tr><th>Account</th><th>Membership</th></tr></thead>
       <tbody>
         {#each members as member (member.id)}
           <tr>
@@ -102,27 +112,33 @@
                 >{member.email}{member.current ? " · you" : ""}</span
               ></td
             >
-            <td colspan="3">
+            <td>
               <form class="member-form" method="POST" action="?/membership">
                 <input type="hidden" name="memberId" value={member.id} />
-                <select
-                  name="role"
-                  aria-label={`Role for ${member.name}`}
-                  disabled={member.current}
-                >
-                  <option value="admin" selected={member.role === "admin"}>Administrator</option>
-                  <option value="member" selected={member.role === "member"}>Member</option>
-                </select>
-                <select
-                  name="status"
-                  aria-label={`Status for ${member.name}`}
-                  disabled={member.current}
-                >
-                  <option value="active" selected={member.status === "active"}>Active</option>
-                  <option value="suspended" selected={member.status === "suspended"}
-                    >Suspended</option
+                <label
+                  ><span>Role</span>
+                  <select
+                    name="role"
+                    aria-label={`Role for ${member.name}`}
+                    disabled={member.current}
                   >
-                </select>
+                    <option value="admin" selected={member.role === "admin"}>Administrator</option>
+                    <option value="member" selected={member.role === "member"}>Member</option>
+                  </select>
+                </label>
+                <label
+                  ><span>Status</span>
+                  <select
+                    name="status"
+                    aria-label={`Status for ${member.name}`}
+                    disabled={member.current}
+                  >
+                    <option value="active" selected={member.status === "active"}>Active</option>
+                    <option value="suspended" selected={member.status === "suspended"}
+                      >Suspended</option
+                    >
+                  </select>
+                </label>
                 <button
                   class="icon-action"
                   aria-label={`Save ${member.name}`}
@@ -261,7 +277,7 @@
   input,
   select {
     width: 100%;
-    height: 32px;
+    height: var(--control-size);
     padding: 0 var(--space-2);
     border: 1px solid var(--border);
     border-radius: var(--radius-control);
@@ -295,7 +311,7 @@
     font-weight: 620;
   }
 
-  .invite-result code {
+  .invite-result .invitation-link {
     overflow: hidden;
     padding: var(--space-1) var(--space-2);
     border-radius: var(--radius-button);
@@ -317,6 +333,10 @@
   table {
     width: 100%;
     border-collapse: collapse;
+  }
+
+  th:last-child {
+    width: calc(270px + var(--control-size) + 32px);
   }
 
   th,
@@ -357,15 +377,16 @@
 
   .member-form {
     display: grid;
-    grid-template-columns: 150px 120px 32px;
+    grid-template-columns: 150px 120px var(--control-size);
+    align-items: end;
     justify-content: end;
     gap: var(--space-2);
   }
 
   .icon-action {
     display: grid;
-    width: 32px;
-    height: 32px;
+    width: var(--control-size);
+    height: var(--control-size);
     place-items: center;
     border: 1px solid var(--border);
     border-radius: var(--radius-button);
@@ -420,7 +441,8 @@
   .pagination a,
   .pagination span {
     display: inline-flex;
-    height: 32px;
+    justify-self: start;
+    height: var(--control-size);
     align-items: center;
     gap: var(--space-1);
     padding: 0 var(--space-3);
@@ -458,58 +480,72 @@
     font-variant-numeric: tabular-nums;
   }
 
-  .sr-only {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
+  td,
+  .pending__row > div {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .copy-error {
+    grid-column: 1 / -1;
   }
 
-  @media (max-width: 680px) {
+  @container (max-width: 700px) {
     .invite-form {
-      grid-template-columns: 1fr 120px;
+      grid-template-columns: minmax(0, 1fr) auto;
     }
-
-    .invite-form > :global(button) {
+    .invite-form > label:first-child {
       grid-column: 1 / -1;
-      justify-self: start;
     }
-
     .invite-result {
-      grid-template-columns: 1fr auto;
+      grid-template-columns: minmax(0, 1fr) auto;
     }
-
-    .invite-result code {
+    .invite-result .invitation-link {
       grid-column: 1 / -1;
       grid-row: 2;
     }
-
-    .member-form {
-      grid-template-columns: minmax(0, 1fr) 32px;
-      grid-template-rows: 32px 32px;
+    .table-wrap {
+      overflow: hidden;
     }
-
+    table,
+    tbody {
+      display: block;
+      width: 100%;
+    }
+    thead {
+      display: none;
+    }
+    tbody tr {
+      display: grid;
+      gap: var(--space-3);
+      padding: var(--space-4);
+      border-bottom: 1px solid var(--border);
+    }
+    tbody tr:last-child {
+      border: 0;
+    }
+    td {
+      height: auto;
+      padding: 0;
+      border: 0;
+    }
+    .member-form {
+      grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) var(--control-size);
+      justify-content: stretch;
+    }
     .member-form select {
       min-width: 0;
     }
-
-    .member-form select:first-of-type {
-      grid-column: 1;
-      grid-row: 1;
+  }
+  @container (max-width: 360px) {
+    .member-form {
+      grid-template-columns: minmax(0, 1fr) var(--control-size);
     }
-
-    .member-form select:nth-of-type(2) {
+    .member-form label {
       grid-column: 1;
-      grid-row: 2;
     }
-
     .member-form .icon-action {
       grid-column: 2;
-      grid-row: 1 / 3;
-      align-self: center;
+      grid-row: 2;
     }
   }
 
@@ -518,6 +554,21 @@
     .icon-action,
     .pagination a {
       transition: none;
+    }
+  }
+  @container (max-width: 480px) {
+    .pagination {
+      grid-template-columns: 1fr 1fr;
+      gap: var(--space-2);
+    }
+    .pagination strong {
+      grid-column: 1 / -1;
+      grid-row: 1;
+      text-align: center;
+    }
+    .pagination a,
+    .pagination span {
+      width: fit-content;
     }
   }
 </style>

@@ -19,7 +19,7 @@
   } = $props();
 
   function paginationHref(value: number): string {
-    const params = new SvelteURLSearchParams(page.url.searchParams);
+    const params = new SvelteURLSearchParams(page.url.searchParams.toString());
     if (value <= 1) params.delete("servicePage");
     else params.set("servicePage", String(value));
     const query = params.toString();

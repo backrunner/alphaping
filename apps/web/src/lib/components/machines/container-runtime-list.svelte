@@ -162,7 +162,7 @@
     grid-column: 2 / -1;
   }
 
-  @media (max-width: 520px) {
+  @container (max-width: 520px) {
     .runtime-grid {
       grid-template-columns: 1fr;
     }

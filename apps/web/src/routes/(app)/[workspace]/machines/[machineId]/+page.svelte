@@ -280,13 +280,13 @@
     padding-top: var(--space-5);
   }
 
-  @media (max-width: 768px) {
+  @container (max-width: 768px) {
     main {
       width: min(100% - 32px, var(--content-wide));
     }
   }
 
-  @media (max-width: 520px) {
+  @container (max-width: 520px) {
     main {
       width: min(100% - 24px, var(--content-wide));
       padding-top: var(--space-4);

@@ -118,7 +118,7 @@
   .inline-check span {
     margin: 0;
   }
-  @media (max-width: 680px) {
+  @container (max-width: 680px) {
     div {
       grid-template-columns: 1fr;
     }

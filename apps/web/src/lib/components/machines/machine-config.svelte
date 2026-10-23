@@ -259,14 +259,14 @@
     font-size: var(--text-xs);
   }
 
-  @media (max-width: 640px) {
+  @container (max-width: 640px) {
     .identity,
     .operations {
       grid-template-columns: 1fr;
     }
   }
 
-  @media (max-width: 420px) {
+  @container (max-width: 420px) {
     .intervals {
       grid-template-columns: 1fr;
     }

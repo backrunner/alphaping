@@ -225,7 +225,8 @@
   .pagination a,
   .pagination span {
     display: inline-flex;
-    height: 32px;
+    justify-self: start;
+    height: var(--control-size);
     align-items: center;
     gap: var(--space-1);
     padding: 0 var(--space-3);
@@ -455,13 +456,28 @@
   section > p.section-message {
     color: var(--status-healthy);
   }
-  @media (max-width: 760px) {
+  @container (max-width: 760px) {
     article {
-      grid-template-columns: 24px 1fr auto;
+      grid-template-columns: 24px minmax(0, 1fr);
+      gap: var(--space-2);
     }
+    article > .type,
     article > .number,
     article > .muted {
-      display: none;
+      grid-column: 2;
+    }
+    article > .number::before {
+      content: "Latency · ";
+      font-family: var(--font-sans);
+      color: var(--text-muted);
+    }
+    article > .muted::before {
+      content: "Last check · ";
+    }
+    .main strong,
+    .main code {
+      white-space: normal;
+      overflow-wrap: anywhere;
     }
     .detail {
       grid-column: 2 / -1;
@@ -472,7 +488,7 @@
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
   }
-  @media (max-width: 420px) {
+  @container (max-width: 420px) {
     .policy__fields {
       grid-template-columns: 1fr;
     }

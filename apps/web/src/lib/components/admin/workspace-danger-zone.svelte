@@ -131,7 +131,7 @@
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--status-down) 16%, transparent);
   }
 
-  @media (max-width: 720px) {
+  @container (max-width: 720px) {
     .content,
     form {
       align-items: stretch;

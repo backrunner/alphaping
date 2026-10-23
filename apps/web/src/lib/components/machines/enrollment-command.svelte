@@ -245,7 +245,7 @@
     white-space: nowrap;
   }
 
-  @media (max-width: 760px) {
+  @container (max-width: 760px) {
     .enrollment {
       grid-template-columns: 1fr auto;
     }
@@ -256,7 +256,7 @@
     }
   }
 
-  @media (max-width: 460px) {
+  @container (max-width: 460px) {
     .script-meta {
       align-items: flex-start;
       flex-direction: column;

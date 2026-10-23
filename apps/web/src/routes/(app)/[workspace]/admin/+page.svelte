@@ -239,7 +239,7 @@
     font-size: var(--text-sm);
   }
 
-  @media (max-width: 760px) {
+  @container (max-width: 760px) {
     .admin__grid {
       grid-template-columns: 1fr;
     }
@@ -252,7 +252,7 @@
     }
   }
 
-  @media (max-width: 420px) {
+  @container (max-width: 420px) {
     .intervals {
       grid-template-columns: 1fr;
     }

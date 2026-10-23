@@ -7,10 +7,12 @@
   --palette-companion: #98c9fb;
   --font-sans: "Geist Variable", system-ui, sans-serif;
   --font-mono: "Geist Mono Variable", ui-monospace, monospace;
-  --radius-control: 14px;
-  --radius-card: 24px;
-  --radius-panel: 32px;
-  --radius-button: 12px;
+  --control-size: 32px;
+  --radius-control: 8px;
+  --radius-card: 12px;
+  --radius-panel: 16px;
+  --radius-button: 8px;
+  --radius-hero: 24px;
   --radius-pill: 999px;
   --focus-ring: var(--accent);
   --accent-soft: color-mix(in srgb, var(--accent) 10%, var(--surface));
@@ -166,6 +168,7 @@
 }
 
 .appearance-surface {
+  container-type: inline-size;
   min-height: 100dvh;
   color: var(--text);
   background: var(--bg);
@@ -256,5 +259,53 @@ button {
 
   .skeleton::after {
     animation: none;
+  }
+}
+
+/* Keep controls usable on phones without changing dense telemetry marks. */
+@media (max-width: 780px), (pointer: coarse) {
+  :root,
+  .appearance-surface {
+    --control-size: 44px;
+  }
+
+  :root button:not(.capsule):not(.backdrop),
+  :root body select:not([multiple]),
+  :root input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  :root summary,
+  :root nav a {
+    min-height: 44px;
+  }
+
+  :root button:not(.capsule):not(.backdrop) {
+    min-width: 44px;
+  }
+
+  :root input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  :root body select:not([multiple]),
+  :root body textarea:not([hidden]) {
+    font-size: 16px;
+  }
+
+  :root label:has(> input[type="checkbox"]),
+  :root label:has(> input[type="radio"]) {
+    min-height: 44px;
+  }
+}
+
+:where(label, fieldset) {
+  min-width: 0;
+}
+:where(input, select, textarea) {
+  max-width: 100%;
+}
+:where(h1, h2, h3, p) {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 620px) {
+  :root,
+  .appearance-surface {
+    --radius-hero: 20px;
   }
 }

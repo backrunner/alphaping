@@ -58,7 +58,7 @@
   .workspace-context,
   .icon-button {
     display: inline-flex;
-    height: 36px;
+    height: max(36px, var(--control-size));
     align-items: center;
     justify-content: center;
     gap: var(--space-1);
@@ -78,10 +78,17 @@
   .workspace-context {
     max-width: 220px;
     overflow: hidden;
-    flex: none;
+    min-width: 0;
+    flex: 0 1 auto;
     text-overflow: ellipsis;
     white-space: nowrap;
     text-decoration: none;
+  }
+
+  .workspace-context span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .workspace-context:hover {
@@ -91,6 +98,7 @@
 
   .search {
     display: flex;
+    min-width: 0;
     width: min(320px, 32vw);
     height: 40px;
     align-items: center;
@@ -145,7 +153,8 @@
   @media (max-width: 780px) {
     .mobile-menu {
       display: inline-flex;
-      width: 28px;
+      width: 44px;
+      flex: none;
       padding: 0;
     }
 
@@ -154,6 +163,7 @@
     }
 
     .search {
+      height: 44px;
       width: min(280px, 44vw);
     }
 
@@ -163,7 +173,7 @@
     }
   }
 
-  @media (max-width: 420px) {
+  @media (max-width: 600px) {
     .search {
       display: none;
     }

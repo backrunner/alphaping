@@ -39,11 +39,14 @@
           placeholder="Authorization: Bearer ..."></textarea></label
       >
     </div>
-    <label
-      ><span>Request body</span><textarea name="requestBody" rows="3" maxlength="16384"
-      ></textarea><small><input type="checkbox" name="requestBodyIsSecret" /> Store as secret</small
-      ></label
-    >
+    <div class="secret-field">
+      <label
+        ><span>Request body</span><textarea name="requestBody" rows="3" maxlength="16384"
+        ></textarea></label
+      ><label class="inline-check"
+        ><input type="checkbox" name="requestBodyIsSecret" /> Store as secret</label
+      >
+    </div>
     <div class="fields two">
       <label
         ><span>Response limit</span><select name="maxResponseBytes"
@@ -264,23 +267,14 @@
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
   }
 
-  label small {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    margin-top: var(--space-1);
-    color: var(--text-faint);
-    font-size: var(--text-xs);
-  }
-
-  label small input {
-    width: 14px;
-    min-height: 14px;
-  }
-
-  @media (max-width: 680px) {
+  @container (max-width: 680px) {
     .fields.two {
       grid-template-columns: 1fr;
     }
+  }
+  .secret-field {
+    display: grid;
+    min-width: 0;
+    gap: var(--space-1);
   }
 </style>

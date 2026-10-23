@@ -1,7 +1,14 @@
 <script lang="ts">
-  import { tick } from "svelte";
   import { page } from "$app/state";
-  import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Search, Server } from "@lucide/svelte";
+  import {
+    ArrowLeft,
+    ChevronLeft,
+    ChevronRight,
+    Plus,
+    Search,
+    Server,
+    SlidersHorizontal,
+  } from "@lucide/svelte";
   import { SvelteURLSearchParams } from "svelte/reactivity";
 
   import MachineCard from "#lib/components/machines/machine-card.svelte";
@@ -11,6 +18,7 @@
 
   let { data } = $props();
   const pageSize = 60;
+  let filtersOpen = $state(false);
   const statusOptions = ["all", "online", "impaired", "offline", "unknown"] as const;
   const statusFilters = [
     ["all", "All"],
@@ -36,14 +44,8 @@
     return { down: 0, degraded: 1, offline: 2, unknown: 3, maintenance: 4, healthy: 5 }[state];
   }
 
-  async function submitFilters(): Promise<void> {
-    // Bits UI updates its form value during the next Svelte DOM flush.
-    await tick();
-    document.querySelector<HTMLFormElement>(".filters")?.requestSubmit();
-  }
-
   function filterHref(name: string, value: string): string {
-    const params = new SvelteURLSearchParams(page.url.searchParams);
+    const params = new SvelteURLSearchParams(page.url.searchParams.toString());
     if (value === "" || value === "all" || value === "priority") params.delete(name);
     else params.set(name, value);
     params.delete("page");
@@ -52,7 +54,7 @@
   }
 
   function paginationHref(value: number): string {
-    const params = new SvelteURLSearchParams(page.url.searchParams);
+    const params = new SvelteURLSearchParams(page.url.searchParams.toString());
     if (value <= 1) params.delete("page");
     else params.set("page", String(value));
     const query = params.toString();
@@ -67,6 +69,9 @@
   const tag = $derived(page.url.searchParams.get("tag") ?? "");
   const container = $derived(page.url.searchParams.get("container") ?? "");
   const sort = $derived(selected<SortOption>("sort", sortOptions, "priority"));
+  const activeFilterCount = $derived(
+    [platform, version, tag, container].filter(Boolean).length + (sort !== "priority" ? 1 : 0),
+  );
   const platformOptions = $derived(
     [
       ...new Set(data.machines.flatMap((machine) => (machine.platform ? [machine.platform] : []))),
@@ -156,61 +161,89 @@
             placeholder="Search machines"
           />
         </label>
-        <SelectField
-          name="platform"
-          label="Filter by operating system"
-          value={platform}
-          options={[
-            { value: "", label: "All systems" },
-            ...platformOptions.map((option) => ({ value: option, label: option })),
-          ]}
-          onvaluechange={submitFilters}
-        />
-        <SelectField
-          name="version"
-          label="Filter by Agent version"
-          value={version}
-          options={[
-            { value: "", label: "All versions" },
-            ...versionOptions.map((option) => ({ value: option, label: option })),
-          ]}
-          onvaluechange={submitFilters}
-        />
-        <SelectField
-          name="tag"
-          label="Filter by machine label"
-          value={tag}
-          options={[
-            { value: "", label: "All labels" },
-            ...tagOptions.map((option) => ({ value: option, label: option })),
-          ]}
-          onvaluechange={submitFilters}
-        />
-        <SelectField
-          name="container"
-          label="Filter by container monitoring"
-          value={container}
-          options={[
-            { value: "", label: "All container states" },
-            { value: "enabled", label: "Containers enabled" },
-            { value: "disabled", label: "Containers disabled" },
-          ]}
-          onvaluechange={submitFilters}
-        />
-        <SelectField
-          name="sort"
-          label="Sort machines"
-          value={sort}
-          options={[
-            { value: "priority", label: "Problems first" },
-            { value: "name", label: "Name" },
-            { value: "download", label: "Download rate" },
-            { value: "upload", label: "Upload rate" },
-            { value: "recent", label: "Last report" },
-          ]}
-          onvaluechange={submitFilters}
-        />
         <button class="search-submit" type="submit">Search</button>
+        <button
+          class="filter-toggle"
+          type="button"
+          aria-expanded={filtersOpen}
+          aria-controls="machine-filter-options"
+          onclick={() => (filtersOpen = !filtersOpen)}
+        >
+          <SlidersHorizontal size={16} />Filters{activeFilterCount ? ` (${activeFilterCount})` : ""}
+        </button>
+        <div id="machine-filter-options" class="filter-options" class:expanded={filtersOpen}>
+          <div class="filter-field">
+            <span>Operating system</span>
+            <SelectField
+              name="platform"
+              label="Filter by operating system"
+              value={platform}
+              options={[
+                { value: "", label: "All systems" },
+                ...platformOptions.map((option) => ({ value: option, label: option })),
+              ]}
+            />
+          </div>
+          <div class="filter-field">
+            <span>Agent version</span>
+            <SelectField
+              name="version"
+              label="Filter by Agent version"
+              value={version}
+              options={[
+                { value: "", label: "All versions" },
+                ...versionOptions.map((option) => ({ value: option, label: option })),
+              ]}
+            />
+          </div>
+          <div class="filter-field">
+            <span>Machine label</span>
+            <SelectField
+              name="tag"
+              label="Filter by machine label"
+              value={tag}
+              options={[
+                { value: "", label: "All labels" },
+                ...tagOptions.map((option) => ({ value: option, label: option })),
+              ]}
+            />
+          </div>
+          <div class="filter-field">
+            <span>Container monitoring</span>
+            <SelectField
+              name="container"
+              label="Filter by container monitoring"
+              value={container}
+              options={[
+                { value: "", label: "All container states" },
+                { value: "enabled", label: "Containers enabled" },
+                { value: "disabled", label: "Containers disabled" },
+              ]}
+            />
+          </div>
+          <div class="filter-field">
+            <span>Sort order</span>
+            <SelectField
+              name="sort"
+              label="Sort machines"
+              value={sort}
+              options={[
+                { value: "priority", label: "Problems first" },
+                { value: "name", label: "Name" },
+                { value: "download", label: "Download rate" },
+                { value: "upload", label: "Upload rate" },
+                { value: "recent", label: "Last report" },
+              ]}
+            />
+          </div>
+
+          <div class="filter-actions">
+            <Button type="submit">Apply filters</Button>
+            {#if activeFilterCount > 0}<a href={filterHref("platform", "").split("?")[0]}
+                >Reset filters</a
+              >{/if}
+          </div>
+        </div>
       </form>
       <div class="toolbar__row">
         <nav class="segments" aria-label="Filter machine status">
@@ -330,7 +363,7 @@
   .search {
     display: flex;
     width: 260px;
-    height: 32px;
+    height: var(--control-size);
     align-items: center;
     gap: var(--space-2);
     padding: 0 var(--space-3);
@@ -359,7 +392,7 @@
   }
 
   .search-submit {
-    height: 32px;
+    height: var(--control-size);
     min-width: 0;
     padding: 0 var(--space-3);
     border: 1px solid var(--border);
@@ -380,9 +413,56 @@
     background: var(--surface-subtle);
   }
 
-  .filters :global(.select-trigger) {
-    width: auto;
-    max-width: 150px;
+  .filter-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    height: var(--control-size);
+    padding: 0 var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-button);
+    color: var(--text);
+    background: var(--surface);
+    cursor: pointer;
+  }
+  .filter-toggle[aria-expanded="true"] {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .filter-options {
+    display: none;
+    flex-basis: 100%;
+  }
+  .filter-options.expanded {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+    gap: var(--space-3);
+    padding: var(--space-4);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    background: var(--surface-subtle);
+  }
+  .filter-field {
+    min-width: 0;
+  }
+  .filter-field > span {
+    display: block;
+    margin-bottom: var(--space-1);
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+  }
+  .filter-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+    grid-column: 1 / -1;
+  }
+  .filter-actions a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    color: var(--text-muted);
   }
 
   .toolbar__row {
@@ -395,14 +475,17 @@
   .segments {
     display: flex;
     gap: 2px;
+    padding: 4px;
+    border-radius: var(--radius-card);
+    background: var(--surface-subtle);
   }
 
   .segments a {
     display: inline-flex;
-    height: 28px;
+    height: var(--control-size);
     align-items: center;
     padding: 0 var(--space-3);
-    border-radius: var(--radius-pill);
+    border-radius: var(--radius-button);
     color: var(--text-muted);
     background: transparent;
     font-size: var(--text-sm);
@@ -418,7 +501,8 @@
 
   .segments a.active {
     color: var(--text);
-    background: var(--surface-strong);
+    background: var(--surface);
+    box-shadow: 0 0 0 1px var(--border);
     font-weight: 600;
   }
 
@@ -446,7 +530,7 @@
   .pagination a,
   .pagination span {
     display: inline-flex;
-    height: 32px;
+    height: var(--control-size);
     align-items: center;
     justify-self: start;
     gap: var(--space-1);
@@ -487,24 +571,27 @@
     font-weight: 500;
   }
 
-  @media (max-width: 768px) {
+  @container (max-width: 768px) {
     .machines-page {
       width: min(100% - 32px, var(--content-wide));
     }
   }
 
-  @media (max-width: 680px) {
+  @container (max-width: 680px) {
     .page-header {
       align-items: flex-start;
     }
 
     .search {
-      width: 100%;
+      width: auto;
+      flex: 1 1 180px;
     }
-
-    .filters :global(.select-trigger) {
-      max-width: none;
-      flex: 1 1 140px;
+    .filter-toggle {
+      flex: 1 0 auto;
+      justify-content: center;
+    }
+    .filter-options.expanded {
+      grid-template-columns: minmax(0, 1fr);
     }
 
     .toolbar__row {
@@ -519,11 +606,16 @@
 
     .segments {
       max-width: 100%;
-      overflow-x: auto;
+      flex-wrap: wrap;
+    }
+    .segments a {
+      flex: 1 0 auto;
+      justify-content: center;
+      padding-inline: var(--space-2);
     }
   }
 
-  @media (max-width: 560px) {
+  @container (max-width: 560px) {
     .machines-page {
       width: min(100% - 24px, var(--content-wide));
       padding-top: var(--space-4);

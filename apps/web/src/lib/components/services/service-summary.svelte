@@ -160,7 +160,7 @@
     font-family: var(--font-mono);
   }
 
-  @media (max-width: 860px) {
+  @container (max-width: 860px) {
     .metric-strip {
       grid-template-columns: repeat(2, minmax(0, 1fr));
       row-gap: var(--space-5);
@@ -175,7 +175,7 @@
     }
   }
 
-  @media (max-width: 420px) {
+  @container (max-width: 420px) {
     .metric-strip > div {
       padding: 0 var(--space-2);
     }

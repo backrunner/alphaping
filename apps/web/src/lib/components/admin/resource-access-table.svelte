@@ -23,7 +23,7 @@
   const selectable = $derived(members.filter((member) => member.role === "member"));
 
   function memberHref(memberId: string): string {
-    const params = new SvelteURLSearchParams(page.url.searchParams);
+    const params = new SvelteURLSearchParams(page.url.searchParams.toString());
     params.set("member", memberId);
     params.delete("resourcePage");
     const query = params.toString();
@@ -31,7 +31,7 @@
   }
 
   function paginationHref(value: number): string {
-    const params = new SvelteURLSearchParams(page.url.searchParams);
+    const params = new SvelteURLSearchParams(page.url.searchParams.toString());
     if (value <= 1) params.delete("resourcePage");
     else params.set("resourcePage", String(value));
     const query = params.toString();
@@ -74,34 +74,34 @@
   {:else}
     <div class="table-wrap">
       <table>
-        <thead
-          ><tr
-            ><th>Resource</th><th>Type</th><th>Permission</th><th
-              ><span class="sr-only">Action</span></th
-            ></tr
-          ></thead
-        >
+        <thead><tr><th>Resource</th><th>Type</th><th>Permission</th></tr></thead>
         <tbody>
           {#each resources as resource (`${resource.type}:${resource.id}`)}
             <tr>
               <td><strong>{resource.name}</strong></td>
               <td><span class="type">{resource.type}</span></td>
-              <td colspan="2">
+              <td>
                 <form method="POST" action="?/grant">
                   <input type="hidden" name="memberId" value={selectedMemberId} />
                   <input type="hidden" name="resourceType" value={resource.type} />
                   <input type="hidden" name="resourceId" value={resource.id} />
-                  <select name="permission" aria-label={`Permission for ${resource.name}`}>
-                    <option value="none" selected={resource.permission === "none"}>No access</option
+                  <label class="permission"
+                    ><span>Permission</span><select
+                      name="permission"
+                      aria-label={`Permission for ${resource.name}`}
                     >
-                    <option value="view" selected={resource.permission === "view"}>View</option>
-                    <option value="manage" selected={resource.permission === "manage"}
-                      >Manage</option
-                    >
-                    <option value="deny" selected={resource.permission === "deny"}
-                      >Explicit deny</option
-                    >
-                  </select>
+                      <option value="none" selected={resource.permission === "none"}
+                        >No access</option
+                      >
+                      <option value="view" selected={resource.permission === "view"}>View</option>
+                      <option value="manage" selected={resource.permission === "manage"}
+                        >Manage</option
+                      >
+                      <option value="deny" selected={resource.permission === "deny"}
+                        >Explicit deny</option
+                      >
+                    </select></label
+                  >
                   <button aria-label={`Save access for ${resource.name}`}><Save size={14} /></button
                   >
                 </form>
@@ -170,7 +170,7 @@
   }
 
   select {
-    height: 32px;
+    height: var(--control-size);
     padding: 0 var(--space-2);
     border: 1px solid var(--border);
     border-radius: var(--radius-control);
@@ -197,6 +197,13 @@
   table {
     width: 100%;
     border-collapse: collapse;
+  }
+
+  th:last-child {
+    width: calc(154px + var(--control-size));
+  }
+  .permission > span {
+    display: none;
   }
 
   th,
@@ -247,6 +254,7 @@
   form {
     display: flex;
     justify-content: flex-end;
+    align-items: end;
     gap: var(--space-2);
   }
 
@@ -256,8 +264,8 @@
 
   form button {
     display: grid;
-    width: 32px;
-    height: 32px;
+    width: var(--control-size);
+    height: var(--control-size);
     flex: none;
     place-items: center;
     border: 1px solid var(--border);
@@ -288,7 +296,8 @@
   .pagination a,
   .pagination span {
     display: inline-flex;
-    height: 32px;
+    justify-self: start;
+    height: var(--control-size);
     align-items: center;
     gap: var(--space-1);
     padding: 0 var(--space-3);
@@ -351,14 +360,72 @@
     font-size: var(--text-xs);
   }
 
-  .sr-only {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
+  header {
+    flex-wrap: wrap;
+  }
+  header > label {
+    min-width: 0;
+  }
+  header select {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .permission {
+    display: grid;
+    gap: var(--space-1);
+  }
+  td {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  @container (max-width: 700px) {
+    .permission > span {
+      display: block;
+    }
+    header > label {
+      width: 100%;
+    }
+    header select {
+      flex: 1;
+    }
+    .table-wrap {
+      overflow: hidden;
+    }
+    table,
+    tbody {
+      display: block;
+      width: 100%;
+    }
+    thead {
+      display: none;
+    }
+    tbody tr {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: var(--space-3) var(--space-2);
+      padding: var(--space-4);
+      border-bottom: 1px solid var(--border);
+    }
+    tbody tr:last-child {
+      border: 0;
+    }
+    td {
+      height: auto;
+      padding: 0;
+      border: 0;
+    }
+    td:last-child {
+      grid-column: 1 / -1;
+    }
+    .permission {
+      flex: 1;
+    }
+    form select {
+      width: 100%;
+      min-width: 0;
+    }
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -366,6 +433,21 @@
     form button,
     .pagination a {
       transition: none;
+    }
+  }
+  @container (max-width: 480px) {
+    .pagination {
+      grid-template-columns: 1fr 1fr;
+      gap: var(--space-2);
+    }
+    .pagination strong {
+      grid-column: 1 / -1;
+      grid-row: 1;
+      text-align: center;
+    }
+    .pagination a,
+    .pagination span {
+      width: fit-content;
     }
   }
 </style>

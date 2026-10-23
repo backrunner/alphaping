@@ -30,15 +30,18 @@
       <span
         class="number"
         role="cell"
+        data-label="Latency"
         title={service.latencyMs === null ? "Not measured" : undefined}
         >{service.latencyMs === null ? "No data" : `${service.latencyMs} ms`}</span
       >
-      <span class="number" role="cell"
+      <span class="number" role="cell" data-label="24h uptime"
         >{service.availability24hPermille === null
           ? "No data"
           : `${(service.availability24hPermille / 10).toFixed(1)}%`}</span
       >
-      <span class="muted" role="cell">{formatRelativeTime(service.lastCheckedAt)}</span>
+      <span class="muted" role="cell" data-label="Last check"
+        >{formatRelativeTime(service.lastCheckedAt)}</span
+      >
       <span class="timeline" role="cell">
         <StatusCapsules
           buckets={service.timeline}
@@ -52,7 +55,6 @@
 
 <style>
   .service-table {
-    overflow: hidden;
     border: 1px solid var(--border);
     border-radius: var(--radius-card);
     background: var(--surface);
@@ -62,7 +64,7 @@
   .table-head,
   .service-row {
     display: grid;
-    grid-template-columns: minmax(140px, 1.2fr) 110px 80px 70px 96px minmax(280px, 2fr);
+    grid-template-columns: minmax(120px, 1.2fr) 100px 80px 70px 90px minmax(200px, 2fr);
     align-items: center;
     gap: var(--space-3);
     padding: 0 var(--space-3);
@@ -72,6 +74,7 @@
     height: 34px;
     color: var(--text-faint);
     background: var(--surface-subtle);
+    border-radius: calc(var(--radius-card) - 1px) calc(var(--radius-card) - 1px) 0 0;
     font-size: var(--text-xs);
     font-weight: 620;
   }
@@ -81,6 +84,11 @@
     border-top: 1px solid var(--border);
     color: var(--text);
     transition: background-color 120ms ease;
+  }
+
+  .service-row:last-child {
+    border-bottom-left-radius: calc(var(--radius-card) - 1px);
+    border-bottom-right-radius: calc(var(--radius-card) - 1px);
   }
 
   .service-row:hover {
@@ -128,26 +136,46 @@
     --capsule-count: 48;
   }
 
-  @media (max-width: 900px) {
+  .service-row > span {
+    min-width: 0;
+  }
+  @container (max-width: 1000px) {
     .table-head {
       display: none;
     }
-
     .service-row {
-      grid-template-columns: 1fr auto auto;
-      gap: var(--space-2);
-      padding: var(--space-2) var(--space-3);
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: var(--space-3) var(--space-2);
+      padding: var(--space-4);
     }
-
-    .service-row:first-child {
+    .service-row:nth-child(2) {
       border-top: 0;
+      border-top-left-radius: calc(var(--radius-card) - 1px);
+      border-top-right-radius: calc(var(--radius-card) - 1px);
     }
-
-    .service-row > :nth-child(4),
-    .service-row > :nth-child(5) {
-      display: none;
+    .identity {
+      grid-column: 1 / 3;
     }
-
+    .identity a {
+      display: grid;
+      min-height: 44px;
+      align-content: center;
+    }
+    .identity strong {
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+    .service-row > :nth-child(2) {
+      justify-self: end;
+    }
+    .service-row [data-label]::before {
+      display: block;
+      content: attr(data-label);
+      margin-bottom: var(--space-1);
+      color: var(--text-faint);
+      font-family: var(--font-sans);
+      font-size: var(--text-xs);
+    }
     .timeline {
       grid-column: 1 / -1;
     }
