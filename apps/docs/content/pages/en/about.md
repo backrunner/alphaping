@@ -1,11 +1,11 @@
 ---
 title: About AlphaPing
-description: Development status, contributions and licensing for AlphaPing.
+description: An open-source, self-hosted infrastructure monitoring project for individuals, teams and small organizations.
 ---
 
-## Development status
+## Project direction
 
-AlphaPing uses a Rust Agent to collect machine metrics and run service checks. The Cloudflare control plane provides the management interface, history queries and public status pages.
+AlphaPing connects a lightweight Rust Agent, a Cloudflare control plane and customizable public status pages. Our aim is to make operational state easy to read, with clear control over data and access.
 
 The project is in early development. Deployment is currently manual, and native Agent service installation, restart and upgrades require separate validation on each platform.
 
@@ -20,6 +20,8 @@ pnpm verify
 
 Read [CONTRIBUTING](https://github.com/BackRunner/alphaping/blob/main/CONTRIBUTING.md) and the [Code of Conduct](https://github.com/BackRunner/alphaping/blob/main/CODE_OF_CONDUCT.md) before contributing. Report issues and suggest improvements on [GitHub](https://github.com/BackRunner/alphaping).
 
-## License
+## Documentation and licensing
+
+This site uses svedocs and follows AlphaPing's design system.
 
 AlphaPing is licensed under [Apache-2.0](https://github.com/BackRunner/alphaping/blob/main/LICENSE). Third-party components retain their respective licenses.

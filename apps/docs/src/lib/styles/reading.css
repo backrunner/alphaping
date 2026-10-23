@@ -189,7 +189,7 @@
   font-size: 12px;
   max-width: 100%;
 }
-.sd-code-header {
+.sd-code-toolbar {
   background: var(--ap-subtle);
   border-color: var(--sd-line);
 }

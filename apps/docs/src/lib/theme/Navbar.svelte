@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Menu, X, Search, CodeXml } from "@lucide/svelte";
+  import { Menu, X, Search, CodeXml, ArrowUpRight } from "@lucide/svelte";
   import { SearchDialog } from "svedocs/theme";
   import { resolveLocalizedHref, resolveLocalizedText } from "svedocs/theme/headless";
   import type { SvedocsNavbarProps } from "svedocs/theme/types";
@@ -23,7 +23,7 @@
   <div class="ap-navbar">
     <a href={href("/")} class="ap-brand" aria-label={context.t("ap.brand.home")}>
       <img src="/alphaping.svg" alt="" width="38" height="38" />
-      <span>AlphaPing</span>
+      <span>AlphaPing</span><span class="ap-brand-label">{context.t("ap.brand.docs")}</span>
     </a>
     <nav class="ap-topnav" aria-label={context.t("nav.primary")}>
       {#each context.config.theme.nav as item (item.href)}
@@ -78,11 +78,8 @@
   <div id={mobileMenuId} class="ap-mobile-menu" class:ap-open={mobileMenuOpen}>
     <nav aria-label={context.t("nav.primary")}>
       {#each context.config.theme.nav as item (item.href)}
-        <a
-          href={href(item.href)}
-          onclick={onCloseMobileMenu}
-          aria-current={context.activeNavHref === href(item.href) ? "page" : undefined}
-          >{resolveLocalizedText(item.label, item.labelKey, context)}</a
+        <a href={href(item.href)} onclick={onCloseMobileMenu}
+          >{resolveLocalizedText(item.label, item.labelKey, context)}<ArrowUpRight size={16} /></a
         >
       {/each}
     </nav>

@@ -8,8 +8,7 @@ export default defineConfig({
   site: {
     name: "AlphaPing",
     title: "AlphaPing",
-    description:
-      "AlphaPing 是开源的机器与服务监控平台，使用 Rust Agent 和自托管的 Cloudflare 控制面。",
+    description: "部署自己的基础设施监控，连接机器与服务，分享清晰的公开状态页。",
     ...(siteUrl ? { url: siteUrl } : {}),
   },
   build: { mode: "edge" },

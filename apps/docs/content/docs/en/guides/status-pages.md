@@ -1,6 +1,6 @@
 ---
 title: Public status pages
-description: Select public machines and services, configure the site appearance, and publish incidents and announcements.
+description: Choose what visitors see and share service availability and incident updates under your own brand.
 order: 3
 ---
 

@@ -13,8 +13,14 @@
   .ap-search .sd-search-trigger {
     width: 156px;
   }
+  .ap-brand-label {
+    display: none;
+  }
   .ap-hero {
     padding: 42px;
+  }
+  .ap-orbit {
+    transform: scale(0.9);
   }
   .ap-docs-layout {
     grid-template-columns: 185px minmax(0, 1fr) 145px;
@@ -39,8 +45,29 @@
     gap: 22px;
   }
   .ap-hero {
-    grid-template-columns: minmax(0, 1fr) 180px;
+    grid-template-columns: 1.4fr 1fr;
     padding: 36px;
+  }
+  .ap-orbit {
+    width: 300px;
+    height: 300px;
+    transform: scale(0.88);
+    margin: -25px;
+  }
+  .ap-orbit-center {
+    inset: 65px;
+  }
+  .ap-orbit-inner {
+    inset: 40px;
+  }
+  .ap-node-one {
+    left: 75px;
+  }
+  .ap-node-two {
+    top: 160px;
+  }
+  .ap-node-three {
+    left: 0;
   }
   .ap-hero h1 {
     font-size: 40px;
@@ -88,12 +115,8 @@
     gap: 6px;
     padding: 10px;
     font-size: 12px;
+    border: 1px solid var(--sd-line);
     border-radius: var(--radius-control);
-  }
-  .ap-mobile-menu > nav:first-child > a:hover,
-  .ap-mobile-menu > nav:first-child > a[aria-current] {
-    color: var(--sd-accent);
-    background: var(--ap-accent-soft);
   }
   .ap-mobile-docs {
     padding-top: 14px;
@@ -131,10 +154,10 @@
   }
   .ap-hero {
     padding: 36px 30px;
-    min-height: 0;
+    min-height: 410px;
     grid-template-columns: minmax(0, 1fr);
   }
-  .ap-hero-mark {
+  .ap-orbit {
     display: none;
   }
   .ap-hero-description {
@@ -195,8 +218,12 @@
     min-height: 0;
   }
   .ap-hero h1 {
-    font-size: 32px;
-    line-height: 1.4;
+    font-size: 34px;
+    line-height: 1.45;
+  }
+  .ap-hero .ap-eyebrow {
+    font-size: 12px;
+    margin-bottom: 22px;
   }
   .ap-hero-description {
     font-size: 15px;
@@ -211,6 +238,11 @@
     gap: 9px;
     font-size: 12px;
   }
+  .ap-hero-notes {
+    gap: 10px;
+    font-size: 12px;
+    margin-top: 22px;
+  }
   .ap-preview-section,
   .ap-guides-section {
     margin-top: 42px;
@@ -223,11 +255,29 @@
     font-size: 23px;
   }
   .ap-section-heading > div > p:last-child {
-    font-size: 14px;
+    font-size: 12px;
   }
   .ap-text-link {
-    margin-top: 8px;
-    font-size: 13px;
+    margin-top: 14px;
+    font-size: 11px;
+  }
+  .ap-browser-bar {
+    min-height: 38px;
+    padding: 0 12px;
+    font-size: 11px;
+    gap: 9px;
+    flex-wrap: wrap;
+  }
+  .ap-window-dots {
+    display: none;
+  }
+  .ap-preview-badge {
+    font-size: 11px;
+  }
+  .ap-development-badge {
+    display: inline-block;
+    margin-top: 14px;
+    font-size: 12px;
   }
   .ap-guide-grid {
     grid-template-columns: 1fr;
@@ -235,11 +285,21 @@
   .ap-guide-card {
     padding: 24px;
   }
+  .ap-guide-top {
+    margin-bottom: 20px;
+  }
   .ap-guide-card p {
-    font-size: 14px;
+    max-width: none;
+    margin-bottom: 16px;
+    font-size: 12px;
   }
   .ap-guide-card h3 {
     font-size: 17px;
+  }
+  .ap-guide-arrow {
+    position: absolute;
+    bottom: 24px;
+    right: 24px;
   }
   .ap-details-section {
     margin-top: 44px;
@@ -252,7 +312,17 @@
     font-size: 15px;
   }
   .ap-detail-list p {
-    font-size: 14px;
+    font-size: 12px;
+  }
+  .ap-cta {
+    display: block;
+    padding: 26px;
+  }
+  .ap-cta p {
+    font-size: 12px;
+  }
+  .ap-cta .ap-button {
+    margin-top: 22px;
   }
   .ap-footer {
     width: calc(100% - 36px);
@@ -260,6 +330,10 @@
   .ap-footer-top {
     flex-wrap: wrap;
     gap: 12px;
+  }
+  .ap-footer-top p {
+    margin-left: auto;
+    font-size: 12px;
   }
   .ap-footer-top nav {
     width: 100%;

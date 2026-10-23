@@ -1,11 +1,7 @@
 /* Remove the bundled theme's pixel decorations and hover displacement. */
 .sd-prev-next::before,
 .sd-prev-next span i,
-.sd-code-language::before,
-.sd-kicker-mark,
-.sd-error-panel::after,
-.sd-render-error::after,
-.sd-render-error-mark {
+.sd-code-lang::before {
   display: none;
 }
 .sd-search-trigger:hover,
@@ -67,22 +63,4 @@
 }
 .sd-code code:focus-visible {
   outline-offset: -3px;
-}
-
-/* Language names and page headings need no extra badge or brand label. */
-.sd-code .sd-code-header .sd-code-language {
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  font-weight: 500;
-  letter-spacing: 0;
-}
-.sd-page-hero > .sd-kicker {
-  display: none;
-}
-.sd-error-panel h1 {
-  max-width: none;
-  font-size: clamp(28px, 4vw, 40px);
-  line-height: 1.4;
 }
