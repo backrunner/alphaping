@@ -1,6 +1,6 @@
 ---
 title: System architecture
-description: The Cloudflare control plane and Rust Agent work together, with distinct paths for durable data and live observation.
+description: Worker responsibilities, Agent reports, live snapshots and data storage.
 order: 1
 ---
 

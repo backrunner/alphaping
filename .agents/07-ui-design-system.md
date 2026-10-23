@@ -1,6 +1,6 @@
 # AlphaPing UI 设计系统
 
-文档站 `apps/docs` 沿用本文件当前优先的 Iris 明暗配色、Geist 字体、回波 Logo、克制的分级圆角与柔和阴影。产品 landing 使用宽幅 Hero、静态品牌轨道和明确标注的示例截图；阅读区采用分组侧栏、白色圆角文章表面和页内目录。顶部导航采用居中悬浮圆角栏，与视口顶部和两侧保留间距，使用轻微半透明表面、背景模糊与柔和阴影；导航选中态使用 Iris 胶囊。移动端菜单在导航下方独立展开，不推移正文。搜索、明暗切换、代码复制与键盘焦点保持可用。主题定制通过 svedocs 公共组件接口接入，不复制内容发现、路由或搜索逻辑。
+文档站 `apps/docs` 沿用本文件当前优先的 Iris 明暗配色、Geist 字体、回波 Logo、克制的分级圆角与柔和阴影。产品 landing 使用宽幅 Hero、独立品牌标志和明确标注的示例截图；阅读区采用分组侧栏、白色圆角文章表面和页内目录。顶部导航采用居中悬浮圆角栏，与视口顶部和两侧保留间距，使用轻微半透明表面、背景模糊与柔和阴影；导航选中态使用 Iris 浅色背景。移动端菜单在导航下方独立展开，不推移正文。搜索、明暗切换、代码复制与键盘焦点保持可用。主题定制通过 svedocs 公共组件接口接入，不复制内容发现、路由或搜索逻辑。
 
 文档站主题按钮点击后直接在浅色与深色之间切换，不使用下拉菜单。首次访问跟随系统，手动切换后在浏览器保存选择；按钮图标与可访问名称表示下一次切换的目标模式。
 
@@ -379,3 +379,12 @@ The user requested less exaggerated rounding and consistent, unclipped content a
 - Match inset surfaces to the outer radius minus their inset. Table header and final-row backgrounds must follow the surface corners without clipping timelines, tooltips or focus rings.
 - Keep enough interior spacing for text and controls at corners. Apply clipping only to intentional scrolling, media, ellipsis or decorative layers. Edge-to-edge interactive summary cells need an inset focus ring.
 - Repeated cards stay in place on hover; feedback uses border/color/shadow changes. Validate first/last rows, focused controls, menus, long content and empty/error states in light/dark and at every responsive breakpoint.
+
+## Documentation presentation (2026-10-23, current priority)
+
+Documentation uses headings, spacing and concise descriptions to organize content. This supersedes the earlier documentation landing orbit treatment; the product dashboard is unaffected.
+
+- Remove decorative status dots, orbit nodes, repeated section kickers, numbered icon cards, fake browser controls and redundant calls to action. Preserve the brand mark and label sample screenshots with a plain caption.
+- Use indicators for real state or interaction: active navigation, reading position, search progress, copy feedback and keyboard focus. Code block language names remain plain text without colored markers or badges.
+- Write specific descriptions of features, requirements and actions in both Chinese and English. Avoid slogans, vague benefit claims and repeated assurances. Keep actual development limitations visible as ordinary text.
+- Keep visible homepage copy, localized frontmatter, search records and generated SEO metadata consistent. Preserve the AlphaPing product name in page titles and metadata.

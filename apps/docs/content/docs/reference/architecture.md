@@ -1,6 +1,6 @@
 ---
 title: 系统架构
-description: Cloudflare 控制面与 Rust Agent 分工协作，持久数据与实时观察各有边界。
+description: 各 Worker 的职责、Agent 数据上报、实时快照与存储方式。
 order: 1
 ---
 

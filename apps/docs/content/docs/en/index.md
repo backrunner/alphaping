@@ -1,10 +1,10 @@
 ---
-title: Meet AlphaPing
-description: Monitor your machines and services, and share a clear view of their status.
+title: Introduction to AlphaPing
+description: An overview of machine metrics, service checks, public status pages, resource permissions and deployment components.
 order: 0
 ---
 
-AlphaPing is built for individuals, teams and small organizations. The control plane runs in your own Cloudflare account, with a lightweight Rust Agent on each machine you want to monitor.
+AlphaPing is an open-source platform for monitoring machines and services. The control plane runs in your own Cloudflare account, with a Rust Agent on each monitored machine.
 
 ## What you can do
 
@@ -26,7 +26,7 @@ AlphaPing is built for individuals, teams and small organizations. The control p
 | Share status with visitors | [Public status pages](/docs/guides/status-pages)    |
 | Understand the data flow   | [System architecture](/docs/reference/architecture) |
 
-## Two parts working together
+## Components
 
 The **Cloudflare control plane** handles workspaces, permissions, history queries, check scheduling and public pages. A SvelteKit Web Worker provides the interface, while separate Workers handle ingestion, live connections, checks, notifications and cleanup.
 
