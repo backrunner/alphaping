@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
 const toolsRoot = resolve(repositoryRoot, "target", "worker-tools");
-const workerBuildVersion = "0.8.5";
+const workerBuildVersion = "0.8.7";
 const executable = resolve(
   toolsRoot,
   "bin",
