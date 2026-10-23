@@ -1,5 +1,10 @@
 /* AlphaPing's owned theme. svedocs supplies content and accessible tool behavior. */
 :root {
+  --radius-control: 8px;
+  --radius-button: 8px;
+  --radius-card: 12px;
+  --radius-panel: 16px;
+  --radius-hero: 24px;
   --sd-bg: #f7f7f4;
   --sd-panel: #fff;
   --sd-ink: #252923;
@@ -98,9 +103,15 @@ select {
 }
 .sd-skip {
   z-index: var(--ap-z-dialog);
-  border-radius: 12px;
+  border-radius: var(--radius-control);
 }
 .sd-home {
   max-width: none;
   padding: 0;
+}
+
+@media (max-width: 620px) {
+  :root {
+    --radius-hero: 20px;
+  }
 }

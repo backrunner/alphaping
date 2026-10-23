@@ -35,7 +35,7 @@
   display: block;
   padding: 9px 12px;
   color: var(--sd-muted);
-  border-radius: 11px;
+  border-radius: var(--radius-control);
   font-size: 13px;
   line-height: 1.5;
 }
@@ -95,7 +95,7 @@
 }
 .ap-docs-main .sd-doc {
   border: 1px solid var(--sd-line);
-  border-radius: 28px;
+  border-radius: var(--radius-panel);
   padding: 40px 42px;
   background: var(--sd-panel);
   box-shadow: var(--ap-shadow) !important;
@@ -165,7 +165,7 @@
 .sd-prose blockquote {
   padding: 16px 20px;
   border: 1px solid color-mix(in srgb, var(--sd-accent) 20%, var(--sd-line));
-  border-radius: 16px;
+  border-radius: var(--radius-card);
   background: color-mix(in srgb, var(--ap-accent-soft) 55%, var(--sd-panel));
   color: var(--sd-ink);
   margin: 24px 0;
@@ -183,7 +183,7 @@
 }
 .sd-code {
   border: 1px solid var(--sd-line);
-  border-radius: 16px;
+  border-radius: var(--radius-card);
   box-shadow: none;
   margin: 22px 0;
   font-size: 12px;
@@ -198,18 +198,22 @@
   font-size: 12px;
 }
 .sd-code-copy {
-  border-radius: 7px;
+  border-radius: var(--radius-control);
 }
 .sd-prose table {
   width: 100%;
   border: 1px solid var(--sd-line);
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   overflow-x: auto;
   font-size: 12px;
 }
 .sd-prose th {
   background: var(--ap-subtle);
   font-weight: 600;
+}
+/* Fill the native block scroll table without splitting header/body column layout. */
+.sd-prose th:last-child {
+  width: 100%;
 }
 .sd-prose table[data-ap-scroll-mask] {
   mask-image: linear-gradient(
@@ -237,7 +241,7 @@
   font-size: 11px;
 }
 .sd-prev-next {
-  border-radius: 16px;
+  border-radius: var(--radius-card);
   background: var(--sd-panel);
   border-color: var(--sd-line);
   padding: 16px;
@@ -280,7 +284,7 @@
   margin: 40px auto 64px;
   padding: 42px;
   border: 1px solid var(--sd-line);
-  border-radius: 28px;
+  border-radius: var(--radius-panel);
   background: var(--sd-panel);
   box-shadow: var(--ap-shadow) !important;
 }
@@ -292,46 +296,57 @@
 .sd-chat-portal {
   z-index: var(--ap-z-dialog);
 }
-.sd-search-panel,
-.sd-search-dialog,
-.sd-search-box {
-  border-radius: 24px;
+.sd-search-dialog {
+  border: 1px solid var(--sd-line);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--ap-panel-shadow);
+  max-height: calc(100dvh - 32px - env(safe-area-inset-bottom));
+  overflow: hidden;
 }
-.sd-search-backdrop {
+.sd-search-dialog::backdrop {
   background: rgb(20 24 28 / 0.4);
   backdrop-filter: blur(4px);
 }
-.sd-search-panel {
-  border: 1px solid var(--sd-line);
-  box-shadow: var(--ap-panel-shadow);
-  overflow: hidden;
+.sd-search-header {
+  gap: 4px;
+  padding: 8px;
 }
-.sd-search-input,
-.sd-input {
-  border-radius: 12px;
+.sd-search-box input {
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: var(--radius-control);
 }
-.sd-search-results a,
-.sd-search-result {
-  border-radius: 12px;
+.sd-search-box input:focus-visible {
+  outline: 2px solid var(--sd-accent);
+  outline-offset: -2px;
 }
-.sd-search-result:hover {
+.sd-search-close {
+  margin: 0;
+  border-radius: var(--radius-button);
+}
+.sd-search-content {
+  max-height: min(32rem, calc(100dvh - 112px - env(safe-area-inset-bottom)));
+}
+.sd-search-results a {
+  border-radius: var(--radius-control);
+}
+.sd-search-results a:hover {
   transform: none;
 }
-.sd-page-tools {
+.sd-floating-toolbar {
   z-index: var(--ap-z-popover);
+  border-radius: var(--radius-card);
 }
-.sd-page-tools button,
-.sd-tools-button {
-  border-radius: 12px;
-  box-shadow: var(--ap-shadow);
+.sd-floating-tool {
+  border-radius: var(--radius-button);
 }
 .sd-error-panel,
 .sd-render-error {
-  border-radius: 24px;
+  border-radius: var(--radius-panel);
   background: var(--sd-panel);
   border-color: var(--sd-line);
 }
 .sd-error-actions a,
 .sd-page-action {
-  border-radius: 12px;
+  border-radius: var(--radius-control);
 }

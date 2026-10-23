@@ -34,7 +34,7 @@
   grid-row: 1;
 }
 .ap-docs-layout > .sd-mobile-toc {
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   font-size: 12px;
   background: var(--sd-panel);
 }
@@ -59,7 +59,7 @@
   text-decoration-line: underline;
 }
 .sd-prose .sd-code {
-  border-radius: 16px;
+  border-radius: var(--radius-card);
 }
 .sd-code code:focus-visible {
   outline-offset: -3px;

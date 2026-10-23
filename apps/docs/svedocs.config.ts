@@ -21,7 +21,7 @@ export default defineConfig({
       mono: '"Geist Mono Variable", ui-monospace, monospace',
       display: '"Geist Variable", system-ui, sans-serif',
     },
-    radius: "24px",
+    radius: "12px",
     codeTheme: { light: "github-light", dark: "github-dark" },
     code: { copyButton: true, lineNumbers: false, wrap: false },
     brand: { label: "AlphaPing", href: "/", logo: "/alphaping.svg" },

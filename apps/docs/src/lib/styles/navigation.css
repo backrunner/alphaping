@@ -8,7 +8,7 @@
   width: min(100% - 64px, 1160px);
   margin: 20px auto 0;
   border: 1px solid transparent;
-  border-radius: 24px;
+  border-radius: var(--radius-panel);
 }
 :root[data-theme="dark"] .ap-header {
   --ap-glass-highlight: rgb(255 255 255 / 0.09);
@@ -43,7 +43,7 @@
   top: calc(100% - 10px);
   inset-inline: 12px;
   height: 42px;
-  border-radius: 0 0 28px 28px;
+  border-radius: 0 0 var(--radius-panel) var(--radius-panel);
   background: color-mix(in srgb, var(--sd-panel) 18%, transparent);
   -webkit-backdrop-filter: blur(12px) saturate(130%);
   backdrop-filter: blur(12px) saturate(130%);
@@ -91,7 +91,7 @@
   font-weight: 500;
   color: var(--sd-muted);
   background: var(--ap-subtle);
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   padding: 3px 7px;
   margin-left: 2px;
 }
@@ -103,7 +103,7 @@
 .ap-topnav a {
   color: var(--sd-muted);
   padding: 10px 14px;
-  border-radius: 12px;
+  border-radius: var(--radius-control);
   font-size: 13px;
   white-space: nowrap;
 }
@@ -128,7 +128,7 @@
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: 12px;
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--sd-muted);
 }
@@ -145,7 +145,7 @@
   gap: 6px;
   flex-shrink: 0;
   border: 1px solid var(--sd-line);
-  border-radius: 12px;
+  border-radius: var(--radius-control);
   color: var(--sd-muted);
   font-size: 11px;
   font-weight: 550;
@@ -167,7 +167,7 @@
   width: 180px;
   min-height: 38px;
   border: 1px solid transparent;
-  border-radius: 12px;
+  border-radius: var(--radius-control);
   background: var(--ap-subtle);
   color: var(--sd-muted);
   box-shadow: none;

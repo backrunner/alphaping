@@ -99,13 +99,13 @@
     overscroll-behavior: contain;
     padding: 16px;
     border: 1px solid var(--sd-line);
-    border-radius: 24px;
+    border-radius: var(--radius-panel);
     background: var(--sd-panel);
     box-shadow: var(--ap-panel-shadow);
   }
   .ap-mobile-menu > nav:first-child {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: 1fr;
     gap: 8px;
   }
   .ap-mobile-menu > nav:first-child > a {
@@ -116,7 +116,7 @@
     padding: 10px;
     font-size: 12px;
     border: 1px solid var(--sd-line);
-    border-radius: 10px;
+    border-radius: var(--radius-control);
   }
   .ap-mobile-docs {
     padding-top: 14px;
@@ -127,7 +127,6 @@
     top: 12px;
     width: calc(100% - 40px);
     margin-top: 12px;
-    border-radius: 22px;
   }
   .ap-navbar {
     min-height: 64px;
@@ -199,7 +198,8 @@
     gap: 2px;
   }
   .ap-nav-tools :is(.ap-icon-button, .ap-locale-switch) {
-    width: 32px;
+    width: 44px;
+    height: 44px;
     flex-shrink: 0;
   }
   .ap-locale-switch {
@@ -214,20 +214,19 @@
     padding-bottom: 40px;
   }
   .ap-hero {
-    border-radius: 28px;
     padding: 32px 25px;
-    min-height: 424px;
+    min-height: 0;
   }
   .ap-hero h1 {
     font-size: 34px;
     line-height: 1.45;
   }
   .ap-hero .ap-eyebrow {
-    font-size: 10px;
+    font-size: 12px;
     margin-bottom: 22px;
   }
   .ap-hero-description {
-    font-size: 13px;
+    font-size: 15px;
     line-height: 1.95;
     margin: 20px 0 24px;
   }
@@ -241,7 +240,7 @@
   }
   .ap-hero-notes {
     gap: 10px;
-    font-size: 9px;
+    font-size: 12px;
     margin-top: 22px;
   }
   .ap-preview-section,
@@ -265,7 +264,7 @@
   .ap-browser-bar {
     min-height: 38px;
     padding: 0 12px;
-    font-size: 8px;
+    font-size: 11px;
     gap: 9px;
     flex-wrap: wrap;
   }
@@ -273,15 +272,12 @@
     display: none;
   }
   .ap-preview-badge {
-    font-size: 8px;
-  }
-  .ap-product-preview {
-    border-radius: 16px;
+    font-size: 11px;
   }
   .ap-development-badge {
     display: inline-block;
     margin-top: 14px;
-    font-size: 10px;
+    font-size: 12px;
   }
   .ap-guide-grid {
     grid-template-columns: 1fr;
@@ -321,7 +317,6 @@
   .ap-cta {
     display: block;
     padding: 26px;
-    border-radius: 24px;
   }
   .ap-cta p {
     font-size: 12px;
@@ -338,7 +333,7 @@
   }
   .ap-footer-top p {
     margin-left: auto;
-    font-size: 10px;
+    font-size: 12px;
   }
   .ap-footer-top nav {
     width: 100%;
@@ -349,7 +344,7 @@
     flex-direction: column;
     gap: 8px;
     line-height: 1.6;
-    font-size: 9px;
+    font-size: 12px;
   }
   .ap-docs-layout {
     width: calc(100% - 24px);
@@ -357,7 +352,6 @@
   }
   .ap-docs-main .sd-doc {
     padding: 26px 20px;
-    border-radius: 24px;
   }
   .sd-doc-header h1 {
     font-size: 28px;
@@ -366,10 +360,10 @@
     padding-bottom: 24px;
   }
   .sd-doc-lede {
-    font-size: 13px;
+    font-size: 15px;
   }
   .sd-prose {
-    font-size: 13px;
+    font-size: 15px;
   }
   .sd-prose h2 {
     font-size: 21px;
@@ -386,7 +380,6 @@
   .sd-page {
     width: calc(100% - 24px);
     padding: 26px 20px;
-    border-radius: 24px;
     margin: 16px auto 40px;
   }
   .sd-page h1 {
@@ -398,8 +391,21 @@
   .sd-prev-next {
     grid-column: 1;
   }
-  .sd-search-panel {
-    border-radius: 20px;
+  .sd-search-box input {
+    font-size: 16px;
+  }
+  .ap-mobile-menu nav a,
+  .ap-mobile-menu button,
+  .sd-search-dialog button {
+    min-height: 44px;
+  }
+  .ap-button {
+    min-height: 44px;
+  }
+  .ap-footer nav a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -409,5 +415,39 @@
     animation: none !important;
     transition: none !important;
     scroll-behavior: auto !important;
+  }
+}
+
+@media (max-width: 380px) {
+  .ap-navbar .ap-brand > span {
+    display: none;
+  }
+  .ap-navbar {
+    gap: 8px;
+  }
+}
+
+.ap-docs-main,
+.ap-docs-main .sd-doc {
+  min-width: 0;
+}
+.ap-mobile-menu a {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 780px), (pointer: coarse) {
+  .sd-code-copy,
+  .sd-floating-tool {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .sd-code-header {
+    min-height: 52px;
+  }
+  .sd-search-dialog [role="option"] p {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    overflow: hidden;
   }
 }

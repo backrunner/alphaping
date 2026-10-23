@@ -11,7 +11,7 @@
   padding: 58px 56px;
   gap: 24px;
   border: 1px solid color-mix(in srgb, var(--sd-accent) 13%, var(--sd-line));
-  border-radius: 36px;
+  border-radius: var(--radius-hero);
   background: linear-gradient(
     112deg,
     var(--ap-hero-start),
@@ -73,7 +73,7 @@
   justify-content: center;
   gap: 12px;
   min-height: 44px;
-  border-radius: 12px;
+  border-radius: var(--radius-button);
   padding: 11px 19px;
   font-size: 13px;
   font-weight: 550;
@@ -142,7 +142,7 @@
   width: 52px;
   height: 52px;
   border: 1px solid color-mix(in srgb, var(--sd-panel) 70%, var(--sd-accent));
-  border-radius: 18px;
+  border-radius: var(--radius-card);
   display: grid;
   place-items: center;
   background: var(--sd-panel);
@@ -225,7 +225,7 @@
 .ap-product-preview {
   margin: 0;
   border: 1px solid var(--sd-line);
-  border-radius: 24px;
+  border-radius: var(--radius-panel);
   background: var(--sd-panel);
   box-shadow: var(--ap-panel-shadow);
   overflow: hidden;
@@ -288,7 +288,7 @@
   padding: 28px;
   background: var(--sd-panel);
   border: 1px solid var(--sd-line);
-  border-radius: 24px;
+  border-radius: var(--radius-card);
   box-shadow: var(--ap-shadow);
 }
 .ap-guide-card:hover {
@@ -365,7 +365,7 @@
   padding: 34px 40px;
   border: 1px solid var(--sd-line);
   background: var(--sd-panel);
-  border-radius: 28px;
+  border-radius: var(--radius-panel);
   box-shadow: var(--ap-shadow);
 }
 .ap-cta h2 {
