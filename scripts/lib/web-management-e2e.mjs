@@ -157,7 +157,7 @@ export async function runWebManagementE2e({
   queryTelemetryDb,
 }) {
   const initializedDefaults = onlyRow(
-    queryControlDb(
+    await queryControlDb(
       `SELECT w.default_sampling_interval_seconds, d.visibility
        FROM workspaces w JOIN dashboards d ON d.id = w.default_dashboard_id
        WHERE w.slug = 'operations'`,
@@ -188,7 +188,7 @@ export async function runWebManagementE2e({
     throw new Error("workspace creation did not redirect to the new tenant");
   }
   const createdWorkspace = onlyRow(
-    queryControlDb(
+    await queryControlDb(
       `SELECT w.id, w.telemetry_pk, w.default_sampling_interval_seconds,
               d.visibility, p.raw_days, m.role
        FROM workspaces w JOIN dashboards d ON d.id = w.default_dashboard_id
@@ -208,7 +208,7 @@ export async function runWebManagementE2e({
     throw new Error("workspace creation did not persist its isolated defaults and ownership");
   }
   const workspaceAudit = onlyRow(
-    queryControlDb(
+    await queryControlDb(
       `SELECT action FROM audit_logs
        WHERE workspace_id = '${createdWorkspace.id}' AND action = 'workspace.create'`,
     ),
@@ -241,9 +241,9 @@ export async function runWebManagementE2e({
   ) {
     throw new Error("machine creation did not return the one-time enrollment material");
   }
-  queryControlDb("UPDATE machines SET public_slug = 'edge-e2e' WHERE name = 'Edge E2E'");
+  await queryControlDb("UPDATE machines SET public_slug = 'edge-e2e' WHERE name = 'Edge E2E'");
   const machine = onlyRow(
-    queryControlDb(
+    await queryControlDb(
       `SELECT id, public_slug, telemetry_pk, description, labels_json, sampling_interval_seconds,
               report_interval_seconds, offline_after_seconds, container_monitoring_enabled,
               desired_config_revision
@@ -263,7 +263,7 @@ export async function runWebManagementE2e({
     throw new Error("machine creation did not persist the requested configuration");
   }
   const enrollment = onlyRow(
-    queryControlDb(
+    await queryControlDb(
       `SELECT id, revoked_at FROM agent_enrollment_tokens WHERE machine_id = '${machine.id}'`,
     ),
     "machine enrollment lookup",
@@ -289,7 +289,7 @@ export async function runWebManagementE2e({
     "administrator machine configuration update",
   );
   const updatedMachine = onlyRow(
-    queryControlDb(
+    await queryControlDb(
       `SELECT expected_host, description, labels_json, sampling_interval_seconds,
               report_interval_seconds, offline_after_seconds, maintenance_until,
               desired_config_revision
@@ -310,7 +310,7 @@ export async function runWebManagementE2e({
     throw new Error("machine configuration update did not persist or advance its revision");
   }
   const configurationAudit = onlyRow(
-    queryControlDb(
+    await queryControlDb(
       `SELECT before_digest, after_digest FROM audit_logs
        WHERE resource_id = '${machine.id}' AND action = 'machine.configuration.update'`,
     ),
@@ -327,7 +327,7 @@ export async function runWebManagementE2e({
     "administrator enrollment token revocation",
   );
   const revokedEnrollment = onlyRow(
-    queryControlDb(
+    await queryControlDb(
       `SELECT revoked_at FROM agent_enrollment_tokens
        WHERE machine_id = '${machine.id}' AND id = '${enrollment.id}'`,
     ),
@@ -349,7 +349,7 @@ export async function runWebManagementE2e({
   ) {
     throw new Error("token regeneration did not return one-time enrollment material");
   }
-  const enrollmentTokens = queryControlDb(
+  const enrollmentTokens = await queryControlDb(
     `SELECT id, revoked_at, used_at FROM agent_enrollment_tokens
      WHERE machine_id = '${machine.id}' ORDER BY created_at`,
   );
@@ -374,7 +374,7 @@ export async function runWebManagementE2e({
     throw new Error("machine enrollment management omitted token actions or installer checksum");
   }
   const agentId = "018f5f7e-7d28-7e12-a521-100000000001";
-  queryControlDb(
+  await queryControlDb(
     `INSERT INTO agents
       (id, workspace_id, machine_id, identity_public_key, platform, arch, agent_version,
        protocol_version, hostname, os_name, os_version, kernel_version, status,
@@ -437,7 +437,7 @@ export async function runWebManagementE2e({
       },
     ],
   });
-  queryTelemetryDb(
+  await queryTelemetryDb(
     `INSERT INTO machine_latest
       (machine_pk, workspace_pk, agent_id, observed_at, received_at, state,
        cpu_permille, memory_used_bytes, memory_total_bytes, storage_used_bytes,
@@ -449,13 +449,13 @@ export async function runWebManagementE2e({
        ${sqlString(containerInventory)})`,
   );
   const machineBlockStart = Math.floor(latestAt / 300_000) * 300_000;
-  queryTelemetryDb(
+  await queryTelemetryDb(
     `INSERT INTO telemetry_blocks_5m
       (machine_pk, workspace_pk, block_start, report_0, schema_version, flags)
      VALUES (${machine.telemetry_pk}, 1, ${machineBlockStart},
        X'${machineReportHex(latestAt)}', 4, 0)`,
   );
-  queryTelemetryDb(
+  await queryTelemetryDb(
     `INSERT INTO machine_rollups_5m
       (machine_pk, workspace_pk, bucket_start, sample_count, cpu_avg_permille,
        cpu_max_permille, memory_avg_bytes, storage_max_bytes, network_rx_bytes, network_tx_bytes)
@@ -565,7 +565,7 @@ export async function runWebManagementE2e({
     );
   }
   const queuedCommand = onlyRow(
-    queryControlDb(
+    await queryControlDb(
       `SELECT type, payload_json, state, attempt_limit, payload_schema_version
        FROM agent_commands WHERE agent_id = '${agentId}'`,
     ),
@@ -592,7 +592,7 @@ export async function runWebManagementE2e({
     throw new Error("version install did not return the administrator to the lifecycle panel");
   }
   const installCommand = onlyRow(
-    queryControlDb(
+    await queryControlDb(
       `SELECT payload_json FROM agent_commands
        WHERE agent_id = '${agentId}' AND type = 'install_version'`,
     ),
@@ -653,9 +653,9 @@ export async function runWebManagementE2e({
     },
     "administrator service creation",
   );
-  queryControlDb("UPDATE services SET slug = 'api-e2e' WHERE name = 'AlphaPing API E2E'");
+  await queryControlDb("UPDATE services SET slug = 'api-e2e' WHERE name = 'AlphaPing API E2E'");
   const service = onlyRow(
-    queryControlDb("SELECT id, telemetry_pk FROM services WHERE name = 'AlphaPing API E2E'"),
+    await queryControlDb("SELECT id, telemetry_pk FROM services WHERE name = 'AlphaPing API E2E'"),
     "created service lookup",
   );
   const serviceMaintenanceUntil = Date.now() + 90 * 60_000;
@@ -670,7 +670,7 @@ export async function runWebManagementE2e({
     "administrator service maintenance update",
   );
   const maintainedService = onlyRow(
-    queryControlDb(`SELECT maintenance_until FROM services WHERE id = '${service.id}'`),
+    await queryControlDb(`SELECT maintenance_until FROM services WHERE id = '${service.id}'`),
     "service maintenance lookup",
   );
   if (
@@ -680,7 +680,7 @@ export async function runWebManagementE2e({
     throw new Error("service maintenance window was not persisted");
   }
   const maintainedLatest = onlyRow(
-    queryTelemetryDb(
+    await queryTelemetryDb(
       `SELECT state, reason_code FROM service_latest WHERE service_pk = ${service.telemetry_pk}`,
     ),
     "service maintenance latest lookup",
@@ -692,7 +692,7 @@ export async function runWebManagementE2e({
     throw new Error("service maintenance did not immediately update the public state projection");
   }
   const compiledCheck = onlyRow(
-    queryControlDb(
+    await queryControlDb(
       `SELECT id, telemetry_pk, request_json, secret_refs_json, retry_count, critical,
         (SELECT COUNT(*) FROM check_assertions a WHERE a.check_id = c.id) AS assertion_count,
         (SELECT COUNT(*) FROM check_secrets s WHERE s.workspace_id = c.workspace_id) AS secret_count
@@ -760,7 +760,7 @@ export async function runWebManagementE2e({
     "service check target replacement with preserved secrets",
   );
   const preservedCheck = onlyRow(
-    queryControlDb(
+    await queryControlDb(
       `SELECT name, request_json, secret_refs_json,
         (SELECT COUNT(*) FROM check_assertions a WHERE a.check_id = c.id) AS assertion_count
        FROM check_configs c WHERE c.id = ${sqlString(compiledCheck.id)}`,
@@ -769,14 +769,14 @@ export async function runWebManagementE2e({
   );
   const preservedRequest = JSON.parse(preservedCheck.request_json);
   const preservedAssertion = onlyRow(
-    queryControlDb(
+    await queryControlDb(
       `SELECT source, operator, selector, expected_json, severity
        FROM check_assertions WHERE check_id = ${sqlString(compiledCheck.id)}`,
     ),
     "replaced service assertion lookup",
   );
   const preservedSecret = onlyRow(
-    queryControlDb(`SELECT id FROM check_secrets WHERE id = ${sqlString(originalSecretId)}`),
+    await queryControlDb(`SELECT id FROM check_secrets WHERE id = ${sqlString(originalSecretId)}`),
     "preserved service secret lookup",
   );
   if (
@@ -814,7 +814,7 @@ export async function runWebManagementE2e({
     throw new Error("service check action response exposed a replacement secret");
   }
   const replacedCheck = onlyRow(
-    queryControlDb(
+    await queryControlDb(
       `SELECT request_json, secret_refs_json, interval_seconds, timeout_ms, retry_count,
               failure_confirmations, recovery_confirmations, critical
        FROM check_configs WHERE id = ${sqlString(compiledCheck.id)}`,
@@ -827,13 +827,13 @@ export async function runWebManagementE2e({
     throw new Error("service check did not rotate its secret reference");
   }
   const oldSecretCount = onlyRow(
-    queryControlDb(
+    await queryControlDb(
       `SELECT COUNT(*) AS count FROM check_secrets WHERE id = ${sqlString(originalSecretId)}`,
     ),
     "replaced old secret lookup",
   );
   const replacementSecret = onlyRow(
-    queryControlDb(
+    await queryControlDb(
       `SELECT name, wrapping_key_id, length(wrapped_value) AS wrapped_bytes,
               length(nonce) AS nonce_bytes, hex(wrapped_value) AS wrapped_hex
        FROM check_secrets WHERE id = ${sqlString(replacementSecretId)}`,
@@ -871,7 +871,7 @@ export async function runWebManagementE2e({
   ) {
     throw new Error("service configuration view omitted the replacement or exposed secret values");
   }
-  const replacementAudits = queryControlDb(
+  const replacementAudits = await queryControlDb(
     `SELECT before_digest, after_digest FROM audit_logs
      WHERE resource_id = ${sqlString(service.id)}
        AND action = 'service.check.configuration.replace' ORDER BY created_at`,
@@ -884,14 +884,14 @@ export async function runWebManagementE2e({
   }
   const serviceBlockStart = Math.floor(Date.now() / 300_000) * 300_000;
   const checkObservedAt = serviceBlockStart + 10_000;
-  queryTelemetryDb(
+  await queryTelemetryDb(
     `INSERT INTO status_buckets
       (resource_type, resource_pk, workspace_pk, bucket_start, bucket_seconds, state,
        availability_permille, latency_avg_ms, latency_max_ms, summary_code)
      VALUES (2, ${service.telemetry_pk}, 1, ${serviceBlockStart}, 300, 'degraded',
        950, 84, 110, 'check_degraded')`,
   );
-  queryTelemetryDb(
+  await queryTelemetryDb(
     `INSERT INTO check_result_blocks_5m
       (check_pk, workspace_pk, block_start, result_0, schema_version, flags)
      VALUES (${compiledCheck.telemetry_pk}, 1, ${serviceBlockStart},
@@ -909,7 +909,7 @@ export async function runWebManagementE2e({
       table === "check_rollups_5m"
         ? serviceBlockStart
         : Math.floor(serviceBlockStart / 3_600_000) * 3_600_000;
-    queryTelemetryDb(
+    await queryTelemetryDb(
       `INSERT INTO ${table}
         (check_pk, workspace_pk, bucket_start, total_count, healthy_count,
          degraded_count, down_count, latency_avg_ms, latency_max_ms)
@@ -1003,7 +1003,7 @@ export async function runWebManagementE2e({
     "service secondary check creation",
   );
   const secondaryCheck = onlyRow(
-    queryControlDb(
+    await queryControlDb(
       `SELECT id FROM check_configs WHERE service_id = '${service.id}' AND kind = 'tcp'`,
     ),
     "secondary service check lookup",
@@ -1024,7 +1024,7 @@ export async function runWebManagementE2e({
     "secondary service check policy update",
   );
   const updatedSecondaryCheck = onlyRow(
-    queryControlDb(
+    await queryControlDb(
       `SELECT interval_seconds, timeout_ms, retry_count, failure_confirmations,
               recovery_confirmations, critical
        FROM check_configs WHERE id = '${secondaryCheck.id}'`,
@@ -1049,7 +1049,7 @@ export async function runWebManagementE2e({
     "secondary service check deletion",
   );
   const remainingChecks = onlyRow(
-    queryControlDb(
+    await queryControlDb(
       `SELECT COUNT(*) AS count FROM check_configs WHERE service_id = '${service.id}'`,
     ),
     "remaining service checks lookup",
@@ -1116,7 +1116,7 @@ export async function runWebManagementE2e({
       `administrator ${monitor.kind.toUpperCase()} Agent service creation`,
     );
   }
-  const agentChecks = queryControlDb(
+  const agentChecks = await queryControlDb(
     `SELECT c.id, s.id AS service_id, s.name, c.kind, c.executor_kind, c.executor_agent_id,
             c.interval_seconds, c.assignment_revision, c.request_json
      FROM check_configs c JOIN services s ON s.id = c.service_id
@@ -1141,7 +1141,7 @@ export async function runWebManagementE2e({
     throw new Error("Agent TCP/ICMP checks did not persist their executor, period, or revision");
   }
   const desiredRevision = onlyRow(
-    queryControlDb(`SELECT desired_config_revision FROM machines WHERE id = '${machine.id}'`),
+    await queryControlDb(`SELECT desired_config_revision FROM machines WHERE id = '${machine.id}'`),
     "Agent assignment revision lookup",
   );
   if (desiredRevision.desired_config_revision !== agentChecks[1].assignment_revision) {
@@ -1184,7 +1184,7 @@ export async function runWebManagementE2e({
     "Agent TCP target replacement",
   );
   const replacedAgentCheck = onlyRow(
-    queryControlDb(
+    await queryControlDb(
       `SELECT c.name, c.executor_agent_id, c.assignment_revision, c.request_json,
               m.desired_config_revision
        FROM check_configs c JOIN agents a ON a.id = c.executor_agent_id
@@ -1223,7 +1223,7 @@ export async function runWebManagementE2e({
     "Agent check policy update",
   );
   const updatedAgentPolicy = onlyRow(
-    queryControlDb(
+    await queryControlDb(
       `SELECT c.assignment_revision, c.interval_seconds, c.retry_count,
               m.desired_config_revision
        FROM check_configs c JOIN agents a ON a.id = c.executor_agent_id
@@ -1248,7 +1248,7 @@ export async function runWebManagementE2e({
     { type: "redirect", actionStatus: 303 },
   );
   const deletionRevision = onlyRow(
-    queryControlDb(`SELECT desired_config_revision FROM machines WHERE id = '${machine.id}'`),
+    await queryControlDb(`SELECT desired_config_revision FROM machines WHERE id = '${machine.id}'`),
     "Agent service deletion revision lookup",
   );
   if (deletionRevision.desired_config_revision !== updatedAgentPolicy.assignment_revision + 1) {
@@ -1262,7 +1262,7 @@ export async function runWebManagementE2e({
     "Agent-backed service restore",
   );
   const restorationRevision = onlyRow(
-    queryControlDb(`SELECT desired_config_revision FROM machines WHERE id = '${machine.id}'`),
+    await queryControlDb(`SELECT desired_config_revision FROM machines WHERE id = '${machine.id}'`),
     "Agent service restoration revision lookup",
   );
   if (
@@ -1311,7 +1311,7 @@ export async function runWebManagementE2e({
     "incident creation",
   );
   const incident = onlyRow(
-    queryControlDb("SELECT id FROM incidents WHERE title = 'API response degradation'"),
+    await queryControlDb("SELECT id FROM incidents WHERE title = 'API response degradation'"),
     "created incident lookup",
   );
   const dashboardResponse = await fetch(`${baseUrl}/operations`, {
@@ -1455,7 +1455,7 @@ export async function runWebManagementE2e({
     throw new Error("accepted invitation did not create an authenticated session");
   }
   const member = onlyRow(
-    queryControlDb("SELECT id FROM user WHERE email = 'member@example.test'"),
+    await queryControlDb("SELECT id FROM user WHERE email = 'member@example.test'"),
     "invited member lookup",
   );
 
@@ -1796,7 +1796,7 @@ export async function runWebManagementE2e({
     ["control", "workspaces"],
   ]) {
     const query = binding === "telemetry" ? queryTelemetryDb : queryControlDb;
-    query(`ALTER TABLE ${table} RENAME TO ${table}_unavailable`);
+    await query(`ALTER TABLE ${table} RENAME TO ${table}_unavailable`);
     try {
       response = await fetch(`${baseUrl}/status/operations?fallback=${binding}-${Date.now()}`);
       assertResponse(response, 200, `public status ${binding} database fallback`);
@@ -1817,7 +1817,7 @@ export async function runWebManagementE2e({
         throw new Error(`public status ${binding} fallback was stale or leaked private data`);
       }
     } finally {
-      query(`ALTER TABLE ${table}_unavailable RENAME TO ${table}`);
+      await query(`ALTER TABLE ${table}_unavailable RENAME TO ${table}`);
     }
   }
 
@@ -1858,7 +1858,7 @@ export async function runWebManagementE2e({
       { type: "redirect", actionStatus: 303 },
     );
     const deleted = onlyRow(
-      queryControlDb(`SELECT deleted_at FROM ${resourceType}s WHERE id = '${resourceId}'`),
+      await queryControlDb(`SELECT deleted_at FROM ${resourceType}s WHERE id = '${resourceId}'`),
       `${label} soft delete lookup`,
     );
     if (deleted.deleted_at === null) throw new Error(`${label} soft delete was not persisted`);
@@ -1881,7 +1881,7 @@ export async function runWebManagementE2e({
       `administrator ${label} restore`,
     );
     const restored = onlyRow(
-      queryControlDb(`SELECT deleted_at FROM ${resourceType}s WHERE id = '${resourceId}'`),
+      await queryControlDb(`SELECT deleted_at FROM ${resourceType}s WHERE id = '${resourceId}'`),
       `${label} restore lookup`,
     );
     if (restored.deleted_at !== null) throw new Error(`${label} restore was not persisted`);
@@ -1906,7 +1906,7 @@ export async function runWebManagementE2e({
     { type: "failure", actionStatus: 400 },
   );
   const workspace = onlyRow(
-    queryControlDb("SELECT id, deleted_at FROM workspaces WHERE slug = 'operations'"),
+    await queryControlDb("SELECT id, deleted_at FROM workspaces WHERE slug = 'operations'"),
     "workspace lifecycle lookup",
   );
   if (workspace.deleted_at !== null) {
@@ -1921,7 +1921,7 @@ export async function runWebManagementE2e({
     { type: "redirect", actionStatus: 303 },
   );
   const deletedWorkspace = onlyRow(
-    queryControlDb(`SELECT deleted_at FROM workspaces WHERE id = '${workspace.id}'`),
+    await queryControlDb(`SELECT deleted_at FROM workspaces WHERE id = '${workspace.id}'`),
     "deleted workspace lookup",
   );
   if (deletedWorkspace.deleted_at === null) {
@@ -1952,7 +1952,7 @@ export async function runWebManagementE2e({
     { type: "redirect", actionStatus: 303 },
   );
   const restoredWorkspace = onlyRow(
-    queryControlDb(`SELECT deleted_at FROM workspaces WHERE id = '${workspace.id}'`),
+    await queryControlDb(`SELECT deleted_at FROM workspaces WHERE id = '${workspace.id}'`),
     "restored workspace lookup",
   );
   if (restoredWorkspace.deleted_at !== null) {
@@ -1968,7 +1968,7 @@ export async function runWebManagementE2e({
       throw new Error(`workspace audit log omitted ${action}`);
     }
   }
-  const lifecycleAudit = queryControlDb(
+  const lifecycleAudit = await queryControlDb(
     `SELECT action, before_digest, after_digest FROM audit_logs
      WHERE workspace_id = '${workspace.id}' AND action IN ('workspace.delete', 'workspace.restore')
      ORDER BY created_at`,

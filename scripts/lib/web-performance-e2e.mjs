@@ -145,14 +145,14 @@ export async function runWebPerformanceE2e({
   queryTelemetryDb,
 }) {
   const workspace = onlyRow(
-    queryControlDb(
+    await queryControlDb(
       `SELECT id, telemetry_pk, default_dashboard_id FROM workspaces
        WHERE slug = 'operations' AND deleted_at IS NULL`,
     ),
     "performance workspace lookup",
   );
   const existing = onlyRow(
-    queryControlDb(
+    await queryControlDb(
       `SELECT COUNT(*) AS count FROM machines
        WHERE workspace_id = ${sqlString(workspace.id)} AND deleted_at IS NULL`,
     ),
@@ -165,7 +165,7 @@ export async function runWebPerformanceE2e({
 
   const now = Date.now();
   if (machinesToAdd > 0) {
-    queryControlDb(
+    await queryControlDb(
       `WITH RECURSIVE sequence(value) AS (
          VALUES (1)
          UNION ALL SELECT value + 1 FROM sequence WHERE value < ${machinesToAdd}
@@ -181,7 +181,7 @@ export async function runWebPerformanceE2e({
               10, 60, 150, 0, 1, ${now}, ${now}
        FROM sequence`,
     );
-    queryControlDb(
+    await queryControlDb(
       `INSERT INTO agents
          (id, workspace_id, machine_id, identity_public_key, platform, arch,
           agent_version, protocol_version, status, applied_config_revision,
@@ -190,7 +190,7 @@ export async function runWebPerformanceE2e({
               'linux', 'x86_64', '0.1.0', 1, 'active', 1, ${now}, ${now}
        FROM machines WHERE id LIKE 'performance-machine-%'`,
     );
-    queryTelemetryDb(
+    await queryTelemetryDb(
       `WITH RECURSIVE sequence(value) AS (
          VALUES (1)
          UNION ALL SELECT value + 1 FROM sequence WHERE value < ${machinesToAdd}
@@ -210,7 +210,7 @@ export async function runWebPerformanceE2e({
   }
 
   const existingServices = onlyRow(
-    queryControlDb(
+    await queryControlDb(
       `SELECT COUNT(*) AS count FROM services
        WHERE workspace_id = ${sqlString(workspace.id)} AND deleted_at IS NULL`,
     ),
@@ -221,7 +221,7 @@ export async function runWebPerformanceE2e({
     throw new Error(`performance fixture already contains ${existingServices} services`);
   }
   if (servicesToAdd > 0) {
-    queryControlDb(
+    await queryControlDb(
       `WITH RECURSIVE sequence(value) AS (
          VALUES (1)
          UNION ALL SELECT value + 1 FROM sequence WHERE value < ${servicesToAdd}
@@ -233,7 +233,7 @@ export async function runWebPerformanceE2e({
               '200-service collection fixture', ${now}, ${now}
        FROM sequence`,
     );
-    queryControlDb(
+    await queryControlDb(
       `INSERT INTO check_configs
          (id, telemetry_pk, workspace_id, service_id, name, kind, executor_kind,
           enabled, interval_seconds, phase_seconds, timeout_ms, request_json,
@@ -245,7 +245,7 @@ export async function runWebPerformanceE2e({
               ${now}, ${now}
        FROM services WHERE id LIKE 'performance-service-%'`,
     );
-    queryControlDb(
+    await queryControlDb(
       `WITH RECURSIVE sequence(value) AS (
          VALUES (1)
          UNION ALL SELECT value + 1 FROM sequence WHERE value < ${SERVICE_DETAIL_CHECK_TARGET}
@@ -262,7 +262,7 @@ export async function runWebPerformanceE2e({
               ${now}, ${now}
        FROM sequence`,
     );
-    queryTelemetryDb(
+    await queryTelemetryDb(
       `WITH RECURSIVE sequence(value) AS (
          VALUES (1)
          UNION ALL SELECT value + 1 FROM sequence WHERE value < ${servicesToAdd}
@@ -274,7 +274,7 @@ export async function runWebPerformanceE2e({
               ${now}, 'checks_healthy', ${now}, ${now}
        FROM sequence`,
     );
-    queryTelemetryDb(
+    await queryTelemetryDb(
       `WITH RECURSIVE sequence(value) AS (
          VALUES (1)
          UNION ALL SELECT value + 1 FROM sequence WHERE value < ${servicesToAdd}
@@ -288,7 +288,7 @@ export async function runWebPerformanceE2e({
     );
   }
 
-  const machineRows = queryControlDb(
+  const machineRows = await queryControlDb(
     `SELECT name FROM machines
      WHERE workspace_id = ${sqlString(workspace.id)} AND deleted_at IS NULL
      ORDER BY name`,
@@ -297,7 +297,7 @@ export async function runWebPerformanceE2e({
     throw new Error(`performance fixture contains ${machineRows.length} machines, expected 500`);
   }
   const latestCount = onlyRow(
-    queryTelemetryDb(
+    await queryTelemetryDb(
       `SELECT COUNT(*) AS count FROM machine_latest WHERE workspace_pk = ${workspace.telemetry_pk}`,
     ),
     "performance latest count",
@@ -306,7 +306,7 @@ export async function runWebPerformanceE2e({
     throw new Error(`performance fixture contains ${latestCount} latest rows, expected 500`);
   }
 
-  const serviceRows = queryControlDb(
+  const serviceRows = await queryControlDb(
     `SELECT id, name FROM services
      WHERE workspace_id = ${sqlString(workspace.id)} AND deleted_at IS NULL
      ORDER BY name`,
@@ -317,35 +317,35 @@ export async function runWebPerformanceE2e({
     );
   }
 
-  queryControlDb(
+  await queryControlDb(
     `INSERT OR IGNORE INTO dashboard_resources
        (dashboard_id, resource_type, resource_id, sort_order, public_override)
      SELECT ${sqlString(workspace.default_dashboard_id)}, 'machine', id, 0, 'inherit'
      FROM machines WHERE workspace_id = ${sqlString(workspace.id)} AND deleted_at IS NULL
      ORDER BY name LIMIT 200`,
   );
-  queryControlDb(
+  await queryControlDb(
     `INSERT OR REPLACE INTO resource_public_policies
        (workspace_id, resource_type, resource_id, effect, projection_profile, updated_at)
      SELECT ${sqlString(workspace.id)}, 'machine', id, 'allow', 'summary', ${now}
      FROM machines WHERE workspace_id = ${sqlString(workspace.id)} AND deleted_at IS NULL
      ORDER BY name LIMIT 200`,
   );
-  queryControlDb(
+  await queryControlDb(
     `INSERT OR IGNORE INTO dashboard_resources
        (dashboard_id, resource_type, resource_id, sort_order, public_override)
      SELECT ${sqlString(workspace.default_dashboard_id)}, 'service', id, 0, 'inherit'
      FROM services WHERE workspace_id = ${sqlString(workspace.id)} AND deleted_at IS NULL
      ORDER BY name LIMIT 200`,
   );
-  queryControlDb(
+  await queryControlDb(
     `INSERT OR REPLACE INTO resource_public_policies
        (workspace_id, resource_type, resource_id, effect, projection_profile, updated_at)
      SELECT ${sqlString(workspace.id)}, 'service', id, 'allow', 'summary', ${now}
      FROM services WHERE workspace_id = ${sqlString(workspace.id)} AND deleted_at IS NULL
      ORDER BY name LIMIT 200`,
   );
-  const publicMachineRows = queryControlDb(
+  const publicMachineRows = await queryControlDb(
     `SELECT m.name FROM dashboard_resources dr
      JOIN machines m ON m.id = dr.resource_id AND m.workspace_id = ${sqlString(workspace.id)}
      JOIN resource_public_policies p
@@ -356,7 +356,7 @@ export async function runWebPerformanceE2e({
        AND m.deleted_at IS NULL
      ORDER BY dr.sort_order, m.name LIMIT 200`,
   );
-  const publicServiceRows = queryControlDb(
+  const publicServiceRows = await queryControlDb(
     `SELECT s.name FROM dashboard_resources dr
      JOIN services s ON s.id = dr.resource_id AND s.workspace_id = ${sqlString(workspace.id)}
      JOIN resource_public_policies p
@@ -431,7 +431,7 @@ export async function runWebPerformanceE2e({
   if (!lastPublicService || !lastPublicStatus.html.includes(lastPublicService.name)) {
     throw new Error("public status last page omitted the final published service");
   }
-  queryTelemetryDb("ALTER TABLE machine_latest RENAME TO machine_latest_unavailable");
+  await queryTelemetryDb("ALTER TABLE machine_latest RENAME TO machine_latest_unavailable");
   try {
     const fallbackStatus = await fetchPublicStatus(baseUrl, {
       servicePage: lastServicePage,
@@ -442,7 +442,7 @@ export async function runWebPerformanceE2e({
       throw new Error("paged public status snapshot omitted the final published service");
     }
   } finally {
-    queryTelemetryDb("ALTER TABLE machine_latest_unavailable RENAME TO machine_latest");
+    await queryTelemetryDb("ALTER TABLE machine_latest_unavailable RENAME TO machine_latest");
   }
   const publicStatusBytes = Buffer.byteLength(publicStatus.html);
   console.log(

@@ -9,6 +9,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import { runWebManagementE2e } from "./lib/web-management-e2e.mjs";
 import { runWebPerformanceE2e } from "./lib/web-performance-e2e.mjs";
+import { runE2eCommand } from "./lib/run-e2e-command.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
@@ -423,8 +424,8 @@ try {
     throw new Error("authenticated dashboard was not marked private");
   }
 
-  const queryD1 = (binding, sql) => {
-    const result = run(
+  const queryD1 = async (binding, sql) => {
+    const result = await runE2eCommand(
       pnpm,
       [
         "exec",
@@ -442,7 +443,7 @@ try {
         "--json",
       ],
       `${binding} query`,
-      { quiet: true },
+      { cwd: root, env: { ...process.env, CI: "true" } },
     );
     const output = result.stdout.trim();
     const jsonStart = output.lastIndexOf("\n[");
